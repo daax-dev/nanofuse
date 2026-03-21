@@ -1,0 +1,52 @@
+# Recording Agent Layer
+# Provides session recording capabilities via virtio-vsock communication.
+# Based on ADR-002: Recording Integration Architecture.
+#
+# Target size: ~5MB
+# Use case: Session capture for AI agent interactions
+
+name: "recording-agent"
+version: "1.0.0"
+sha256: "b65eaffc954ec6c4e635d918a12f298d02fad9b75e6cfacf26f768c11e36dc67"
+size_mb: 81
+description: "Session recording agent for terminal and file I/O capture"
+type: "feature"
+
+dependencies:
+  - "base-os>=1.0.0"
+
+provides:
+  - "session-recording"
+  - "vsock-communication"
+  - "terminal-capture"
+  - "file-io-capture"
+
+files:
+  - path: "/usr/local/bin/record-agent"
+    mode: "0755"
+  - path: "/etc/systemd/system/record-agent.service"
+    mode: "0644"
+
+systemd:
+  enable:
+    - "record-agent.service"
+  mask: []
+
+config_schema:
+  enabled:
+    type: boolean
+    default: true
+    description: "Enable recording agent"
+  vsock_port:
+    type: integer
+    default: 52
+    description: "Virtio-vsock port for host communication"
+  buffer_size_mb:
+    type: integer
+    default: 16
+    description: "Recording buffer size in megabytes"
+  capture_modes:
+    type: array
+    default:
+      - "terminal"
+    description: "Capture modes: terminal, file_io, network, syscall"

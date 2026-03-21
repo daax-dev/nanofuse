@@ -1,0 +1,69 @@
+# TLS Certificates Layer
+# Provides CA certificates and certificate management for secure communications.
+# Includes tools for certificate rotation and ACME integration.
+#
+# Target size: ~10MB
+# Use case: TLS termination, mTLS, certificate management
+
+name: "tls-certificates"
+version: "1.0.0"
+sha256: "placeholder"
+size_mb: 10
+description: "CA certificates and certificate management for TLS"
+type: "feature"
+
+dependencies:
+  - "base-os>=1.0.0"
+
+provides:
+  - "ca-certificates"
+  - "tls-support"
+  - "cert-manager"  # Self-signed certificate management tool (/usr/local/bin/cert-manager)
+  # Note: ACME client not implemented; cert-manager only supports self-signed certs
+  # Future: Add ACME support via Let's Encrypt integration
+
+files:
+  - path: "/etc/ssl/certs/ca-certificates.crt"
+    mode: "0644"
+  - path: "/usr/local/bin/cert-manager"
+    mode: "0755"
+  - path: "/etc/nanofuse/certs"
+    mode: "0750"
+  - path: "/etc/systemd/system/cert-renewal.timer"
+    mode: "0644"
+  - path: "/etc/systemd/system/cert-renewal.service"
+    mode: "0644"
+
+systemd:
+  enable:
+    - "cert-renewal.timer"
+  mask: []
+
+config_schema:
+  ca_bundle_path:
+    type: string
+    default: "/etc/ssl/certs/ca-certificates.crt"
+    description: "Path to CA certificate bundle"
+  cert_dir:
+    type: string
+    default: "/etc/nanofuse/certs"
+    description: "Directory for gateway certificates"
+  cert_dir_mode:
+    type: string
+    default: "750"
+    # Note: Accepts both 3-digit (750) and 4-digit (0750) octal formats for compatibility.
+    # The post-install hook normalizes to 4-digit format before passing to chmod.
+    description: "Permissions for certificate directory (750 allows group access; private keys use 600)"
+  auto_renew:
+    type: boolean
+    default: true
+    description: "Enable automatic certificate renewal"
+  renewal_days_before:
+    type: integer
+    default: 30
+    description: "Days before expiry to trigger renewal check (certificates default to 365-day validity but this is configurable)"
+  # ACME configuration reserved for future implementation
+  # acme_server:
+  #   type: string
+  #   default: "https://acme-v02.api.letsencrypt.org/directory"
+  #   description: "ACME server URL for certificate requests (not yet implemented)"

@@ -1,0 +1,1294 @@
+openapi: 3.0.3
+info:
+  title: NanoFuse API
+  description: |
+    Firecracker-based microVM management system API.
+
+    NanoFuse provides a simple REST API for managing Firecracker microVMs,
+    container images, and VM snapshots.
+  version: 0.1.0
+  contact:
+    name: NanoFuse Project
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: unix:///var/run/nanofuse.sock
+    description: Unix socket (default)
+
+tags:
+  - name: Health
+    description: Service health and status
+  - name: VMs
+    description: Virtual machine lifecycle management
+  - name: Images
+    description: Container image operations
+  - name: Snapshots
+    description: VM snapshot management
+  - name: Backups
+    description: VM backup and restore to S3
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns service health status and uptime
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /vms:
+    get:
+      summary: List VMs
+      description: Returns a list of all virtual machines
+      operationId: listVMs
+      tags:
+        - VMs
+      parameters:
+        - name: state
+          in: query
+          description: Filter VMs by state
+          schema:
+            $ref: '#/components/schemas/VMState'
+      responses:
+        '200':
+          description: List of VMs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListVMsResponse'
+    post:
+      summary: Create VM
+      description: Creates a new virtual machine from an image
+      operationId: createVM
+      tags:
+        - VMs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVMRequest'
+      responses:
+        '201':
+          description: VM created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /vms/{vmId}:
+    get:
+      summary: Get VM
+      description: Returns details about a specific VM
+      operationId: getVM
+      tags:
+        - VMs
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      responses:
+        '200':
+          description: VM details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete VM
+      description: Deletes a VM and cleans up resources
+      operationId: deleteVM
+      tags:
+        - VMs
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      responses:
+        '204':
+          description: VM deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vmId}/start:
+    post:
+      summary: Start VM
+      description: Starts a stopped VM
+      operationId: startVM
+      tags:
+        - VMs
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      responses:
+        '200':
+          description: VM started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vmId}/stop:
+    post:
+      summary: Stop VM
+      description: Gracefully stops a running VM
+      operationId: stopVM
+      tags:
+        - VMs
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StopVMRequest'
+      responses:
+        '200':
+          description: VM stopped successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /vms/{vmId}/kill:
+    post:
+      summary: Kill VM
+      description: Forcefully terminates a VM
+      operationId: killVM
+      tags:
+        - VMs
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      responses:
+        '200':
+          description: VM killed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/{vmId}/pause:
+    post:
+      summary: Pause VM
+      description: Pauses a running VM (saves state to memory)
+      operationId: pauseVM
+      tags:
+        - VMs
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      responses:
+        '200':
+          description: VM paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          description: Not yet implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vms/{vmId}/resume:
+    post:
+      summary: Resume VM
+      description: Resumes a paused VM
+      operationId: resumeVM
+      tags:
+        - VMs
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      responses:
+        '200':
+          description: VM resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VM'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          description: Not yet implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /vms/{vmId}/logs:
+    get:
+      summary: Get VM console logs
+      description: Returns console output from the VM
+      operationId: getVMLogs
+      tags:
+        - VMs
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+        - name: tail
+          in: query
+          description: Number of lines to return from end of log
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Console logs
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /vms/{vmId}/snapshots:
+    get:
+      summary: List VM snapshots
+      description: Returns all snapshots for a VM
+      operationId: listVMSnapshots
+      tags:
+        - Snapshots
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      responses:
+        '200':
+          description: List of snapshots
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListSnapshotsResponse'
+    post:
+      summary: Create snapshot
+      description: Creates a new snapshot of the VM
+      operationId: createSnapshot
+      tags:
+        - Snapshots
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSnapshotRequest'
+      responses:
+        '201':
+          description: Snapshot created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /snapshots/{snapshotId}:
+    get:
+      summary: Get snapshot
+      description: Returns details about a snapshot
+      operationId: getSnapshot
+      tags:
+        - Snapshots
+      parameters:
+        - $ref: '#/components/parameters/SnapshotId'
+      responses:
+        '200':
+          description: Snapshot details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete snapshot
+      description: Deletes a snapshot
+      operationId: deleteSnapshot
+      tags:
+        - Snapshots
+      parameters:
+        - $ref: '#/components/parameters/SnapshotId'
+      responses:
+        '204':
+          description: Snapshot deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vms/{vmId}/backups:
+    get:
+      summary: List VM backups
+      description: Returns all backups for a VM from S3
+      operationId: listVMBackups
+      tags:
+        - Backups
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      responses:
+        '200':
+          description: List of backups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListBackupsResponse'
+        '501':
+          description: Not yet implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Create backup
+      description: Creates a backup of the VM and uploads to S3
+      operationId: createBackup
+      tags:
+        - Backups
+      parameters:
+        - $ref: '#/components/parameters/VMId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBackupRequest'
+      responses:
+        '202':
+          description: Backup job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Not yet implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /backups/{backupId}:
+    get:
+      summary: Get backup details
+      description: Returns details about a backup
+      operationId: getBackup
+      tags:
+        - Backups
+      parameters:
+        - $ref: '#/components/parameters/BackupId'
+      responses:
+        '200':
+          description: Backup details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Backup'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Not yet implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete backup
+      description: Deletes a backup from S3
+      operationId: deleteBackup
+      tags:
+        - Backups
+      parameters:
+        - $ref: '#/components/parameters/BackupId'
+      responses:
+        '204':
+          description: Backup deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Not yet implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /backups/{backupId}/restore:
+    post:
+      summary: Restore from backup
+      description: Creates a new VM from a backup
+      operationId: restoreBackup
+      tags:
+        - Backups
+      parameters:
+        - $ref: '#/components/parameters/BackupId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreBackupRequest'
+      responses:
+        '202':
+          description: Restore job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestoreJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '501':
+          description: Not yet implemented
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /images:
+    get:
+      summary: List images
+      description: Returns all locally available images
+      operationId: listImages
+      tags:
+        - Images
+      responses:
+        '200':
+          description: List of images
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListImagesResponse'
+
+  /images/pull:
+    post:
+      summary: Pull image
+      description: Pulls a container image from a registry
+      operationId: pullImage
+      tags:
+        - Images
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PullImageRequest'
+      responses:
+        '202':
+          description: Pull job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PullJob'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /images/{digest}:
+    get:
+      summary: Get image
+      description: Returns details about an image
+      operationId: getImage
+      tags:
+        - Images
+      parameters:
+        - $ref: '#/components/parameters/ImageDigest'
+      responses:
+        '200':
+          description: Image details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete image
+      description: Deletes an image
+      operationId: deleteImage
+      tags:
+        - Images
+      parameters:
+        - $ref: '#/components/parameters/ImageDigest'
+      responses:
+        '204':
+          description: Image deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /images/jobs/{jobId}:
+    get:
+      summary: Get image pull job status
+      description: Returns status of an image pull job
+      operationId: getImageJob
+      tags:
+        - Images
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PullJob'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    VMId:
+      name: vmId
+      in: path
+      required: true
+      description: VM identifier
+      schema:
+        type: string
+    SnapshotId:
+      name: snapshotId
+      in: path
+      required: true
+      description: Snapshot identifier
+      schema:
+        type: string
+    BackupId:
+      name: backupId
+      in: path
+      required: true
+      description: Backup identifier
+      schema:
+        type: string
+    ImageDigest:
+      name: digest
+      in: path
+      required: true
+      description: Image digest (sha256:...)
+      schema:
+        type: string
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      description: Job identifier
+      schema:
+        type: string
+
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - uptime_seconds
+      properties:
+        status:
+          type: string
+          example: healthy
+        version:
+          type: string
+          example: 0.1.0
+        uptime_seconds:
+          type: integer
+          format: int64
+          example: 3600
+
+    VM:
+      type: object
+      required:
+        - id
+        - name
+        - state
+        - image
+        - image_digest
+        - config
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          description: VM unique identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+          description: VM name
+          example: my-vm
+        state:
+          $ref: '#/components/schemas/VMState'
+        image:
+          type: string
+          description: Original image reference
+          example: ghcr.io/jpoley/nanofuse/base:latest
+        image_digest:
+          type: string
+          description: Image digest
+          example: sha256:abc123...
+        config:
+          $ref: '#/components/schemas/VMConfig'
+        runtime:
+          $ref: '#/components/schemas/VMRuntime'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        locked_by:
+          type: string
+          nullable: true
+          description: Operation currently holding lock
+        locked_at:
+          type: string
+          format: date-time
+          nullable: true
+        owner_user_id:
+          type: string
+          description: Human owner for SPIFFE ID (D025 format)
+        group_id:
+          type: string
+          description: Group for SPIFFE ID (D025 format)
+        spiffe_id:
+          type: string
+          description: Generated SPIFFE ID if auto-registered
+          example: spiffe://poley.dev/g/engineering/u/jason/w/microvm/550e8400-e29b-41d4-a716-446655440000
+
+    VMState:
+      type: string
+      enum:
+        - created
+        - starting
+        - running
+        - stopping
+        - stopped
+        - pausing
+        - paused
+        - resuming
+        - failed
+      example: running
+
+    VMConfig:
+      type: object
+      required:
+        - vcpus
+        - memory_mib
+        - kernel_args
+        - network
+        - disks
+      properties:
+        vcpus:
+          type: integer
+          minimum: 1
+          maximum: 32
+          example: 2
+        memory_mib:
+          type: integer
+          minimum: 128
+          maximum: 32768
+          example: 512
+        kernel_args:
+          type: string
+          example: console=ttyS0 root=/dev/vda1 rw
+        network:
+          $ref: '#/components/schemas/NetworkConfig'
+        disks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiskConfig'
+
+    NetworkConfig:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          enum: [nat, bridged, none]
+          example: nat
+        tap_device:
+          type: string
+          example: tap-550e8400
+        mac_address:
+          type: string
+          example: AA:FC:00:12:34:56
+        bridge_name:
+          type: string
+          nullable: true
+        ip_address:
+          type: string
+          example: 172.16.0.10
+        gateway:
+          type: string
+          example: 172.16.0.1
+        netmask:
+          type: string
+          example: 255.255.255.0
+        port_forwards:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortForward'
+
+    PortForward:
+      type: object
+      required:
+        - host_port
+        - vm_port
+        - protocol
+      properties:
+        host_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          example: 8080
+        vm_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          example: 80
+        protocol:
+          type: string
+          enum: [tcp, udp]
+          example: tcp
+
+    DiskConfig:
+      type: object
+      required:
+        - drive_id
+        - path_on_host
+        - is_read_only
+        - is_root_device
+      properties:
+        drive_id:
+          type: string
+          example: rootfs
+        path_on_host:
+          type: string
+          example: /var/lib/nanofuse/images/sha256-abc.../rootfs.ext4
+        is_read_only:
+          type: boolean
+          example: false
+        is_root_device:
+          type: boolean
+          example: true
+
+    VMRuntime:
+      type: object
+      required:
+        - pid
+        - socket_path
+        - console_path
+      properties:
+        pid:
+          type: integer
+          description: Firecracker process ID
+          example: 12345
+        socket_path:
+          type: string
+          example: /var/lib/nanofuse/vms/550e8400.../firecracker.sock
+        console_path:
+          type: string
+          example: /var/lib/nanofuse/vms/550e8400.../console.log
+        network_info:
+          $ref: '#/components/schemas/NetworkRuntimeInfo'
+
+    NetworkRuntimeInfo:
+      type: object
+      properties:
+        tap_device:
+          type: string
+          example: tap-550e8400
+        host_ip:
+          type: string
+          example: 172.16.0.1
+        guest_ip:
+          type: string
+          example: 172.16.0.10
+        gateway:
+          type: string
+          example: 172.16.0.1
+
+    CreateVMRequest:
+      type: object
+      required:
+        - image
+      properties:
+        name:
+          type: string
+          description: VM name (auto-generated if not provided)
+          example: my-vm
+        image:
+          type: string
+          description: Image reference or digest
+          example: ghcr.io/jpoley/nanofuse/base:latest
+        config:
+          $ref: '#/components/schemas/VMConfigRequest'
+        owner_user_id:
+          type: string
+          description: |
+            Human owner for SPIFFE ID /u/ segment (D025 format).
+            When provided with group_id, enables SPIFFE workload identity.
+          example: jason
+        group_id:
+          type: string
+          description: |
+            Group for SPIFFE ID /g/ segment (D025 format).
+            When provided with owner_user_id, enables SPIFFE workload identity.
+          example: engineering
+        auto_register_spiffe:
+          type: boolean
+          nullable: true
+          description: |
+            Auto-register SPIRE workload entry on VM creation.
+            Default: true if owner_user_id and group_id are provided.
+            SPIFFE ID format: spiffe://poley.dev/g/{group_id}/u/{owner_user_id}/w/microvm/{vm-id}
+
+    VMConfigRequest:
+      type: object
+      properties:
+        vcpus:
+          type: integer
+          nullable: true
+        memory_mib:
+          type: integer
+          nullable: true
+        kernel_args:
+          type: string
+          nullable: true
+        network:
+          $ref: '#/components/schemas/NetworkConfigRequest'
+
+    NetworkConfigRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [nat, bridged, none]
+          nullable: true
+        bridge_name:
+          type: string
+          nullable: true
+        mac_address:
+          type: string
+          nullable: true
+        port_forwards:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortForward'
+          nullable: true
+
+    StopVMRequest:
+      type: object
+      properties:
+        timeout_seconds:
+          type: integer
+          nullable: true
+          description: Timeout before force kill
+          example: 30
+
+    ListVMsResponse:
+      type: object
+      required:
+        - vms
+        - total
+      properties:
+        vms:
+          type: array
+          items:
+            $ref: '#/components/schemas/VMListItem'
+        total:
+          type: integer
+
+    VMListItem:
+      type: object
+      required:
+        - id
+        - name
+        - state
+        - image
+        - created_at
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        state:
+          $ref: '#/components/schemas/VMState'
+        image:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        uptime_seconds:
+          type: integer
+          nullable: true
+        owner_user_id:
+          type: string
+          description: Human owner for SPIFFE ID (D025 format)
+        group_id:
+          type: string
+          description: Group for SPIFFE ID (D025 format)
+        spiffe_id:
+          type: string
+          description: Generated SPIFFE ID if auto-registered
+          example: spiffe://poley.dev/g/engineering/u/jason/w/microvm/550e8400-e29b-41d4-a716-446655440000
+
+    Snapshot:
+      type: object
+      required:
+        - id
+        - vm_id
+        - name
+        - memory_file_path
+        - snapshot_file_path
+        - size_bytes
+        - created_at
+      properties:
+        id:
+          type: string
+          example: snapshot-20240101-120000
+        vm_id:
+          type: string
+        name:
+          type: string
+        memory_file_path:
+          type: string
+        snapshot_file_path:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+
+    CreateSnapshotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Snapshot name (auto-generated if not provided)
+
+    ListSnapshotsResponse:
+      type: object
+      required:
+        - snapshots
+        - total
+      properties:
+        snapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/Snapshot'
+        total:
+          type: integer
+
+    Backup:
+      type: object
+      required:
+        - id
+        - vm_id
+        - vm_name
+        - s3_bucket
+        - s3_key
+        - size_bytes
+        - created_at
+        - status
+      properties:
+        id:
+          type: string
+          example: backup-20240101-120000
+        vm_id:
+          type: string
+        vm_name:
+          type: string
+        s3_bucket:
+          type: string
+          example: my-backups
+        s3_key:
+          type: string
+          example: nanofuse/backups/550e8400.../backup-20240101.tar.gz
+        size_bytes:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, uploading, completed, failed]
+        error_message:
+          type: string
+          nullable: true
+
+    CreateBackupRequest:
+      type: object
+      required:
+        - s3_bucket
+      properties:
+        name:
+          type: string
+          description: Backup name (auto-generated if not provided)
+        s3_bucket:
+          type: string
+          example: my-backups
+        s3_prefix:
+          type: string
+          example: nanofuse/backups
+          description: S3 key prefix
+        compression:
+          type: string
+          enum: [gzip, zstd, none]
+          default: gzip
+
+    RestoreBackupRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name for restored VM (auto-generated if not provided)
+
+    ListBackupsResponse:
+      type: object
+      required:
+        - backups
+        - total
+      properties:
+        backups:
+          type: array
+          items:
+            $ref: '#/components/schemas/Backup'
+        total:
+          type: integer
+
+    BackupJob:
+      type: object
+      required:
+        - job_id
+        - vm_id
+        - status
+        - created_at
+      properties:
+        job_id:
+          type: string
+        vm_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, in_progress, completed, failed]
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        backup:
+          $ref: '#/components/schemas/Backup'
+          nullable: true
+
+    RestoreJob:
+      type: object
+      required:
+        - job_id
+        - backup_id
+        - status
+        - created_at
+      properties:
+        job_id:
+          type: string
+        backup_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, in_progress, completed, failed]
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        vm:
+          $ref: '#/components/schemas/VM'
+          nullable: true
+
+    Image:
+      type: object
+      required:
+        - digest
+        - reference
+        - kernel_path
+        - rootfs_path
+        - size_bytes
+        - created_at
+      properties:
+        digest:
+          type: string
+          example: sha256:abc123...
+        reference:
+          type: string
+          example: ghcr.io/jpoley/nanofuse/base:latest
+        kernel_path:
+          type: string
+        rootfs_path:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+
+    PullImageRequest:
+      type: object
+      required:
+        - reference
+      properties:
+        reference:
+          type: string
+          description: Image reference (registry/repo:tag)
+          example: ghcr.io/jpoley/nanofuse/base:latest
+
+    ListImagesResponse:
+      type: object
+      required:
+        - images
+        - total
+      properties:
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+        total:
+          type: integer
+
+    PullJob:
+      type: object
+      required:
+        - job_id
+        - reference
+        - status
+        - created_at
+      properties:
+        job_id:
+          type: string
+        reference:
+          type: string
+        status:
+          type: string
+          enum: [pending, pulling, extracting, completed, failed]
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        image:
+          $ref: '#/components/schemas/Image'
+          nullable: true
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - INVALID_REQUEST
+                - INVALID_CONFIG
+                - REGISTRY_AUTH_FAILED
+                - VM_NOT_FOUND
+                - IMAGE_NOT_FOUND
+                - SNAPSHOT_NOT_FOUND
+                - INVALID_STATE_TRANSITION
+                - VM_LOCKED
+                - RESOURCE_IN_USE
+                - VALIDATION_ERROR
+                - RESOURCE_LIMIT_EXCEEDED
+                - SNAPSHOT_INCOMPATIBLE
+                - INTERNAL_ERROR
+                - SERVICE_UNAVAILABLE
+                - INSUFFICIENT_STORAGE
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Resource conflict (e.g., locked, in use)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnprocessableEntity:
+      description: Validation error or resource limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

@@ -1,0 +1,77 @@
+#!/bin/bash
+set -euo pipefail
+
+# NanoFuse Complete Build and Test Script
+# Runs build-complete.sh followed by test-complete.sh
+# Usage: sudo ./build-and-test.sh
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGES_BASE="$REPO_DIR/images/base"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_info() { echo -e "${GREEN}✓${NC} $1"; }
+log_error() { echo -e "${RED}✗${NC} $1"; }
+log_warn() { echo -e "${YELLOW}⚠${NC} $1"; }
+log_step() { echo ""; echo "========================================="; echo "$1"; echo "========================================="; }
+
+if [[ $EUID -ne 0 ]]; then
+    log_error "This script requires sudo"
+    echo "Run with: sudo ./build-and-test.sh"
+    exit 1
+fi
+
+echo "=========================================="
+echo "NanoFuse Build and Test"
+echo "=========================================="
+echo ""
+log_info "Repository: $REPO_DIR"
+log_info "Images base: $IMAGES_BASE"
+echo ""
+
+# =============================================================================
+# PHASE 1: BUILD
+# =============================================================================
+log_step "PHASE 1: Building NanoFuse"
+
+cd "$IMAGES_BASE"
+if ! ./build-complete.sh; then
+    log_error "Build failed"
+    exit 1
+fi
+
+log_info "Build phase complete"
+
+# =============================================================================
+# PHASE 2: TEST
+# =============================================================================
+log_step "PHASE 2: Testing NanoFuse"
+
+cd "$REPO_DIR"
+if ! ./test-complete.sh; then
+    log_error "Test failed"
+    exit 1
+fi
+
+log_info "Test phase complete"
+
+# =============================================================================
+# SUMMARY
+# =============================================================================
+echo ""
+log_step "SUCCESS"
+log_info "Build and test both passed!"
+echo ""
+echo "Your NanoFuse system is ready to use:"
+echo "  Kernel: $IMAGES_BASE/build/vmlinux ($(du -h $IMAGES_BASE/build/vmlinux | cut -f1))"
+echo "  Rootfs: $IMAGES_BASE/build/rootfs.ext4 ($(du -h $IMAGES_BASE/build/rootfs.ext4 | cut -f1))"
+echo "  Image:  nanofuse-base:latest"
+echo ""
+echo "Next steps:"
+echo "  1. Create VM: ./bin/nanofuse vm create nanofuse-base:latest my-vm"
+echo "  2. Start VM:  ./bin/nanofuse vm start my-vm --api-url http://127.0.0.1:8080"
+echo "  3. Stop VM:   ./bin/nanofuse vm stop my-vm --api-url http://127.0.0.1:8080"
+echo ""

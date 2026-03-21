@@ -1,0 +1,47 @@
+name: API Health Endpoint
+description: Tests API health and status endpoints
+
+# Socket path: /run/nanofused.sock (CLI default, matches test harness in api_test.go).
+# Shell variable substitution does not work in gdt framework, so path is hardcoded.
+# Daemon must be running at /run/nanofused.sock for these tests to pass.
+
+tests:
+  # Test 1: Health endpoint is reachable
+  - name: health-endpoint-reachable
+    description: Health endpoint should be reachable
+    shell: bash
+    exec: curl -s --unix-socket /run/nanofused.sock http://localhost/health | grep -q status
+    assert:
+      exit-code: 0
+
+  # Test 2: Health response contains healthy
+  - name: health-contains-healthy
+    description: Health response should contain healthy status
+    shell: bash
+    exec: curl -s --unix-socket /run/nanofused.sock http://localhost/health | grep -q healthy
+    assert:
+      exit-code: 0
+
+  # Test 3: VM list endpoint is reachable
+  - name: vm-list-reachable
+    description: VM list endpoint should be reachable
+    shell: bash
+    exec: curl -s --unix-socket /run/nanofused.sock http://localhost/api/v1/vms
+    assert:
+      exit-code: 0
+
+  # Test 4: Image list endpoint is reachable
+  - name: image-list-reachable
+    description: Image list endpoint should be reachable
+    shell: bash
+    exec: curl -s --unix-socket /run/nanofused.sock http://localhost/api/v1/images
+    assert:
+      exit-code: 0
+
+  # Test 5: Health returns valid JSON
+  - name: health-returns-json
+    description: Health endpoint should return JSON with version
+    shell: bash
+    exec: curl -s --unix-socket /run/nanofused.sock http://localhost/health | grep -q version
+    assert:
+      exit-code: 0

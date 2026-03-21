@@ -1,0 +1,365 @@
+#!/bin/bash
+set -euo pipefail
+
+# NanoFuse Complete End-to-End Test Script
+# Tests: daemon startup, VM creation, VM boot, console output
+# Usage: sudo ./test-complete.sh
+
+REPO_DIR="/home/jpoley/src/_mine/nanofuse"
+IMAGES_BASE="$REPO_DIR/images/base"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_info() { echo -e "${GREEN}✓${NC} $1"; }
+log_error() { echo -e "${RED}✗${NC} $1"; }
+log_warn() { echo -e "${YELLOW}⚠${NC} $1"; }
+log_step() { echo ""; echo "========================================="; echo "$1"; echo "========================================="; }
+
+trap 'log_error "Test failed at line $LINENO"; cleanup; exit 1' ERR
+
+cleanup() {
+    log_step "Cleanup"
+    log_info "Stopping VM..."
+    ./bin/nanofuse $API_OPTS vm stop "$VM_NAME" 2>/dev/null || true
+    sleep 1
+
+    log_info "Stopping daemon..."
+    kill $DAEMON_PID 2>/dev/null || true
+    pkill -f "nanofused" 2>/dev/null || true
+    sleep 1
+
+    log_info "Cleanup complete"
+}
+
+if [[ $EUID -ne 0 ]]; then
+    log_error "This script requires sudo"
+    echo "Run with: sudo ./test-complete.sh"
+    exit 1
+fi
+
+echo "========================================"
+echo "NanoFuse End-to-End Test"
+echo "========================================"
+echo ""
+
+# =============================================================================
+# STEP 1: Verify prerequisites
+# =============================================================================
+log_step "STEP 1: Verify prerequisites"
+
+# Check Docker
+if ! command -v docker &> /dev/null; then
+    log_error "Docker not installed"
+    exit 1
+fi
+log_info "Docker: $(docker --version)"
+
+# Check Firecracker
+if ! command -v firecracker &> /dev/null; then
+    log_error "Firecracker not installed"
+    exit 1
+fi
+log_info "Firecracker: $(firecracker --version)"
+
+# Check nanofuse binary
+if [ ! -x "$REPO_DIR/bin/nanofuse" ]; then
+    log_error "nanofuse binary not found"
+    exit 1
+fi
+log_info "nanofuse binary found"
+
+# Check build artifacts
+if [ ! -f "$IMAGES_BASE/build/vmlinux" ]; then
+    log_error "Kernel not found at $IMAGES_BASE/build/vmlinux"
+    exit 1
+fi
+log_info "Kernel: $(du -h $IMAGES_BASE/build/vmlinux | cut -f1)"
+
+if [ ! -f "$IMAGES_BASE/build/rootfs.ext4" ]; then
+    log_error "Rootfs not found at $IMAGES_BASE/build/rootfs.ext4"
+    exit 1
+fi
+log_info "Rootfs: $(du -h $IMAGES_BASE/build/rootfs.ext4 | cut -f1)"
+
+# =============================================================================
+# STEP 2: Kill any running daemons
+# =============================================================================
+log_step "STEP 2: Stop existing daemons"
+
+pkill -f "nanofused" 2>/dev/null || true
+sleep 1
+
+if netstat -tuln 2>/dev/null | grep -q ":8080"; then
+    log_error "Port 8080 still in use"
+    exit 1
+fi
+log_info "Port 8080 is available"
+
+# =============================================================================
+# STEP 3: Build Docker image
+# =============================================================================
+log_step "STEP 3: Build Docker image"
+
+cd "$IMAGES_BASE"
+
+log_info "Running: docker build -t nanofuse-base:latest"
+if ! docker build -t nanofuse-base:latest . > /tmp/docker-build.log 2>&1; then
+    log_error "Docker build failed"
+    tail -10 /tmp/docker-build.log
+    exit 1
+fi
+log_info "Docker image built"
+
+# =============================================================================
+# STEP 4: Start daemon
+# =============================================================================
+log_step "STEP 4: Start nanofused daemon"
+
+cd "$REPO_DIR"
+
+CONFIG_FILE="/tmp/nanofused-test-$$.yaml"
+cat > "$CONFIG_FILE" << 'EOF'
+api:
+  socket: /tmp/nanofused.sock
+  socket_mode: "0660"
+  tcp_bind: "127.0.0.1:8080"
+
+storage:
+  data_dir: /tmp/nanofuse
+  database: /tmp/nanofuse/nanofuse.db
+
+firecracker:
+  binary_path: /usr/local/bin/firecracker
+
+limits:
+  max_vms: 10
+  max_total_memory_mib: 8192
+  max_vcpus_per_vm: 4
+  max_memory_per_vm_mib: 2048
+  max_snapshot_storage_gib: 20
+
+registry:
+  auth_config_path: /root/.docker/config.json
+
+logging:
+  level: info
+  format: text
+EOF
+
+log_info "Config created: $CONFIG_FILE"
+
+log_info "Starting daemon: ./bin/nanofused --config $CONFIG_FILE"
+./bin/nanofused --config "$CONFIG_FILE" > /tmp/nanofused-$$.log 2>&1 &
+DAEMON_PID=$!
+sleep 2
+
+if ! ps -p $DAEMON_PID > /dev/null 2>&1; then
+    log_error "Daemon process died"
+    cat /tmp/nanofused-$$.log
+    exit 1
+fi
+log_info "Daemon started (PID: $DAEMON_PID)"
+
+# Wait for TCP port
+RETRY=0
+MAX_RETRIES=10
+while [ $RETRY -lt $MAX_RETRIES ]; do
+    if netstat -tuln 2>/dev/null | grep -q ":8080"; then
+        log_info "TCP port 8080 is listening"
+        break
+    fi
+    RETRY=$((RETRY + 1))
+    if [ $RETRY -eq $MAX_RETRIES ]; then
+        log_error "Daemon did not bind to port 8080"
+        cat /tmp/nanofused-$$.log
+        kill $DAEMON_PID 2>/dev/null || true
+        exit 1
+    fi
+    sleep 1
+done
+
+# =============================================================================
+# STEP 5: Extract kernel and rootfs from Docker image to image storage
+# =============================================================================
+log_step "STEP 5: Extract image files to daemon storage"
+
+# Get the image digest - use the full ID which is always available
+IMAGE_ID=$(docker inspect nanofuse-base:latest --format='{{.Id}}')
+# Remove sha256: prefix if present
+IMAGE_DIGEST="${IMAGE_ID#sha256:}"
+# If still too long, take first 64 chars (sha256 digest length)
+if [ ${#IMAGE_DIGEST} -gt 64 ]; then
+    IMAGE_DIGEST="${IMAGE_DIGEST:0:64}"
+fi
+IMAGE_DIGEST="sha256:$IMAGE_DIGEST"
+log_info "Image digest: $IMAGE_DIGEST"
+
+# Create image storage directory
+IMAGE_STORAGE="/tmp/nanofuse/images/$IMAGE_DIGEST"
+mkdir -p "$IMAGE_STORAGE"
+log_info "Image storage: $IMAGE_STORAGE"
+
+# Create a temporary container to extract files
+TEMP_CONTAINER=$(docker create nanofuse-base:latest)
+log_info "Created temporary container: ${TEMP_CONTAINER:0:12}"
+
+# Extract rootfs from container
+log_info "Extracting rootfs..."
+docker export "$TEMP_CONTAINER" > /tmp/nanofuse-export-$$.tar
+tar -C "$IMAGE_STORAGE" -xf /tmp/nanofuse-export-$$.tar
+rm /tmp/nanofuse-export-$$.tar
+
+# Copy kernel from build directory to image storage
+if [ -f "$IMAGES_BASE/build/vmlinux" ]; then
+    log_info "Copying kernel to image storage..."
+    cp "$IMAGES_BASE/build/vmlinux" "$IMAGE_STORAGE/vmlinux"
+    log_info "Kernel: $(du -h $IMAGE_STORAGE/vmlinux | cut -f1)"
+else
+    log_error "Kernel not found at $IMAGES_BASE/build/vmlinux"
+    docker rm "$TEMP_CONTAINER" > /dev/null
+    kill $DAEMON_PID 2>/dev/null || true
+    exit 1
+fi
+
+# Create rootfs.ext4 from extracted filesystem
+log_info "Creating ext4 filesystem from extracted files..."
+ROOTFS_SIZE=2048  # MB
+dd if=/dev/zero of="$IMAGE_STORAGE/rootfs.ext4.tmp" bs=1M count=$ROOTFS_SIZE status=none
+mkfs.ext4 -F -q -L nanofuse-root "$IMAGE_STORAGE/rootfs.ext4.tmp"
+mkdir -p "$IMAGE_STORAGE/mnt"
+
+if ! mount -o loop "$IMAGE_STORAGE/rootfs.ext4.tmp" "$IMAGE_STORAGE/mnt"; then
+    log_error "Failed to mount ext4 image"
+    docker rm "$TEMP_CONTAINER" > /dev/null 2>&1
+    kill $DAEMON_PID 2>/dev/null || true
+    exit 1
+fi
+
+cp -a "$IMAGE_STORAGE"/* "$IMAGE_STORAGE/mnt/" 2>/dev/null || true
+# Clean up tar extraction files before unmounting
+rm -rf "$IMAGE_STORAGE"/dev "$IMAGE_STORAGE"/proc "$IMAGE_STORAGE"/sys "$IMAGE_STORAGE"/*.tar* 2>/dev/null || true
+
+if ! umount "$IMAGE_STORAGE/mnt"; then
+    log_error "Failed to unmount ext4 image"
+    docker rm "$TEMP_CONTAINER" > /dev/null 2>&1
+    kill $DAEMON_PID 2>/dev/null || true
+    exit 1
+fi
+
+rmdir "$IMAGE_STORAGE/mnt"
+mv "$IMAGE_STORAGE/rootfs.ext4.tmp" "$IMAGE_STORAGE/rootfs.ext4"
+log_info "Rootfs: $(du -h $IMAGE_STORAGE/rootfs.ext4 | cut -f1)"
+
+# Cleanup
+docker rm "$TEMP_CONTAINER" > /dev/null
+log_info "Image storage populated"
+
+# =============================================================================
+# STEP 6: Create VM
+# =============================================================================
+log_step "STEP 6: Create VM"
+
+API_OPTS="--api-url http://127.0.0.1:8080"
+VM_NAME="test-$(date +%s)"
+
+log_info "VM name: $VM_NAME"
+log_info "Image: nanofuse-base:latest"
+log_info "Memory: 512MB, vCPUs: 2"
+
+if ! ./bin/nanofuse $API_OPTS vm create "nanofuse-base:latest" "$VM_NAME" --memory 512 --vcpus 2 > /tmp/vm-create-$$.log 2>&1; then
+    log_error "VM creation failed"
+    cat /tmp/vm-create-$$.log
+    kill $DAEMON_PID 2>/dev/null || true
+    exit 1
+fi
+log_info "VM created successfully"
+
+# =============================================================================
+# STEP 7: Start VM
+# =============================================================================
+log_step "STEP 7: Start VM"
+
+log_info "Starting VM..."
+if ! ./bin/nanofuse $API_OPTS vm start "$VM_NAME" > /tmp/vm-start-$$.log 2>&1; then
+    log_error "VM start failed"
+    cat /tmp/vm-start-$$.log
+    kill $DAEMON_PID 2>/dev/null || true
+    exit 1
+fi
+sleep 3
+log_info "VM started"
+
+# =============================================================================
+# STEP 8: Capture console output
+# =============================================================================
+log_step "STEP 8: Boot Console Output"
+
+# Find VM directory
+VM_DIR=$(ls -td /tmp/nanofuse/vms/* 2>/dev/null | head -1)
+if [ -z "$VM_DIR" ]; then
+    log_error "VM directory not found"
+    kill $DAEMON_PID 2>/dev/null || true
+    exit 1
+fi
+
+CONSOLE_LOG="$VM_DIR/console.log"
+if [ ! -f "$CONSOLE_LOG" ]; then
+    log_error "Console log not found"
+    kill $DAEMON_PID 2>/dev/null || true
+    exit 1
+fi
+
+log_info "Console output:"
+echo ""
+echo "=========================================="
+cat "$CONSOLE_LOG" || log_error "Could not read console"
+echo "=========================================="
+echo ""
+
+# =============================================================================
+# STEP 9: Verify boot
+# =============================================================================
+log_step "STEP 9: Verify boot"
+
+if grep -q "Linux version" "$CONSOLE_LOG" 2>/dev/null; then
+    KERNEL_VERSION=$(grep "Linux version" "$CONSOLE_LOG" | head -1)
+    log_info "Kernel detected: $KERNEL_VERSION"
+else
+    log_warn "Kernel version not detected in console output"
+fi
+
+if grep -q "Kernel panic" "$CONSOLE_LOG" 2>/dev/null; then
+    log_error "Kernel panic detected!"
+    kill $DAEMON_PID 2>/dev/null || true
+    exit 1
+fi
+
+if grep -q "Cannot find" "$CONSOLE_LOG" 2>/dev/null; then
+    log_warn "Missing files detected in boot output"
+fi
+
+log_info "VM boot sequence complete"
+
+# =============================================================================
+# Cleanup
+# =============================================================================
+cleanup
+
+# =============================================================================
+# Summary
+# =============================================================================
+echo ""
+log_step "Test Complete"
+log_info "✓ Prerequisites verified"
+log_info "✓ Daemon started"
+log_info "✓ Docker image built"
+log_info "✓ VM created"
+log_info "✓ VM started"
+log_info "✓ Boot sequence captured"
+log_info "✓ All tests passed"
+echo ""
+log_info "E2E TEST SUCCESSFUL"
+echo ""

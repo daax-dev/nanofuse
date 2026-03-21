@@ -1,0 +1,149 @@
+#!/bin/bash
+set -euo pipefail
+
+# Test VM boot with existing image
+REPO_DIR="/home/jpoley/src/_mine/nanofuse"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_info() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+log_step() {
+    echo ""
+    echo "========================================="
+    echo "$1"
+    echo "========================================="
+}
+
+cd "$REPO_DIR"
+
+# Kill existing daemon
+log_step "Cleaning up old processes"
+pkill -f "nanofused" 2>/dev/null || true
+sleep 1
+
+# Start daemon
+log_step "Starting nanofused daemon"
+
+# Create config with absolute paths (for root)
+CONFIG_FILE="/tmp/nanofused-test.yaml"
+cat > "$CONFIG_FILE" << 'EOF'
+api:
+  socket: /tmp/nanofused.sock
+  socket_mode: "0660"
+  tcp_bind: "127.0.0.1:8080"
+
+storage:
+  data_dir: /tmp/nanofuse
+  database: /tmp/nanofuse/nanofuse.db
+
+firecracker:
+  binary_path: /usr/local/bin/firecracker
+
+limits:
+  max_vms: 10
+  max_total_memory_mib: 8192
+  max_vcpus_per_vm: 4
+  max_memory_per_vm_mib: 2048
+  max_snapshot_storage_gib: 20
+
+registry:
+  auth_config_path: /root/.docker/config.json
+
+logging:
+  level: info
+  format: text
+  console_log_max_size_mb: 10
+  console_log_max_backups: 3
+EOF
+
+log_info "Starting: sudo ./bin/nanofused --config $CONFIG_FILE"
+
+# Start daemon via systemd config (which is already running)
+# Or start directly if not already running
+if systemctl is-active --quiet nanofused; then
+    log_info "Daemon already running via systemd"
+    DAEMON_PID=$(pgrep -f "nanofused" | head -1)
+    log_info "Daemon PID: $DAEMON_PID"
+else
+    sudo ./bin/nanofused --config "$CONFIG_FILE" > /tmp/nanofused.log 2>&1 &
+    DAEMON_PID=$!
+    sleep 3
+
+    if ! ps -p $DAEMON_PID > /dev/null 2>&1; then
+        log_error "Daemon failed to start"
+        echo "Check log: cat /tmp/nanofused.log"
+        cat /tmp/nanofused.log
+        exit 1
+    fi
+    log_info "Daemon started (PID: $DAEMON_PID)"
+fi
+
+# Use TCP API instead of socket
+API_OPTS="--api-url http://127.0.0.1:8080"
+
+# Build Docker image
+log_step "Building Docker Image"
+IMAGES_BASE="/home/jpoley/src/_mine/nanofuse/images/base"
+log_info "Building Docker image from $IMAGES_BASE/Dockerfile"
+docker build -t nanofuse-base:test "$IMAGES_BASE" || {
+    log_error "Docker build failed"
+    exit 1
+}
+log_info "Docker image built: nanofuse-base:test"
+
+# Create VM using Docker image reference
+log_step "Creating VM"
+VM_NAME="test-$(date +%s)"
+log_info "VM name: $VM_NAME"
+log_info "Creating VM with image: nanofuse-base:test"
+
+# Try with simple image name first (without docker:// prefix)
+sudo ./bin/nanofuse $API_OPTS vm create "nanofuse-base:test" "$VM_NAME" --memory 512 --vcpus 2 || {
+    # If that fails, try with docker:// prefix
+    log_info "Retrying with docker:// prefix..."
+    sudo ./bin/nanofuse $API_OPTS vm create "docker://nanofuse-base:test" "$VM_NAME" --memory 512 --vcpus 2 || {
+        log_error "VM creation failed"
+        exit 1
+    }
+}
+
+# Start VM
+log_step "Starting VM"
+log_info "Starting: sudo ./bin/nanofuse $API_OPTS vm start $VM_NAME"
+sudo ./bin/nanofuse $API_OPTS vm start "$VM_NAME" || {
+    log_error "VM start failed"
+    exit 1
+}
+sleep 3
+
+# Show boot output
+log_step "Boot Console Output"
+VM_DIR=$(sudo ls -td /tmp/nanofuse/vms/* 2>/dev/null | head -1)
+if [ -n "$VM_DIR" ] && [ -f "$VM_DIR/console.log" ]; then
+    echo ""
+    sudo cat "$VM_DIR/console.log" || log_error "Could not read console"
+    echo ""
+else
+    log_error "Console log not found"
+fi
+
+log_step "Cleanup"
+log_info "Stopping VM..."
+sudo ./bin/nanofuse $API_OPTS vm stop "$VM_NAME" 2>/dev/null || true
+sleep 1
+
+log_info "Stopping daemon (PID: $DAEMON_PID)..."
+kill $DAEMON_PID 2>/dev/null || true
+pkill -f "nanofused" 2>/dev/null || true
+
+log_info "Test complete"

@@ -1,0 +1,60 @@
+# Agent Tools Layer
+# Provides AI agent CLI tools and common development utilities.
+#
+# Target size: ~50MB
+# Use case: AI agent execution (Claude Code, Codex, Gemini CLI)
+
+name: "agent-tools"
+version: "1.0.0"
+sha256: "2af888fde9475643a954fc4b77ca2d889b3d12d436c071ae5278c08382cbf8ed"
+size_mb: 132
+description: "AI agent CLI tools and development utilities"
+type: "application"
+
+dependencies:
+  - "base-os>=1.0.0"
+  - "python-runtime>=1.0.0"
+  - "node-runtime>=1.0.0"
+
+provides:
+  - "claude-code"
+  - "codex"
+  - "gemini-cli"
+  - "git"
+  - "dev-tools"
+
+files:
+  - path: "/usr/local/bin/claude"
+    mode: "0755"
+  - path: "/usr/local/bin/codex"
+    mode: "0755"
+  - path: "/usr/local/bin/gemini"
+    mode: "0755"
+  - path: "/usr/bin/git"
+    mode: "0755"
+  - path: "/usr/bin/jq"
+    mode: "0755"
+  - path: "/usr/bin/curl"
+    mode: "0755"
+
+systemd:
+  enable: []
+  mask: []
+
+config_schema:
+  install_claude_code:
+    type: boolean
+    default: true
+    description: "Install Claude Code CLI"
+  install_codex:
+    type: boolean
+    default: true
+    description: "Install OpenAI Codex CLI"
+  install_gemini_cli:
+    type: boolean
+    default: true
+    description: "Install Google Gemini CLI"
+  install_dev_tools:
+    type: boolean
+    default: true
+    description: "Install common dev tools (jq, curl, wget, etc.)"

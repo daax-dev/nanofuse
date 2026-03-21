@@ -1,0 +1,44 @@
+# Flowspec Hooks Configuration
+# Documentation: https://github.com/jpoley/flowspec/docs/guides/hooks.md
+
+version: "1.0"
+
+# Global defaults applied to all hooks
+defaults:
+  timeout: 30
+  fail_mode: continue
+
+hooks:
+  # Run tests after implementation (enabled by default)
+  - name: run-tests
+    events:
+      - type: implement.completed
+    script: run-tests.sh
+    description: Run test suite after implementation
+    enabled: true
+
+  # Update changelog on spec creation (opt-in, disabled by default)
+  - name: update-changelog
+    events:
+      - type: spec.created
+    script: update-changelog.sh
+    description: Auto-update CHANGELOG.md
+    enabled: false
+
+  # Run linter on task completion (enabled by default)
+  - name: lint-code
+    events:
+      - type: task.completed
+    script: lint-code.sh
+    description: Run code linter and formatter
+    enabled: true
+    timeout: 60
+
+  # Quality gate before validation (enabled by default)
+  - name: quality-gate
+    events:
+      - type: validate.started
+    script: quality-gate.sh
+    description: Check code quality metrics before validation
+    enabled: true
+    fail_mode: stop

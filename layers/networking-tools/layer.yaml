@@ -1,0 +1,63 @@
+# Networking Tools Layer
+# Provides advanced networking capabilities for the gateway microVM.
+# Includes iptables, nftables, and iproute2 for traffic control and routing.
+#
+# Target size: ~25MB
+# Use case: Network gateway, firewall, traffic routing
+
+name: "networking-tools"
+version: "1.0.0"
+sha256: "placeholder"
+size_mb: 25
+description: "Advanced networking tools for gateway and firewall capabilities"
+type: "feature"
+
+dependencies:
+  - "base-os>=1.0.0"
+
+provides:
+  - "iptables"
+  - "nftables"
+  - "iproute2-advanced"
+  - "ip-forwarding"
+  - "nat"
+  - "traffic-control"
+
+files:
+  - path: "/usr/sbin/iptables"
+    mode: "0755"
+  - path: "/usr/sbin/iptables-restore"
+    mode: "0755"
+  - path: "/usr/sbin/nft"
+    mode: "0755"
+  - path: "/sbin/ip"
+    mode: "0755"
+  - path: "/sbin/tc"
+    mode: "0755"
+  - path: "/etc/sysctl.d/99-gateway.conf"
+    mode: "0644"
+  - path: "/etc/nftables.conf"
+    mode: "0644"
+
+systemd:
+  enable:
+    - "nftables.service"
+  mask: []
+
+config_schema:
+  enable_iptables:
+    type: boolean
+    default: true
+    description: "Install and enable iptables"
+  enable_nftables:
+    type: boolean
+    default: true
+    description: "Install and enable nftables"
+  enable_ip_forwarding:
+    type: boolean
+    default: true
+    description: "Enable IP forwarding for routing"
+  default_policy:
+    type: string
+    default: "drop"
+    description: "Default firewall policy (accept, drop, reject). Layer defaults to 'drop' for security; gateway image overrides to 'accept' for application-level security."

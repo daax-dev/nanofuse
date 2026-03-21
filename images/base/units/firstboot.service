@@ -1,0 +1,38 @@
+[Unit]
+Description=NanoFuse First Boot Initialization
+Documentation=https://github.com/jpoley/nanofuse
+# Run early, before SSH
+Before=ssh.service sshd.service
+After=local-fs.target
+ConditionPathExists=!/var/lib/nanofuse/firstboot.done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Generate SSH host keys directly (faster than dpkg-reconfigure)
+ExecStart=/bin/bash -c ' \
+    set -euo pipefail; \
+    mkdir -p /var/log/nanofuse /var/lib/nanofuse; \
+    exec &>> /var/log/nanofuse/firstboot.log; \
+    echo "[$(date -Iseconds)] NanoFuse first boot starting..."; \
+    \
+    # Generate SSH host keys (idempotent - only creates missing key types) \
+    echo "[$(date -Iseconds)] Generating SSH host keys..."; \
+    ssh-keygen -A; \
+    echo "[$(date -Iseconds)] SSH host keys generated"; \
+    \
+    # Configure DNS (fallback if not set) \
+    if [ -L /etc/resolv.conf ] || [ ! -s /etc/resolv.conf ]; then \
+        rm -f /etc/resolv.conf; \
+        printf "nameserver 8.8.8.8\nnameserver 1.1.1.1\n" > /etc/resolv.conf; \
+        chmod 644 /etc/resolv.conf; \
+        echo "[$(date -Iseconds)] DNS configured"; \
+    fi; \
+    \
+    echo "[$(date -Iseconds)] First boot complete"; \
+    touch /var/lib/nanofuse/firstboot.done; \
+'
+
+[Install]
+WantedBy=multi-user.target

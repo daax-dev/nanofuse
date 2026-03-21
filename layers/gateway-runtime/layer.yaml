@@ -1,0 +1,65 @@
+# Gateway Runtime Layer
+# Provides the Go-based gateway binary for the nanofuse-gateway image.
+# Handles ingress/egress routing, load balancing, and API gateway functions.
+#
+# Target size: ~30MB
+# Use case: Network gateway logic, reverse proxy, load balancing
+
+name: "gateway-runtime"
+version: "1.0.0"
+sha256: "placeholder"
+size_mb: 30
+description: "Go gateway binary for ingress/egress control and load balancing"
+type: "application"
+
+dependencies:
+  - "base-os>=1.0.0"
+  - "networking-tools>=1.0.0"
+
+provides:
+  - "gateway-service"
+  - "reverse-proxy"
+  - "load-balancer"
+  - "api-routing"
+  - "health-checks"
+
+files:
+  - path: "/usr/local/bin/nanofuse-gateway"
+    mode: "0755"
+  - path: "/etc/systemd/system/nanofuse-gateway.service"
+    mode: "0644"
+  - path: "/etc/nanofuse/gateway.yaml"
+    mode: "0640"
+  - path: "/var/log/nanofuse/gateway"
+    mode: "0755"
+
+systemd:
+  enable:
+    - "nanofuse-gateway.service"
+  mask: []
+
+config_schema:
+  listen_port:
+    type: integer
+    default: 8080
+    description: "Main listener port for gateway traffic"
+  metrics_port:
+    type: integer
+    default: 9090
+    description: "Prometheus metrics endpoint port"
+  health_port:
+    type: integer
+    default: 8081
+    description: "Health check endpoint port"
+  upstream_timeout:
+    type: string
+    default: "30s"
+    description: "Timeout for upstream connections"
+  max_connections:
+    type: integer
+    default: 10000
+    description: "Maximum concurrent connections"
+  enable_access_log:
+    type: boolean
+    default: true
+    description: "Enable access logging"

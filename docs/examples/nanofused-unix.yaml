@@ -1,0 +1,66 @@
+# NanoFuse Daemon Configuration - Unix Socket Mode (Default)
+#
+# This is the default and recommended configuration for production use.
+# Unix sockets provide:
+#   - Maximum security (no network exposure)
+#   - Lowest latency (~300μs vs ~1.2ms for TCP)
+#   - OS-level access control via file permissions
+#
+# Use this for:
+#   - Single-host deployments
+#   - High-security environments
+#   - Local development
+#   - Production systems where remote access is not required
+
+api:
+  # Unix socket path (default: /var/run/nanofused.sock)
+  socket: "/var/run/nanofused.sock"
+
+  # Socket file permissions (octal)
+  socket_mode: "0660"  # rw-rw---- (owner + group)
+
+  # Socket group ownership
+  socket_group: "nanofuse"
+
+  # Note: tcp_bind is not set, so TCP mode is disabled
+
+storage:
+  data_dir: "/var/lib/nanofuse"
+  database: "/var/lib/nanofuse/nanofuse.db"
+
+firecracker:
+  binary_path: "/usr/local/bin/firecracker"
+
+limits:
+  max_vms: 50
+  max_total_memory_mib: 32768
+  max_vcpus_per_vm: 8
+  max_memory_per_vm_mib: 8192
+  max_snapshot_storage_gib: 100
+
+registry:
+  auth_config_path: "/root/.docker/config.json"
+
+logging:
+  level: "info"
+  format: "json"
+  console_log_max_size_mb: 10
+  console_log_max_backups: 3
+
+# User Access Setup:
+#
+# Grant non-root users access to the API:
+#   1. Create nanofuse group:
+#      sudo groupadd nanofuse
+#
+#   2. Add users to the group:
+#      sudo usermod -a -G nanofuse alice
+#      sudo usermod -a -G nanofuse bob
+#
+#   3. Users must log out and back in (or run newgrp nanofuse)
+#
+#   4. Verify access:
+#      nanofuse health
+#
+# Alternative (less secure):
+#   Set socket_mode to "0666" to allow all users (not recommended)

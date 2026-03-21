@@ -1,0 +1,51 @@
+# Node.js Runtime Layer
+# Provides Node.js 22 LTS with npm, pnpm, and bun for AI agents.
+#
+# Target size: ~120MB
+# Use case: JavaScript/TypeScript AI agents, Claude Code CLI
+
+name: "node-runtime"
+version: "1.0.0"
+sha256: "bc42f39e7ced1531e17390422d0e986f73a06eab0d45295b33ac531a6ed4bf00"
+size_mb: 466
+description: "Node.js 22 LTS runtime with npm, pnpm, and bun"
+type: "runtime"
+
+dependencies:
+  - "base-os>=1.0.0"
+
+provides:
+  - "nodejs"
+  - "npm"
+  - "pnpm"
+  - "bun"
+
+files:
+  - path: "/usr/local/bin/node"
+    mode: "0755"
+  - path: "/usr/local/bin/npm"
+    mode: "0755"
+  - path: "/usr/local/bin/npx"
+    mode: "0755"
+  - path: "/usr/local/bin/pnpm"
+    mode: "0755"
+  - path: "/usr/local/bin/bun"
+    mode: "0755"
+
+systemd:
+  enable: []
+  mask: []
+
+config_schema:
+  node_version:
+    type: string
+    default: "22"
+    description: "Node.js major version (LTS)"
+  install_pnpm:
+    type: boolean
+    default: true
+    description: "Install pnpm package manager"
+  install_bun:
+    type: boolean
+    default: true
+    description: "Install bun runtime/package manager"

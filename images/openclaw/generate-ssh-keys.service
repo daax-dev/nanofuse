@@ -1,0 +1,14 @@
+[Unit]
+Description=Generate SSH host keys on first boot
+Before=ssh.service sshd.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/generate-ssh-keys.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

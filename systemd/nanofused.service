@@ -1,0 +1,29 @@
+[Unit]
+Description=NanoFuse API Daemon
+Documentation=https://github.com/jpoley/nanofuse
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/nanofused --config /etc/nanofuse/nanofused.yaml
+Restart=on-failure
+RestartSec=5s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nanofused
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Working directory
+WorkingDirectory=/var/lib/nanofuse
+
+# User and group
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,78 @@
+# FalconDev Agents Image Manifest
+# Defines a microVM image for executing AI agents (Claude Code, Codex, etc.)
+# in isolated Firecracker microVMs with session recording capabilities.
+#
+# Reference: jp/falcondev/.flowspec/templates/devcontainer/devcontainer.json
+# Architecture: ADR-001 Layer-Based RootFS Architecture
+
+version: "1.0"
+name: "falcondev-agents"
+description: "MicroVM image for AI agent execution with session recording"
+
+kernel:
+  version: "5.10.245"
+  source: "local://test/fixtures/debug-kernel/vmlinux-5.10.245-no-acpi"
+  sha256: "placeholder"
+  cmdline: "console=ttyS0 root=/dev/vda rw init=/sbin/init panic=1 reboot=k"
+
+layers:
+  # Base OS Layer - Ubuntu 24.04 with systemd, SSH, networking
+  - name: "base-os"
+    type: "base"
+    source: "local://layers/base-os"
+    required: true
+    config:
+      timezone: "UTC"
+
+  # Python Runtime Layer - Python 3.12 with pip, venv, wheel
+  - name: "python-runtime"
+    type: "runtime"
+    source: "local://layers/python-runtime"
+    required: true
+    dependencies:
+      - "base-os"
+    config:
+      python_version: "3.12"
+
+  # Node.js Runtime Layer - Node.js 22 LTS with npm, pnpm, bun
+  - name: "node-runtime"
+    type: "runtime"
+    source: "local://layers/node-runtime"
+    required: true
+    dependencies:
+      - "base-os"
+    config:
+      node_version: "22"
+
+  # Recording Agent Layer - Session capture via virtio-vsock
+  - name: "recording-agent"
+    type: "feature"
+    source: "local://layers/recording-agent"
+    condition: "${INCLUDE_RECORDING:-true}"
+    dependencies:
+      - "base-os"
+    config:
+      vsock_port: 52
+      buffer_size_mb: 16
+      capture_modes:
+        - "terminal"
+        - "file_io"
+
+  # Agent Tools Layer - Claude Code CLI, git, common dev tools
+  - name: "agent-tools"
+    type: "application"
+    source: "local://layers/agent-tools"
+    required: true
+    dependencies:
+      - "python-runtime"
+      - "node-runtime"
+    config:
+      install_claude_code: true
+      install_codex: true
+      install_gemini_cli: true
+
+output:
+  path: "./build/falcondev-agents"
+  format: "ext4"
+  size_mb: 2048
+  compression: "none"

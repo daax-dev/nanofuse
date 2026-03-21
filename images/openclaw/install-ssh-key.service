@@ -1,0 +1,14 @@
+[Unit]
+Description=Install SSH key from kernel cmdline
+Before=ssh.service sshd.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/install-ssh-key.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

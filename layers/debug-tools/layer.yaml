@@ -1,0 +1,51 @@
+# Debug Tools Layer
+# Provides debugging and diagnostic tools for NanoFuse microVMs.
+#
+# Approximate compressed layer size: ~62MB (incremental size added to base-os, including GDB)
+# Use case: Debugging, tracing, and network diagnostics
+
+name: "debug-tools"
+version: "1.0.0"
+sha256: "TO_BE_COMPUTED"
+size_mb: 62
+description: "Debugging and diagnostic tools for microVM troubleshooting"
+type: "feature"
+
+dependencies:
+  - "base-os>=1.0.0"
+
+provides:
+  - "debugging"
+  - "network-tools"
+  - "tracing"
+  - "syscall-tracing"
+  - "process-monitoring"
+
+files:
+  - path: "/usr/bin/strace"
+    mode: "0755"
+  - path: "/usr/bin/ltrace"
+    mode: "0755"
+  - path: "/usr/bin/gdb"
+    mode: "0755"
+  - path: "/usr/bin/tcpdump"
+    mode: "0755"
+  - path: "/usr/bin/htop"
+    mode: "0755"
+  - path: "/usr/bin/curl"
+    mode: "0755"
+  - path: "/usr/bin/wget"
+    mode: "0755"
+  - path: "/usr/local/bin/debug-help"
+    mode: "0755"
+  - path: "/usr/local/bin/init-debug-capabilities"
+    mode: "0755"
+
+systemd:
+  enable: []
+  mask: []
+
+# NOTE: config_schema is reserved for future conditional installation support.
+# Currently all tools are installed unconditionally via the Dockerfile.
+# To customize, build a variant layer or modify the Dockerfile directly.
+config_schema: {}

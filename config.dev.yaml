@@ -1,0 +1,30 @@
+# NanoFuse Development Configuration
+# This is a local development config for testing
+
+api:
+  socket: /tmp/nanofused.sock
+  socket_mode: "0660"
+  tcp_bind: "127.0.0.1:8080"  # Enable TCP for easier testing
+
+storage:
+  data_dir: /tmp/nanofuse
+  database: /tmp/nanofuse/nanofuse.db
+
+firecracker:
+  binary_path: /usr/local/bin/firecracker
+
+limits:
+  max_vms: 10
+  max_total_memory_mib: 8192
+  max_vcpus_per_vm: 4
+  max_memory_per_vm_mib: 2048
+  max_snapshot_storage_gib: 20
+
+registry:
+  auth_config_path: ~/.docker/config.json
+
+logging:
+  level: info
+  format: text
+  console_log_max_size_mb: 10
+  console_log_max_backups: 3

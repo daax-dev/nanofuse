@@ -1,0 +1,56 @@
+# Base OS Layer
+# Ubuntu 24.04 minimal with systemd for NanoFuse microVMs.
+# This is the foundation layer that all other layers depend on.
+#
+# Target size: ~150MB
+# Use case: Foundation for all NanoFuse microVM images
+
+name: "base-os"
+version: "1.0.0"
+sha256: "139090c3738a3be2babb6d3f61565c252e49819fa0e06f75cc4103a252de01b2"
+size_mb: 185
+description: "Ubuntu 24.04 minimal with systemd for Firecracker microVMs"
+type: "base"
+
+dependencies: []
+
+provides:
+  - "ubuntu-24.04"
+  - "systemd"
+  - "networking"
+  - "ssh"
+  - "init"
+
+files:
+  - path: "/sbin/init"
+    mode: "0755"
+  - path: "/lib/systemd/systemd"
+    mode: "0755"
+  - path: "/usr/sbin/sshd"
+    mode: "0755"
+  - path: "/etc/netplan/01-netcfg.yaml"
+    mode: "0600"
+
+systemd:
+  enable:
+    - "systemd-networkd.service"
+    - "ssh.service"
+    - "serial-getty@ttyS0.service"
+  mask:
+    - "systemd-resolved.service"
+    - "systemd-networkd-wait-online.service"
+    - "plymouth-quit-wait.service"
+
+config_schema:
+  hostname:
+    type: string
+    default: "nanofuse"
+    description: "System hostname"
+  enable_ssh:
+    type: boolean
+    default: true
+    description: "Enable SSH server"
+  root_ssh_keys:
+    type: array
+    default: []
+    description: "SSH public keys for root login"

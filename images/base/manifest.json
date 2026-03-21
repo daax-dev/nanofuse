@@ -1,0 +1,23 @@
+  {
+    "version": "0.1.0",
+    "name": "nanofuse-base",
+    "tag": "latest",
+    "architecture": "x86_64",
+    "base_os": "ubuntu:24.04",
+    "kernel": {
+      "version": "6.1.90",
+      "source": "Built from source with Firecracker microVM config",
+      "cmdline": "console=ttyS0 root=/dev/vda1 rw panic=1 reboot=k",
+      "file": "vmlinux"
+    },
+    "rootfs": {
+      "format": "ext4",
+      "file": "rootfs.ext4",
+      "size_bytes": 2147483648
+    },
+    "services": {
+      "ssh": {"enabled": true, "port": 22},
+      "systemd-networkd": {"enabled": true}
+    },
+    "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  }

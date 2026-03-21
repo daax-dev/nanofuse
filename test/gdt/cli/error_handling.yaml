@@ -1,0 +1,53 @@
+name: CLI Error Handling Boundaries
+description: Tests CLI behavior at error boundaries
+
+tests:
+  # Test 1: Version flag works without daemon
+  - name: version-works-without-daemon
+    description: Version flag should work even without daemon
+    shell: bash
+    exec: nanofuse --version
+    assert:
+      exit-code: 0
+
+  # Test 2: Help flag works without daemon
+  - name: help-works-without-daemon
+    description: Help flag should work without daemon
+    shell: bash
+    exec: nanofuse --help
+    assert:
+      exit-code: 0
+
+  # Test 3: Unknown command returns non-zero
+  - name: unknown-command-fails
+    description: Unknown command should return non-zero exit code
+    shell: bash
+    exec: nanofuse this-command-does-not-exist
+    assert:
+      exit-code: 1
+
+  # Test 4: VM start without ID fails
+  - name: vm-start-missing-id
+    description: VM start without ID should fail
+    shell: bash
+    exec: nanofuse vm start
+    assert:
+      exit-code: 1
+
+  # Test 5: Invalid flag fails
+  - name: invalid-flag-error
+    description: Unknown flag should return error
+    shell: bash
+    exec: nanofuse vm list --this-flag-does-not-exist
+    assert:
+      exit-code: 1
+
+  # Test 6: Daemon not running connection fails
+  # Exit code 3 is the nanofuse CLI's specific code for connection failures
+  # (daemon not running or socket unreachable). This is defined in cmd/nanofuse/main.go.
+  - name: daemon-not-running-fails
+    description: Commands requiring daemon should fail when not running
+    shell: bash
+    exec: nanofuse --api-socket /tmp/nonexistent-nanofused-test.sock vm list
+    assert:
+      exit-code: 3

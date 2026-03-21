@@ -1,0 +1,137 @@
+# Recording Layer Test Manifest
+# This manifest defines a recording layer configuration for integration testing.
+# It configures the recording agent to connect to the host via virtio-vsock.
+#
+# Note: apiVersion nanofuse.io/v1 and kind LayerManifest follow the pattern
+# established for NanoFuse layer definitions. Schema validation is performed
+# by the manifest parser in internal/manifest package.
+
+apiVersion: nanofuse.io/v1
+kind: LayerManifest
+metadata:
+  name: recording-layer-test
+  labels:
+    purpose: integration-testing
+    component: recording
+
+spec:
+  # Layer identification
+  type: recording
+  version: "1.0.0"
+
+  # Condition for enabling recording
+  # In tests, this can be overridden via environment variables
+  condition:
+    type: always  # Options: always, env, config
+    # For conditional enabling:
+    # type: env
+    # variable: NANOFUSE_RECORDING_ENABLED
+    # value: "true"
+
+  # Recording agent configuration
+  agent:
+    # Path to agent binary inside the rootfs
+    binaryPath: /usr/local/bin/nanofuse-agent
+
+    # Service configuration (systemd)
+    service:
+      name: nanofuse-recording
+      type: simple
+      startAfter:
+        - network.target
+        - multi-user.target
+      restartPolicy: on-failure
+      restartSec: 5
+
+    # Agent settings
+    settings:
+      # Vsock port to connect to host receiver
+      vsockPort: 52
+
+      # Event buffer size
+      bufferSize: 1000
+
+      # Batch flush interval
+      flushInterval: 5s
+
+      # Terminal capture settings
+      terminal:
+        enabled: true
+        captureInput: true
+        captureOutput: true
+        maxPayloadSize: 65536
+
+      # File capture settings (optional)
+      files:
+        enabled: false
+        watchPaths: []
+
+      # Network capture settings (optional)
+      network:
+        enabled: false
+        captureRequests: false
+        captureResponses: false
+
+  # Files to add to the layer
+  # Note: These paths represent the expected layout for a production recording layer.
+  # For unit tests, mock implementations are used instead of actual binaries.
+  # In a full integration test with real VMs, these files would be built separately.
+  files:
+    # The recording agent binary (built from cmd/nanofuse-agent)
+    - source: agent/nanofuse-agent
+      destination: /usr/local/bin/nanofuse-agent
+      mode: "0755"
+
+    # Systemd service file for the recording agent
+    - source: agent/nanofuse-recording.service
+      destination: /etc/systemd/system/nanofuse-recording.service
+      mode: "0644"
+
+  # Post-install hooks
+  hooks:
+    postInstall:
+      - command: systemctl daemon-reload
+      - command: systemctl enable nanofuse-recording.service
+
+  # Layer dependencies
+  dependencies: []
+
+---
+# Test-specific configuration overrides
+apiVersion: nanofuse.io/v1
+kind: LayerConfig
+metadata:
+  name: recording-layer-test-config
+
+spec:
+  # Reference to the layer manifest
+  layerRef: recording-layer-test
+
+  # Override settings for testing
+  overrides:
+    agent:
+      settings:
+        # Use shorter intervals for faster tests
+        flushInterval: 1s
+        bufferSize: 100
+
+        # Enable all capture types for comprehensive testing
+        terminal:
+          enabled: true
+          captureInput: true
+          captureOutput: true
+
+        files:
+          enabled: true
+          watchPaths:
+            - /tmp/test-*
+
+        network:
+          enabled: true
+          captureRequests: true
+          captureResponses: true
+
+  # Test-specific environment variables
+  environment:
+    NANOFUSE_RECORDING_DEBUG: "true"
+    NANOFUSE_RECORDING_LOG_LEVEL: "debug"

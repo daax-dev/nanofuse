@@ -1,0 +1,38 @@
+[Unit]
+Description=Clawdbot AI Agent Gateway
+Documentation=https://docs.clawd.bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clawdbot
+Group=clawdbot
+WorkingDirectory=/home/clawdbot
+
+# Main process — use /usr/bin/env so clawdbot is resolved from PATH,
+# since npm global install location varies by platform configuration.
+ExecStart=/usr/bin/env clawdbot gateway
+
+# Restart policy
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# Environment
+Environment=NODE_ENV=production
+Environment=HOME=/home/clawdbot
+
+# Security hardening (optional, can be relaxed if needed)
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/clawdbot
+PrivateTmp=true
+
+# Logging (goes to journald)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=clawdbot
+
+[Install]
+WantedBy=multi-user.target

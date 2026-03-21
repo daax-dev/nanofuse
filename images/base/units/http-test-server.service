@@ -1,0 +1,19 @@
+[Unit]
+Description=NanoFuse HTTP Test Server
+Documentation=https://github.com/jpoley/nanofuse
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+# Simple HTTP server on port 8080 (doesn't require root)
+# Returns a JSON response for port forwarding tests
+ExecStartPre=/bin/bash -c 'mkdir -p /var/www && echo "{\"message\":\"Hello from NanoFuse VM\",\"service\":\"http-test-server\",\"version\":\"1.0\"}" > /var/www/index.html'
+ExecStart=/bin/bash -c 'cd /var/www && python3 -m http.server 8080'
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

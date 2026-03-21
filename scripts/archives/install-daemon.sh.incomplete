@@ -1,0 +1,79 @@
+#!/bin/bash
+# Install nanofused daemon and systemd service
+
+set -e
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVICE_FILE="$REPO_DIR/systemd/nanofused.service"
+CONFIG_FILE="$REPO_DIR/config.dev.yaml"
+
+echo "========================================"
+echo "NanoFuse Daemon Installation"
+echo "========================================"
+echo ""
+
+if [ ! -f "$SERVICE_FILE" ]; then
+    echo "ERROR: Service file not found: $SERVICE_FILE"
+    exit 1
+fi
+
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "ERROR: Config file not found: $CONFIG_FILE"
+    exit 1
+fi
+
+# Check if running as root
+if [ $EUID -ne 0 ]; then
+    echo "ERROR: This script must be run with sudo"
+    echo ""
+    echo "Run with:"
+    echo "  sudo $0"
+    exit 1
+fi
+
+echo "[1/5] Installing systemd service file..."
+cp "$SERVICE_FILE" /etc/systemd/system/nanofused.service
+chmod 644 /etc/systemd/system/nanofused.service
+echo "✓ Service file installed to /etc/systemd/system/nanofused.service"
+
+echo ""
+echo "[2/5] Creating required directories..."
+mkdir -p /etc/nanofuse
+mkdir -p /var/lib/nanofuse
+echo "✓ Directories created"
+
+echo ""
+echo "[3/5] Installing configuration file..."
+cp "$CONFIG_FILE" /etc/nanofuse/nanofused.yaml
+chmod 644 /etc/nanofuse/nanofused.yaml
+echo "✓ Config file installed to /etc/nanofuse/nanofused.yaml"
+
+echo ""
+echo "[4/5] Reloading systemd daemon..."
+systemctl daemon-reload
+echo "✓ Systemd reloaded"
+
+echo ""
+echo "[5/5] Enabling service on boot..."
+systemctl enable nanofused.service
+echo "✓ Service enabled"
+
+echo ""
+echo "========================================"
+echo "Installation Complete!"
+echo "========================================"
+echo ""
+echo "Next steps:"
+echo ""
+echo "1. Start the daemon:"
+echo "   sudo systemctl start nanofused.service"
+echo ""
+echo "2. Check status:"
+echo "   sudo systemctl status nanofused.service"
+echo ""
+echo "3. Watch logs:"
+echo "   sudo journalctl -u nanofused.service -f"
+echo ""
+echo "4. Test the API:"
+echo "   ./bin/nanofuse vm list"
+echo ""

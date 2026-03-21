@@ -1,0 +1,44 @@
+# Python Runtime Layer
+# Provides Python 3.12 with pip, venv, and common packages for AI agents.
+#
+# Target size: ~80MB
+# Use case: Python-based AI agents, flowspec CLI, data processing
+
+name: "python-runtime"
+version: "1.0.0"
+sha256: "3844d42524668ae631a344d3b6eab3e78eda0e4df820890019b398b6107343a7"
+size_mb: 159
+description: "Python 3.12 runtime with pip, venv, and common packages"
+type: "runtime"
+
+dependencies:
+  - "base-os>=1.0.0"
+
+provides:
+  - "python"
+  - "pip"
+  - "venv"
+
+files:
+  - path: "/usr/bin/python3"
+    mode: "0755"
+  - path: "/usr/bin/pip3"
+    mode: "0755"
+  - path: "/usr/local/bin/python"
+    mode: "0755"
+  - path: "/usr/local/bin/pip"
+    mode: "0755"
+
+systemd:
+  enable: []
+  mask: []
+
+config_schema:
+  python_version:
+    type: string
+    default: "3.12"
+    description: "Python version to install"
+  install_common_packages:
+    type: boolean
+    default: true
+    description: "Install common packages (requests, pyyaml, etc.)"

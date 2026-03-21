@@ -1,0 +1,56 @@
+name: PR Comments
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  comment-build-info:
+    name: Comment Build Info
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Comment PR
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const repo = context.repo;
+            const sha = context.payload.pull_request.head.sha;
+
+            const comment = `## 🚀 Build Information
+
+            This PR will trigger the following CI/CD jobs:
+
+            - ✅ **Build Go Binaries**: CLI and daemon for Linux x86_64
+            - ✅ **Run Tests**: Unit tests with coverage reporting
+            - ✅ **Security Scan**: Trivy vulnerability scanning
+            - ✅ **Lint**: golangci-lint code quality checks
+            - ✅ **Build Docker Image**: Base microVM image (build only, no push)
+
+            ### 📦 Artifacts
+
+            Once the build completes, binaries will be available as GitHub Actions artifacts for 7 days.
+
+            ### 🐳 Docker Image
+
+            The Docker image will be built but **not pushed** to GHCR (only on merge to main).
+
+            ### 🔍 Next Steps
+
+            - Review the code changes
+            - Ensure all CI checks pass
+            - Merge to \`main\` to publish artifacts
+
+            ---
+
+            Commit: \`${sha.substring(0, 7)}\`
+            `;
+
+            github.rest.issues.createComment({
+              ...repo,
+              issue_number: prNumber,
+              body: comment
+            });

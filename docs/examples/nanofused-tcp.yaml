@@ -1,0 +1,58 @@
+# NanoFuse Daemon Configuration - TCP Mode
+#
+# This configuration enables TCP socket mode for remote API access.
+# Use this when you need to manage VMs from remote hosts.
+#
+# Security Warning:
+# - TCP mode exposes the API to the network
+# - Always use firewalls to restrict access
+# - Consider implementing reverse proxy with authentication
+# - TLS/SSL is not yet implemented (TODO)
+
+api:
+  # TCP binding - enables network access
+  # Examples:
+  #   ":8080"              - All interfaces, port 8080
+  #   "0.0.0.0:8080"       - All interfaces (explicit)
+  #   "127.0.0.1:8080"     - Localhost only (safe for local debugging)
+  #   "10.0.1.50:8080"     - Specific interface
+  tcp_bind: "0.0.0.0:8080"
+
+  # Unix socket still required for fallback (ignored when tcp_bind is set)
+  socket: "/var/run/nanofused.sock"
+
+storage:
+  data_dir: "/var/lib/nanofuse"
+  database: "/var/lib/nanofuse/nanofuse.db"
+
+firecracker:
+  binary_path: "/usr/local/bin/firecracker"
+
+limits:
+  max_vms: 50
+  max_total_memory_mib: 32768
+  max_vcpus_per_vm: 8
+  max_memory_per_vm_mib: 8192
+  max_snapshot_storage_gib: 100
+
+registry:
+  auth_config_path: "/root/.docker/config.json"
+
+logging:
+  level: "info"
+  format: "json"
+  console_log_max_size_mb: 10
+  console_log_max_backups: 3
+
+# Recommended Firewall Setup (iptables):
+#
+# Allow access from specific subnet only:
+#   iptables -A INPUT -p tcp --dport 8080 -s 10.0.0.0/8 -j ACCEPT
+#   iptables -A INPUT -p tcp --dport 8080 -j DROP
+#
+# Allow access from VPN network:
+#   iptables -A INPUT -p tcp --dport 8080 -i wg0 -j ACCEPT
+#   iptables -A INPUT -p tcp --dport 8080 -j DROP
+#
+# Localhost only (no firewall needed):
+#   Change tcp_bind to "127.0.0.1:8080"

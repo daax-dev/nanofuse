@@ -1,0 +1,18 @@
+version: "1.0"
+name: test-single-layer
+description: Test image with single base layer
+
+kernel:
+  path: ../../debug-kernel/vmlinux-6.1.155
+  cmdline: "console=ttyS0 reboot=k panic=1"
+
+layers:
+  - name: base
+    type: base
+    source: file://../layers/base-layer.tar.gz
+    required: true
+
+output:
+  format: ext4
+  size_mb: 256
+  compression: none

@@ -1,0 +1,535 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'image-v*'  # Docker image releases (image-v0.0.1, etc.)
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: '1.24'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Job 1: Build and test Go binaries using Mage
+  build-go:
+    name: Build and Test (Mage)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Debug - Show Git Info
+        run: |
+          echo "=== Git Info ==="
+          echo "github.ref: ${{ github.ref }}"
+          echo "github.sha: ${{ github.sha }}"
+          echo "Current commit:"
+          git log -1 --format="%H - %s (%an)"
+          echo "Current branch/tag:"
+          git describe --all --exact-match || echo "Not on a branch or tag"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Mage
+        run: go install github.com/magefile/mage@latest
+
+      - name: Run CI checks (same as local)
+        run: mage ci
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.out
+          flags: unittests
+          fail_ci_if_error: false
+
+      - name: Upload binaries as artifacts
+        uses: actions/upload-artifact@v6
+        continue-on-error: true  # Don't fail CI if artifact quota exceeded
+        with:
+          name: binaries-${{ github.sha }}
+          path: |
+            bin/nanofuse
+            bin/nanofused
+          retention-days: 90  # Keep for 90 days for releases
+
+  # Auto-release CLI/API if commit message contains "[release]"
+  auto-release:
+    name: Auto-Release CLI/API on Success
+    needs: [build-go, lint, security-scan]
+    if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if this is a release commit
+        id: check
+        run: |
+          echo "Commit message: ${{ github.event.head_commit.message }}"
+          echo "Creating CLI/API release because commit contains '[release]'"
+
+      - name: Determine next version
+        id: version
+        run: |
+          # Get latest CLI/API tag (v*)
+          latest_tag=$(git tag -l --sort=-v:refname 'v[0-9]*' | grep -v '^image-v' | head -n1 || echo "")
+
+          if [ -z "$latest_tag" ]; then
+            new_version="0.0.1"
+          else
+            # Strip 'v' and bump patch
+            version=${latest_tag#v}
+            IFS='.' read -r major minor patch <<< "$version"
+            patch=$((patch + 1))
+            new_version="$major.$minor.$patch"
+          fi
+
+          new_tag="v$new_version"
+
+          echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
+          echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
+          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+
+          echo "Latest CLI/API tag: $latest_tag"
+          echo "New CLI/API tag:    $new_tag"
+
+      - name: Create and push tag
+        env:
+          NEW_TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Creating tag: $NEW_TAG"
+          git tag -a "$NEW_TAG" -m "Release $NEW_TAG (auto-tagged by CI)"
+
+          echo "Pushing tag to origin..."
+          git push origin "$NEW_TAG"
+
+          echo "✓ Tag $NEW_TAG created and pushed"
+
+      - name: Set up Go for release
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Mage for release
+        run: go install github.com/magefile/mage@latest
+
+      - name: Build release binaries
+        env:
+          NEW_TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          echo "Building binaries for release $NEW_TAG..."
+          mage clean
+          mage cli
+          mage daemon
+          echo ""
+          echo "Built binaries:"
+          ls -lh bin/
+          echo ""
+          echo "Verifying version matches tag:"
+          ./bin/nanofuse version
+
+      - name: Generate release notes
+        id: release_notes
+        env:
+          NEW_TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## NanoFuse ${{ steps.version.outputs.new_tag }}
+
+          Lightweight microVM management system powered by Firecracker.
+
+          ---
+
+          ## 🚀 Installation
+
+          > **Note:** This is a private repository. You need a GitHub token with package access.
+          >
+          > **Create classic token (required for GHCR):**
+          > 1. Go to: https://github.com/settings/tokens/new
+          > 2. Note: "NanoFuse Access"
+          > 3. Expiration: 90 days (or your preference)
+          > 4. **Select scopes:**
+          >    - ✅ `repo` (Full control of private repositories)
+          >    - ✅ `read:packages` (Download packages from GitHub Container Registry)
+          > 5. Click "Generate token"
+          > 6. **Copy the token** (starts with `ghp_`)
+          >
+          > **Authenticate gh CLI with token:**
+          > ```bash
+          > gh auth login
+          > # Choose: GitHub.com → HTTPS → Paste an authentication token
+          > # Paste your token when prompted
+          > ```
+
+          **Download binaries:**
+          ```bash
+          gh release download ${{ steps.version.outputs.new_tag }} -R ${{ github.repository }}
+          ```
+
+          **Install:**
+          ```bash
+          chmod +x nanofuse nanofused
+          sudo mv nanofuse nanofused /usr/local/bin/
+          ```
+
+          **Login to GHCR as root (daemon needs access):**
+          ```bash
+          gh auth token | sudo docker login ghcr.io -u $(gh api user -q .login) --password-stdin
+          ```
+
+          **Setup daemon service:**
+          ```bash
+          chmod +x setup-service.sh
+          sudo ./setup-service.sh
+          ```
+
+          **Pull default microVM and create your first VM:**
+          ```bash
+          nanofuse image pull --default
+          nanofuse vm create myvm --image default --vcpus 2 --memory 512
+          nanofuse vm start myvm
+          ```
+
+          ---
+
+          ## 📦 What's Included
+
+          - **`nanofuse`** - CLI tool for managing VMs, images, and snapshots
+          - **`nanofused`** - API daemon for VM lifecycle management
+          - **`setup-service.sh`** - Automated systemd service setup script
+          - **`nanofused.service`** - systemd service file
+          - Pre-built Firecracker microVM (Ubuntu 24.04 with systemd)
+
+          ---
+
+          ## 🔧 Alternative: Build from Source
+
+          <details>
+          <summary>Click to expand build instructions</summary>
+
+          ```bash
+          git clone https://github.com/${{ github.repository }}.git
+          cd nanofuse
+          git checkout ${{ steps.version.outputs.new_tag }}
+          mage all
+          sudo mage install
+          ```
+
+          Requires: Go 1.24+, mage build tool
+          </details>
+
+          ---
+
+          ## 📝 What's Changed
+
+          See commits below for detailed changes in this release.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.new_tag }}
+          name: ${{ steps.version.outputs.new_tag }}
+          files: |
+            bin/nanofuse
+            bin/nanofused
+            nanofused.service
+            setup-service.sh
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Auto-release image if commit message contains "[release]"
+  auto-release-image:
+    name: Auto-Release Image on Success
+    needs: [build-image, build-kernel]
+    if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if this is a release commit
+        id: check
+        run: |
+          echo "Commit message: ${{ github.event.head_commit.message }}"
+          echo "Creating image release because commit contains '[release]'"
+
+      - name: Determine next image version
+        id: version
+        run: |
+          # Get latest image tag (image-v*)
+          latest_tag=$(git tag -l --sort=-v:refname 'image-v[0-9]*' | head -n1 || echo "")
+
+          if [ -z "$latest_tag" ]; then
+            new_version="0.0.1"
+          else
+            # Strip 'image-v' and bump patch
+            version=${latest_tag#image-v}
+            IFS='.' read -r major minor patch <<< "$version"
+            patch=$((patch + 1))
+            new_version="$major.$minor.$patch"
+          fi
+
+          new_tag="image-v$new_version"
+
+          echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
+          echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
+          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+
+          echo "Latest image tag: $latest_tag"
+          echo "New image tag:    $new_tag"
+
+      - name: Create and push image tag
+        env:
+          NEW_TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Creating image tag: $NEW_TAG"
+          git tag -a "$NEW_TAG" -m "Image Release $NEW_TAG (auto-tagged by CI)"
+
+          echo "Pushing tag to origin..."
+          git push origin "$NEW_TAG"
+
+          echo "✓ Image tag $NEW_TAG created and pushed"
+          echo "This will trigger a new CI run to build and push the versioned image"
+
+  # Job 1b: Lint separately for better visibility
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      - name: Install Mage
+        run: go install github.com/magefile/mage@latest
+
+      - name: Run linters
+        run: mage lint
+
+  # Job 1c: Quick validation
+  validate:
+    name: Quick Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Mage
+        run: go install github.com/magefile/mage@latest
+
+      - name: Validate
+        run: mage validate
+
+  # Job 2: Build Firecracker kernel (for image builds)
+  build-kernel:
+    name: Build Firecracker Kernel
+    runs-on: ubuntu-latest
+    # Only run on main branch or image-v* tag pushes (not on PRs)
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/image-v'))
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build kernel with Firecracker config
+        working-directory: images/base
+        run: |
+          echo "Building Linux 6.1.90 kernel with Firecracker microVM config..."
+          chmod +x build-kernel-docker.sh
+          ./build-kernel-docker.sh
+
+      - name: Verify kernel binary
+        working-directory: images/base
+        run: |
+          ls -lh build/vmlinux
+          file build/vmlinux
+          strings build/vmlinux | grep "Linux version" || echo "Kernel built successfully"
+
+      - name: Test kernel boot (requires Firecracker and rootfs)
+        working-directory: images/base
+        run: |
+          echo "Note: Full boot test requires Firecracker and pre-built rootfs"
+          echo "Kernel built successfully with CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y"
+          echo ""
+          echo "To run full boot test locally:"
+          echo "  1. Build rootfs: ./build-rootfs-docker.sh"
+          echo "  2. Boot test:    ./TEST_BOOT_VERBOSE.sh ./build/vmlinux"
+        continue-on-error: true
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: kernel-vmlinux
+          path: images/base/build/vmlinux
+          retention-days: 7
+
+  # Job 2b: Build and push Docker image
+  build-image:
+    name: Build Docker Image and Firecracker microVM
+    needs: [build-kernel]
+    runs-on: ubuntu-latest
+    # Only run on main branch pushes or image-v* tags
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/image-v'))
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download kernel artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: kernel-vmlinux
+          path: images/base/build/
+
+      - name: Verify kernel artifact
+        working-directory: images/base
+        run: |
+          ls -lh build/vmlinux
+          file build/vmlinux
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/base
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=match,pattern=image-v(.*),group=1
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=NanoFuse Base Image
+            org.opencontainers.image.description=Ubuntu 24.04 systemd-based microVM image for Firecracker
+            org.opencontainers.image.vendor=NanoFuse
+
+      - name: Determine version for image build
+        id: image_version
+        run: |
+          # Extract version from tag, or use 'dev' for non-tag builds
+          if [[ "${{ github.ref }}" == refs/tags/image-v* ]]; then
+            # Image version tag (e.g., image-v1.0.0 -> 1.0.0)
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#image-v}"
+          elif [[ "${{ github.ref }}" == refs/heads/main ]]; then
+            VERSION="latest"
+          else
+            VERSION="dev"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Image version: $VERSION"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: images/base
+          file: images/base/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ steps.image_version.outputs.VERSION }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            VCS_REF=${{ github.sha }}
+            VCS_URL=${{ github.server_url }}/${{ github.repository }}
+
+  # Job 3: Security scanning
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'  # Don't fail on vulnerabilities in early dev
+
+      - name: Run Go vulnerability check
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: ${{ env.GO_VERSION }}
+

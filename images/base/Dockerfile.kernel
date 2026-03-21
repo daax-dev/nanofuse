@@ -1,0 +1,55 @@
+# Multi-stage Dockerfile to build Firecracker-compatible Linux kernel
+# Builds: Linux 6.1.90 with Firecracker microVM optimizations
+# Output: vmlinux binary for use with Firecracker
+
+FROM ubuntu:24.04 AS kernel-builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    build-essential \
+    libelf-dev \
+    libssl-dev \
+    bc \
+    bison \
+    flex \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Configure git to skip SSL verification (for Docker build environments)
+RUN git config --global http.sslVerify false
+
+# Clone Linux kernel source (6.1 LTS)
+RUN git clone --depth 1 --branch v6.1.90 https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux
+
+WORKDIR /build/linux
+
+# Download Firecracker's official kernel config (skip SSL verification)
+RUN curl -fsSL -k -o .config \
+    https://raw.githubusercontent.com/firecracker-microvm/firecracker/main/resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config
+
+# Verify VIRTIO_MMIO is in the config
+RUN echo "=== CONFIG CHECK BEFORE ===" && \
+    grep "CONFIG_VIRTIO_MMIO=" .config
+
+# Apply configuration
+RUN make olddefconfig
+
+# CRITICAL FIX: Enable VIRTIO_MMIO_CMDLINE_DEVICES so Firecracker's device parameters are parsed
+RUN echo "=== ENABLING CMDLINE_DEVICES ===" && \
+    sed -i 's/# CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES is not set/CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES=y/' .config && \
+    echo "Config updated:" && \
+    grep "CONFIG_VIRTIO_MMIO" .config
+
+# Build kernel (using all available cores)
+# Full build, not just bzImage, to ensure all options are compiled in
+RUN echo "=== BUILDING KERNEL ===" && make -j$(nproc) 2>&1 | tail -100 && echo "=== BUILD COMPLETE ===" && test -f arch/x86/boot/bzImage || (echo "ERROR: bzImage not found!" && exit 1)
+
+# Verify VIRTIO_MMIO_CMDLINE_DEVICES is in the final kernel
+RUN echo "=== VERIFYING FINAL KERNEL ===" && \
+    strings vmlinux | grep -i "virtio_mmio" || echo "WARNING: virtio_mmio strings not found"
+
+# Extract uncompressed ELF kernel (Firecracker 1.7.0 requires ELF format, not compressed)
+RUN cp /build/linux/vmlinux /vmlinux

@@ -1,0 +1,148 @@
+#!/bin/bash
+set -euo pipefail
+
+# NanoFuse End-to-End Test Script
+# Builds image, starts daemon, creates VM, tests SSH
+
+REPO_DIR="/home/jpoley/src/_mine/nanofuse"
+IMAGES_BASE="$REPO_DIR/images/base"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_info() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+log_step() {
+    echo ""
+    echo "========================================="
+    echo "$1"
+    echo "========================================="
+}
+
+# Step 1: Build image
+log_step "STEP 1: Building Firecracker Image"
+cd "$IMAGES_BASE"
+log_info "Running: sudo make clean && sudo make build"
+sudo make clean > /dev/null 2>&1 || true
+sudo make build
+log_info "Image build complete"
+
+# Step 2: Check kernel
+log_step "STEP 2: Verifying Kernel"
+if [ -f "./build/vmlinux" ]; then
+    SIZE=$(du -h ./build/vmlinux | cut -f1)
+    log_info "Kernel found: $SIZE"
+    file ./build/vmlinux
+else
+    log_error "Kernel not found at ./build/vmlinux"
+    exit 1
+fi
+
+# Step 3: Check rootfs
+log_step "STEP 3: Verifying Rootfs"
+if [ -f "./build/rootfs.ext4" ]; then
+    SIZE=$(du -h ./build/rootfs.ext4 | cut -f1)
+    log_info "Rootfs found: $SIZE"
+else
+    log_error "Rootfs not found"
+    exit 1
+fi
+
+# Step 4: Start daemon
+log_step "STEP 4: Starting nanofused Daemon"
+cd "$REPO_DIR"
+
+# Kill any existing daemon
+sudo pkill -f "nanofused" 2>/dev/null || true
+sleep 1
+
+# Start daemon in background
+log_info "Starting daemon..."
+sudo ./bin/nanofused --config config.dev.yaml &
+DAEMON_PID=$!
+sleep 2
+
+# Verify daemon is running
+if ps -p $DAEMON_PID > /dev/null 2>&1; then
+    log_info "Daemon running (PID: $DAEMON_PID)"
+else
+    log_error "Daemon failed to start"
+    exit 1
+fi
+
+# Step 5: Create VM
+log_step "STEP 5: Creating Test VM"
+VM_NAME="test-vm-$(date +%s)"
+log_info "Creating VM: $VM_NAME"
+sudo ./bin/nanofuse vm create default "$VM_NAME" --memory 512 --vcpus 2
+
+# Step 6: Start VM
+log_step "STEP 6: Starting VM"
+log_info "Starting VM..."
+sudo ./bin/nanofuse vm start "$VM_NAME"
+sleep 3
+
+# Step 7: Monitor boot
+log_step "STEP 7: Monitoring Boot Sequence"
+VM_DIR=$(ls -td /tmp/nanofuse/vms/* 2>/dev/null | head -1)
+if [ -z "$VM_DIR" ]; then
+    log_error "Could not find VM directory"
+    kill $DAEMON_PID || true
+    exit 1
+fi
+
+CONSOLE_LOG="$VM_DIR/console.log"
+log_info "Watching: $CONSOLE_LOG"
+echo ""
+echo "Boot output (first 50 lines or until it hangs):"
+echo "=================================================="
+
+# Show first 50 lines of console output
+sudo head -50 "$CONSOLE_LOG" 2>/dev/null || log_error "Could not read console"
+
+echo ""
+echo "=================================================="
+log_info "Boot sequence complete"
+
+# Step 8: Summary
+log_step "STEP 8: Test Summary"
+log_info "✓ Image built successfully"
+log_info "✓ Daemon started"
+log_info "✓ VM created: $VM_NAME"
+log_info "✓ VM started"
+log_info "✓ Boot sequence captured"
+
+echo ""
+log_info "E2E Test Complete!"
+echo ""
+echo "Next steps:"
+echo "1. Review boot output above"
+echo "2. Check for kernel panic or errors"
+echo "3. If boot succeeds: add SSH key to Dockerfile and rebuild"
+echo "4. To SSH test: ./bin/nanofuse vm inspect $VM_NAME"
+echo ""
+echo "To stop this VM and daemon:"
+echo "  sudo ./bin/nanofuse vm stop $VM_NAME"
+echo "  sudo pkill -f nanofused"
+echo ""
+
+# Cleanup
+log_step "Cleanup"
+log_info "Stopping VM..."
+sudo ./bin/nanofuse vm stop "$VM_NAME" 2>/dev/null || true
+sleep 1
+
+log_info "Stopping daemon..."
+kill $DAEMON_PID 2>/dev/null || true
+sudo pkill -f "nanofused" 2>/dev/null || true
+
+log_info "Done"

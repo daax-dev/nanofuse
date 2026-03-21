@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on v* tags (v0.0.1, v0.0.2, etc.)
+      # Note: image-v* tags are handled by ci.yaml
+
+env:
+  GO_VERSION: '1.24'
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Debug - Show Release Info
+        run: |
+          echo "=== Release Info ==="
+          echo "Tag:        ${{ github.ref_name }}"
+          echo "Tag SHA:    ${{ github.sha }}"
+          echo "Repository: ${{ github.repository }}"
+          echo ""
+          echo "Commit being released:"
+          git log -1 --format="%H - %s (%an, %ar)"
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Mage
+        run: go install github.com/magefile/mage@latest
+
+      - name: Build binaries with tag version
+        run: |
+          echo "Building binaries for release ${{ github.ref_name }}..."
+          mage clean
+          mage cli
+          mage daemon
+          echo ""
+          echo "Built binaries:"
+          ls -lh bin/
+          echo ""
+          echo "Verifying version matches tag:"
+          ./bin/nanofuse version
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## NanoFuse ${{ github.ref_name }}
+
+          Lightweight microVM management system powered by Firecracker.
+
+          ---
+
+          ## 🚀 Quick Start
+
+          **Step 1: Download binaries**
+          ```bash
+          # Download CLI and API daemon
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/nanofuse
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/nanofused
+
+          # Make executable and install
+          chmod +x nanofuse nanofused
+          sudo mv nanofuse nanofused /usr/local/bin/
+          ```
+
+          **Step 2: Pull the default Firecracker microVM**
+          ```bash
+          nanofuse image pull --default
+          ```
+
+          **Step 3: Start the daemon and create your first VM**
+          ```bash
+          # Start the API daemon (requires root)
+          sudo nanofused
+
+          # In another terminal, create a VM
+          nanofuse vm create myvm --image default --vcpus 2 --memory 512
+          nanofuse vm start myvm
+          ```
+
+          That's it! Your microVM is running.
+
+          ---
+
+          ## 📦 What's Included
+
+          - **`nanofuse`** - CLI tool for managing VMs, images, and snapshots
+          - **`nanofused`** - API daemon for VM lifecycle management
+          - Pre-built Firecracker microVM (Ubuntu 24.04 with systemd)
+
+          ---
+
+          ## 🔧 Alternative: Build from Source
+
+          <details>
+          <summary>Click to expand build instructions</summary>
+
+          ```bash
+          git clone https://github.com/${{ github.repository }}.git
+          cd nanofuse
+          git checkout ${{ github.ref_name }}
+          mage all
+          sudo mage install
+          ```
+
+          Requires: Go 1.24+, mage build tool
+          </details>
+
+          ---
+
+          ## 📝 What's Changed
+
+          See commits below for detailed changes in this release.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bin/nanofuse
+            bin/nanofused
+            nanofused.service
+            setup-service.sh
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release Summary
+        run: |
+          echo ""
+          echo "✓ Release ${{ github.ref_name }} created successfully!"
+          echo "  View at: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"

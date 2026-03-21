@@ -1,0 +1,82 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+coverage.txt
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+.specify-backup/
+.flowspec-backup*/
+# Build artifacts
+cmd/nanofuse/nanofuse
+cmd/nanofused/nanofused
+/nanofuse
+/nanofused
+bin/
+dist/
+*.tar.gz
+*.tar
+*.zip
+
+# VM images and build outputs
+images/base/build/
+build/
+*.ext4
+vmlinux
+*.db
+/tmp/nanofuse/
+
+# Layer build outputs (rootfs directories are built, not committed)
+layers/*/rootfs/
+
+# Example output directories
+examples/**/output/
+examples/**/output-*/
+examples/**/rootfs/
+examples/**/mnt/
+
+# Debug and info files
+debug.info.txt
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+*.log
+*.pid
+tmp/
+temp/
+
+# NanoFuse runtime data
+/var/lib/nanofuse/
+/var/run/nanofused.sock
+
+# Local configuration
+.env
+.env.local
+config.local.yaml
+
+# Docker build cache
+.dockerignore
+
+# CI/CD artifacts
+.github/artifacts/

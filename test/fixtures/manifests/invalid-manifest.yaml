@@ -1,0 +1,9 @@
+# Invalid manifest: missing required fields
+version: "1.0"
+# name is missing
+description: This manifest is intentionally invalid
+
+layers:
+  - name: some-layer
+    # type is missing
+    source: file://some-path.tar.gz

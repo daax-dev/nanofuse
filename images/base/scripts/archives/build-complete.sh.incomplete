@@ -1,0 +1,208 @@
+#!/bin/bash
+set -euo pipefail
+
+# NanoFuse Complete Build Script
+# Builds kernel, Docker image, rootfs, and manifest
+# Usage: sudo ./build-complete.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_info() { echo -e "${GREEN}✓${NC} $1"; }
+log_error() { echo -e "${RED}✗${NC} $1"; }
+log_warn() { echo -e "${YELLOW}⚠${NC} $1"; }
+log_step() { echo ""; echo "========================================="; echo "$1"; echo "========================================="; }
+
+trap 'log_error "Build failed at line $LINENO"; exit 1' ERR
+
+if [[ $EUID -ne 0 ]]; then
+    log_error "This script requires sudo"
+    echo "Run with: sudo ./build-complete.sh"
+    exit 1
+fi
+
+echo "========================================"
+echo "NanoFuse Complete Build"
+echo "========================================"
+echo ""
+
+# =============================================================================
+# STEP 1: Clean previous build
+# =============================================================================
+log_step "STEP 1: Clean previous artifacts"
+
+cd "$SCRIPT_DIR"
+
+if [ -d "./build" ]; then
+    log_info "Removing old build directory..."
+    rm -rf ./build
+fi
+
+log_info "Old artifacts removed"
+
+# =============================================================================
+# STEP 2: Build kernel
+# =============================================================================
+log_step "STEP 2: Build Linux 6.1.90 kernel"
+
+log_info "Running: ./build-kernel-docker.sh"
+if ! ./build-kernel-docker.sh > /tmp/kernel-build.log 2>&1; then
+    log_error "Kernel build failed"
+    tail -20 /tmp/kernel-build.log
+    exit 1
+fi
+
+# Find kernel in /tmp
+KERNEL=$(ls /tmp/vmlinux-* 2>/dev/null | head -1)
+if [ -z "$KERNEL" ]; then
+    log_error "Kernel not found after build"
+    exit 1
+fi
+
+log_info "Kernel built: $(du -h $KERNEL | cut -f1)"
+file "$KERNEL"
+
+# =============================================================================
+# STEP 3: Build Docker image
+# =============================================================================
+log_step "STEP 3: Build Docker image"
+
+log_info "Running: docker build -t nanofuse-base:latest"
+if ! docker build -t nanofuse-base:latest . > /tmp/docker-build.log 2>&1; then
+    log_error "Docker build failed"
+    tail -20 /tmp/docker-build.log
+    exit 1
+fi
+
+log_info "Docker image built successfully"
+docker images | grep nanofuse-base | head -1
+
+# =============================================================================
+# STEP 4: Export filesystem and create ext4
+# =============================================================================
+log_step "STEP 4: Create ext4 filesystem from Docker image"
+
+mkdir -p ./build/rootfs
+
+log_info "Creating container..."
+CONTAINER_ID=$(docker create --name nanofuse-build-temp nanofuse-base:latest)
+log_info "Container ID: ${CONTAINER_ID:0:12}"
+
+log_info "Exporting filesystem..."
+docker export "$CONTAINER_ID" | tar -C ./build/rootfs -xf -
+
+log_info "Cleaning up container..."
+docker rm "$CONTAINER_ID" > /dev/null
+
+# =============================================================================
+# STEP 5: Create ext4 image
+# =============================================================================
+log_step "STEP 5: Create ext4 filesystem image"
+
+ROOTFS_SIZE=2048  # MB
+
+log_info "Creating ${ROOTFS_SIZE}MB ext4 image..."
+dd if=/dev/zero of=./build/rootfs.ext4 bs=1M count=$ROOTFS_SIZE status=none
+mkfs.ext4 -F -q -L nanofuse-root ./build/rootfs.ext4
+
+log_info "Mounting ext4 image..."
+mkdir -p ./build/mnt
+mount -o loop ./build/rootfs.ext4 ./build/mnt
+
+log_info "Copying files to ext4..."
+cp -a ./build/rootfs/* ./build/mnt/
+
+log_info "Unmounting ext4..."
+umount ./build/mnt
+rmdir ./build/mnt
+rm -rf ./build/rootfs
+
+log_info "ext4 image created: $(du -h ./build/rootfs.ext4 | cut -f1)"
+
+# =============================================================================
+# STEP 6: Copy kernel to build directory
+# =============================================================================
+log_step "STEP 6: Copy kernel to build directory"
+
+log_info "Copying kernel from $KERNEL..."
+cp "$KERNEL" ./build/vmlinux
+
+log_info "Kernel: $(du -h ./build/vmlinux | cut -f1)"
+file ./build/vmlinux
+
+# =============================================================================
+# STEP 7: Generate manifest
+# =============================================================================
+log_step "STEP 7: Generate manifest.json"
+
+ROOTFS_SIZE_BYTES=$(stat -c%s ./build/rootfs.ext4)
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+KERNEL_VERSION=$(strings ./build/vmlinux | grep "Linux version" | head -1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+
+cat > ./build/manifest.json << EOF
+{
+  "version": "0.1.0",
+  "name": "nanofuse-base",
+  "tag": "latest",
+  "architecture": "x86_64",
+  "base_os": "ubuntu:24.04",
+  "kernel": {
+    "version": "${KERNEL_VERSION}",
+    "source": "Linux kernel (Firecracker config)",
+    "cmdline": "console=ttyS0 root=/dev/vda1 rw panic=1 reboot=k",
+    "file": "vmlinux"
+  },
+  "rootfs": {
+    "format": "ext4",
+    "file": "rootfs.ext4",
+    "size_bytes": ${ROOTFS_SIZE_BYTES}
+  },
+  "services": {
+    "ssh": {"enabled": true, "port": 22},
+    "systemd-networkd": {"enabled": true}
+  },
+  "built_at": "${BUILD_DATE}"
+}
+EOF
+
+log_info "Manifest generated"
+cat ./build/manifest.json
+
+# =============================================================================
+# STEP 8: Verify artifacts
+# =============================================================================
+log_step "STEP 8: Verify build artifacts"
+
+echo ""
+echo "Artifacts created:"
+ls -lh ./build/
+
+echo ""
+echo "File types:"
+file ./build/vmlinux ./build/rootfs.ext4
+
+echo ""
+log_info "✓ Kernel: $(du -h ./build/vmlinux | cut -f1) (ELF)"
+log_info "✓ Rootfs: $(du -h ./build/rootfs.ext4 | cut -f1) (ext4)"
+log_info "✓ Manifest: $(du -h ./build/manifest.json | cut -f1) (JSON)"
+
+# =============================================================================
+# Complete
+# =============================================================================
+echo ""
+log_step "Build Complete"
+log_info "✓ Kernel built (6.1.90)"
+log_info "✓ Docker image created"
+log_info "✓ Filesystem extracted"
+log_info "✓ ext4 image created"
+log_info "✓ Manifest generated"
+log_info "✓ All artifacts verified"
+
+echo ""
+log_info "Ready to test: sudo /home/jpoley/src/_mine/nanofuse/test-complete.sh"
+echo ""

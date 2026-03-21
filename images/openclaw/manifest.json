@@ -1,0 +1,43 @@
+{
+  "name": "openclaw",
+  "version": "0.1.0",
+  "description": "Clawdbot AI agent gateway running in Firecracker microVM",
+  "base": "ubuntu:24.04",
+  "architecture": "x86_64",
+  "components": {
+    "node": "22.x",
+    "clawdbot": "2026.1.24-3",
+    "systemd": true,
+    "ssh": true
+  },
+  "services": {
+    "clawdbot": {
+      "enabled": true,
+      "port": 3000,
+      "user": "clawdbot"
+    },
+    "ssh": {
+      "enabled": true,
+      "port": 22
+    }
+  },
+  "users": {
+    "root": {
+      "access_note": "Account is locked by default. SSH key-only authentication is enforced. Inject keys via kernel cmdline parameter (sshkey=)."
+    },
+    "clawdbot": {
+      "access_note": "Account is locked by default. SSH key-only authentication is enforced. Inject keys via kernel cmdline parameter (sshkey=).",
+      "home": "/home/clawdbot"
+    }
+  },
+  "resources": {
+    "recommended_memory_mb": 1024,
+    "recommended_vcpus": 2,
+    "rootfs_size_mb": 2048
+  },
+  "firecracker": {
+    "compatible": true,
+    "console": "ttyS0",
+    "network": "systemd-networkd"
+  }
+}

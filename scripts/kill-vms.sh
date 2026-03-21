@@ -1,0 +1,1 @@
+  ./bin/nanofuse vm list --json | jq -r '.vms[].id' | xargs -I{} ./bin/nanofuse vm rm {}

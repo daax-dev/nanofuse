@@ -1,0 +1,65 @@
+# Observability Layer
+# Provides Prometheus node exporter and structured logging for monitoring.
+# Enables metrics collection and log aggregation.
+#
+# Target size: ~15MB
+# Use case: Metrics, logging, health monitoring
+
+name: "observability"
+version: "1.0.0"
+sha256: "placeholder"
+size_mb: 15
+description: "Prometheus node exporter and structured logging"
+type: "feature"
+
+dependencies:
+  - "base-os>=1.0.0"
+
+provides:
+  - "prometheus-metrics"
+  - "node-exporter"
+  - "structured-logging"
+  - "log-rotation"
+
+files:
+  - path: "/usr/local/bin/node_exporter"
+    mode: "0755"
+  - path: "/etc/systemd/system/node-exporter.service"
+    mode: "0644"
+  - path: "/etc/nanofuse/logging.yaml"
+    mode: "0644"
+  - path: "/etc/logrotate.d/nanofuse"
+    mode: "0644"
+  - path: "/var/log/nanofuse"
+    mode: "0755"
+
+systemd:
+  enable:
+    - "node-exporter.service"
+  mask: []
+
+config_schema:
+  node_exporter_port:
+    type: integer
+    default: 9100
+    description: "Port for Prometheus node exporter"
+  enable_structured_logging:
+    type: boolean
+    default: true
+    description: "Enable structured JSON logging"
+  log_format:
+    type: string
+    default: "json"
+    description: "Log format: json, text, logfmt"
+  log_level:
+    type: string
+    default: "info"
+    description: "Log level: debug, info, warn, error"
+  retention_days:
+    type: integer
+    default: 7
+    description: "Log retention in days"
+  metrics_path:
+    type: string
+    default: "/metrics"
+    description: "Prometheus metrics endpoint path"

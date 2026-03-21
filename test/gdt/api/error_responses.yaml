@@ -1,0 +1,52 @@
+name: API Error Response Boundaries
+description: Tests API error responses at boundary conditions
+
+# Note on curl exit codes:
+# Exit code 22 is curl's specific error code for HTTP errors (4xx/5xx) when using
+# the -f/--fail flag. This means the server returned an error status code, which
+# is the expected behavior for these boundary tests.
+
+# Socket path: /run/nanofused.sock (CLI default, matches test harness in api_test.go).
+# Shell variable substitution does not work in gdt framework, so path is hardcoded.
+# Daemon must be running at /run/nanofused.sock for these tests to pass.
+
+tests:
+  # Test 1: Non-existent VM returns error (curl exits non-zero with -f)
+  - name: get-nonexistent-vm-fails
+    description: GET non-existent VM should fail
+    shell: bash
+    exec: curl -sf --unix-socket /run/nanofused.sock http://localhost/api/v1/vms/nonexistent-vm-12345
+    assert:
+      exit-code: 22
+
+  # Test 2: Invalid JSON body returns error
+  - name: create-vm-invalid-json-fails
+    description: POST invalid JSON should fail
+    shell: bash
+    exec: curl -sf -X POST --unix-socket /run/nanofused.sock -H "Content-Type:application/json" -d "invalid json" http://localhost/api/v1/vms
+    assert:
+      exit-code: 22
+
+  # Test 3: Invalid endpoint returns error
+  - name: invalid-endpoint-fails
+    description: Non-existent endpoint should fail
+    shell: bash
+    exec: curl -sf --unix-socket /run/nanofused.sock http://localhost/api/v1/nonexistent-endpoint
+    assert:
+      exit-code: 22
+
+  # Test 4: Start non-existent VM returns error
+  - name: start-nonexistent-vm-fails
+    description: Start non-existent VM should fail
+    shell: bash
+    exec: curl -sf -X POST --unix-socket /run/nanofused.sock http://localhost/api/v1/vms/nonexistent-vm-12345/start
+    assert:
+      exit-code: 22
+
+  # Test 5: Stop non-existent VM returns error
+  - name: stop-nonexistent-vm-fails
+    description: Stop non-existent VM should fail
+    shell: bash
+    exec: curl -sf -X POST --unix-socket /run/nanofused.sock http://localhost/api/v1/vms/nonexistent-vm-12345/stop
+    assert:
+      exit-code: 22

@@ -1,0 +1,62 @@
+# NanoFuse API Daemon Configuration
+# Copy to /etc/nanofuse/nanofused.yaml and customize
+
+api:
+  # Unix socket path (default)
+  socket: /var/run/nanofused.sock
+  socket_mode: "0660"
+  socket_group: nanofuse
+
+  # Uncomment for TCP binding (remote access)
+  # tcp_bind: "127.0.0.1:8080"
+
+storage:
+  # Data directory for VMs, images, snapshots
+  data_dir: /var/lib/nanofuse
+
+  # SQLite database path
+  database: /var/lib/nanofuse/nanofuse.db
+
+firecracker:
+  # Path to Firecracker binary
+  binary_path: /usr/local/bin/firecracker
+
+  # Optional: Path to jailer binary
+  # jailer_path: /usr/local/bin/jailer
+
+limits:
+  # Maximum number of VMs
+  max_vms: 50
+
+  # Maximum total memory across all VMs (MiB)
+  max_total_memory_mib: 32768
+
+  # Maximum vCPUs per VM
+  max_vcpus_per_vm: 8
+
+  # Maximum memory per VM (MiB)
+  max_memory_per_vm_mib: 8192
+
+  # Maximum snapshot storage (GiB)
+  max_snapshot_storage_gib: 100
+
+registry:
+  # Docker config for authentication
+  auth_config_path: /root/.docker/config.json
+
+  # Alternative: Explicit credentials
+  # auth:
+  #   ghcr.io:
+  #     username: your-username
+  #     token: ghp_your_token_here
+
+logging:
+  # Log level: debug, info, warn, error
+  level: info
+
+  # Log format: json, text
+  format: json
+
+  # Console log retention
+  console_log_max_size_mb: 10
+  console_log_max_backups: 3

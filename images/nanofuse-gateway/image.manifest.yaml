@@ -1,0 +1,92 @@
+# NanoFuse Gateway Image Manifest
+# Defines a network gateway microVM for ingress/egress control,
+# load balancing, and API routing for microVM clusters.
+#
+# Architecture: ADR-001 Layer-Based RootFS Architecture
+
+version: "1.0"
+name: "nanofuse-gateway"
+description: "Network gateway microVM for ingress/egress control"
+
+kernel:
+  version: "6.1.90"
+  source: "local://build/vmlinux"
+  sha256: "placeholder"
+  cmdline: "console=ttyS0 root=/dev/vda rw init=/sbin/init panic=1 reboot=k"
+
+layers:
+  # Base OS Layer - Ubuntu 24.04 with systemd, SSH, networking
+  - name: "base-os"
+    type: "base"
+    source: "local://layers/base-os"
+    required: true
+    config:
+      timezone: "UTC"
+      hostname: "gateway"
+
+  # Networking Tools Layer - iptables, nftables, iproute2
+  - name: "networking-tools"
+    type: "feature"
+    source: "local://layers/networking-tools"
+    required: true
+    dependencies:
+      - "base-os"
+    config:
+      enable_iptables: true
+      enable_nftables: true
+      enable_ip_forwarding: true
+      # Gateway needs to accept incoming connections on service ports:
+      # - 8080: Gateway main listener
+      # - 8081: Health check endpoint
+      # - 9090: Gateway metrics
+      # - 9100: Node exporter metrics
+      # Using "accept" policy since the gateway handles application-level security
+      # (authentication, rate limiting, etc.) rather than relying on OS-level firewall
+      default_policy: "accept"
+
+  # Gateway Runtime Layer - Go binary for gateway logic
+  - name: "gateway-runtime"
+    type: "application"
+    source: "local://layers/gateway-runtime"
+    required: true
+    dependencies:
+      - "base-os"
+      - "networking-tools"
+    config:
+      listen_port: 8080
+      metrics_port: 9090
+      health_port: 8081
+
+  # TLS Certificates Layer - CA certs and certificate management
+  # Note: Required for CA bundle (outbound TLS) even if gateway TLS is disabled
+  - name: "tls-certificates"
+    type: "feature"
+    source: "local://layers/tls-certificates"
+    required: true  # Provides CA bundle for outbound HTTPS connections
+    dependencies:
+      - "base-os"
+    config:
+      ca_bundle_path: "/etc/ssl/certs/ca-certificates.crt"
+      cert_dir: "/etc/nanofuse/certs"
+      # auto_renew enables the cert-renewal.timer to check certificates daily
+      # Note: Only affects locally-generated self-signed certs; does not apply to
+      # externally-provisioned certificates from ACME or other sources
+      auto_renew: true
+
+  # Observability Layer - Prometheus node exporter, structured logging
+  - name: "observability"
+    type: "feature"
+    source: "local://layers/observability"
+    required: true
+    dependencies:
+      - "base-os"
+    config:
+      node_exporter_port: 9100
+      enable_structured_logging: true
+      log_format: "json"
+
+output:
+  path: "./build/nanofuse-gateway"
+  format: "ext4"
+  size_mb: 1024
+  compression: "none"

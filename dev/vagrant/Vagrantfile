@@ -1,0 +1,80 @@
+# -*- mode: ruby -*-
+# nanofuse dev/test VM — Ubuntu 24.04 with nested KVM + Firecracker
+#
+# Gives Claude (or any agent) full sudo in a disposable VM to:
+#   - Build nanofuse from source (Go + mage)
+#   - Build base microVM images (Docker + kernel)
+#   - Run Firecracker microVMs (nested KVM)
+#   - Test firewall rules, SPIRE, Vault, escape vectors
+#   - Run full E2E test suite with sudo
+#
+# Designed to work from two locations:
+#   1. nanofuse repo:  dev/vagrant/Vagrantfile  (NANOFUSE_ROOT = ../..)
+#   2. standalone:     set NANOFUSE_SRC env var
+#
+# Usage:
+#   vagrant up                    # provision + build + verify
+#   vagrant ssh                   # interactive shell (full sudo)
+#   vagrant ssh -c "sudo ..."    # run commands from host (Claude workflow)
+#   vagrant destroy -f            # tear down and start fresh
+#   vagrant provision             # re-run setup + verify without rebuild
+
+# Resolve nanofuse source: in-repo or external
+SCRIPT_DIR = File.dirname(File.expand_path(__FILE__))
+NANOFUSE_ROOT = if ENV["NANOFUSE_SRC"]
+    ENV["NANOFUSE_SRC"]
+  elsif File.exist?(File.join(SCRIPT_DIR, "..", "..", "go.mod"))
+    File.expand_path(File.join(SCRIPT_DIR, "..", ".."))
+  elsif File.exist?(File.join(SCRIPT_DIR, "..", "..", "nanofuse", "go.mod"))
+    # Inside daax monorepo: dev/vagrant/ -> daax/nanofuse/
+    File.expand_path(File.join(SCRIPT_DIR, "..", "..", "nanofuse"))
+  else
+    abort "Cannot find nanofuse source.\n" \
+          "Either:\n" \
+          "  - Place this at <nanofuse-repo>/dev/vagrant/Vagrantfile\n" \
+          "  - Set NANOFUSE_SRC=/path/to/nanofuse\n"
+  end
+
+puts "nanofuse source: #{NANOFUSE_ROOT}"
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-24.04"
+  config.vm.box_check_update = false
+  config.vm.hostname = "nanofuse-dev"
+  config.vm.boot_timeout = 300
+
+  config.vm.provider "libvirt" do |lv|
+    lv.cpus   = 4
+    lv.memory = 4096
+    lv.cpu_mode = "host-passthrough"   # nested KVM for Firecracker
+    lv.nested = true
+    lv.default_prefix = "nanofuse_"
+  end
+
+  # Sync nanofuse source — exclude heavy/generated dirs
+  # The images/base/build/ dir can be 2GB+, so exclude it entirely.
+  # The vmlinux kernel (39MB) is synced separately if present.
+  config.vm.synced_folder NANOFUSE_ROOT, "/nanofuse", type: "rsync",
+    rsync__exclude: [
+      ".git/",
+      "bin/",
+      "images/base/build/",
+      "coverage.out",
+      "coverage.html",
+    ]
+
+  # Sync this vagrant dir's scripts
+  config.vm.synced_folder ".", "/vagrant-scripts", type: "rsync"
+
+  # Provision: install deps + build nanofuse + build base image
+  config.vm.provision "setup", type: "shell" do |s|
+    s.path = "setup.sh"
+    s.privileged = true
+  end
+
+  # Provision: verify everything works — fails vagrant up on failure
+  config.vm.provision "verify", type: "shell" do |s|
+    s.path = "verify.sh"
+    s.privileged = true
+  end
+end

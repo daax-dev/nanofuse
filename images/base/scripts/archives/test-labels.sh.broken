@@ -1,0 +1,95 @@
+#!/bin/bash
+# Test script to verify OCI labels are correctly set in the built image
+
+set -euo pipefail
+
+IMAGE_NAME="${IMAGE_NAME:-nanofuse-base}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
+
+echo "========================================"
+echo "Testing OCI Labels in: $FULL_IMAGE"
+echo "========================================"
+echo ""
+
+# Check if image exists
+if ! docker inspect "$FULL_IMAGE" > /dev/null 2>&1; then
+    echo "ERROR: Image $FULL_IMAGE not found. Build it first with:"
+    echo "  cd images/base && sudo ./build.sh"
+    exit 1
+fi
+
+echo "✓ Image found: $FULL_IMAGE"
+echo ""
+
+# Extract and display labels
+echo "Standard OCI Labels:"
+echo "-------------------"
+docker inspect "$FULL_IMAGE" | jq -r '
+    .[0].Config.Labels |
+    to_entries[] |
+    select(.key | startswith("org.opencontainers.image")) |
+    "\(.key): \(.value)"
+' | sort
+
+echo ""
+echo "NanoFuse-specific Labels:"
+echo "-------------------------"
+docker inspect "$FULL_IMAGE" | jq -r '
+    .[0].Config.Labels |
+    to_entries[] |
+    select(.key | startswith("com.nanofuse")) |
+    "\(.key): \(.value)"
+' | sort
+
+echo ""
+echo "All Labels (JSON):"
+echo "------------------"
+docker inspect "$FULL_IMAGE" | jq '.[0].Config.Labels'
+
+echo ""
+echo "========================================"
+echo "Label Test Complete!"
+echo "========================================"
+
+# Validation checks
+echo ""
+echo "Validation:"
+echo "-----------"
+
+# Check required OCI labels
+REQUIRED_LABELS=(
+    "org.opencontainers.image.title"
+    "org.opencontainers.image.description"
+    "org.opencontainers.image.version"
+    "org.opencontainers.image.created"
+    "org.opencontainers.image.source"
+)
+
+REQUIRED_NANOFUSE_LABELS=(
+    "com.nanofuse.base-os"
+    "com.nanofuse.kernel.version"
+    "com.nanofuse.type"
+)
+
+all_labels=$(docker inspect "$FULL_IMAGE" | jq -r '.[0].Config.Labels | keys[]')
+
+missing_labels=()
+
+for label in "${REQUIRED_LABELS[@]}" "${REQUIRED_NANOFUSE_LABELS[@]}"; do
+    if echo "$all_labels" | grep -q "^${label}$"; then
+        echo "✓ Required label present: $label"
+    else
+        echo "✗ Missing required label: $label"
+        missing_labels+=("$label")
+    fi
+done
+
+echo ""
+if [ ${#missing_labels[@]} -eq 0 ]; then
+    echo "✓ All required labels present!"
+    exit 0
+else
+    echo "✗ Missing ${#missing_labels[@]} required labels"
+    exit 1
+fi

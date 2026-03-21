@@ -1,0 +1,43 @@
+name: CLI Help and Usage
+description: Tests CLI help output and command structure
+
+tests:
+  # Test 1: Main help shows all subcommands
+  - name: main-help-shows-commands
+    description: Main help should show vm and image commands
+    shell: bash
+    exec: nanofuse --help 2>&1 | grep -qE "vm|image"
+    assert:
+      exit-code: 0
+
+  # Test 2: VM subcommand help
+  - name: vm-help-shows-subcommands
+    description: VM help should show list, start, stop
+    shell: bash
+    exec: nanofuse vm --help 2>&1 | grep -qE "list|start|stop"
+    assert:
+      exit-code: 0
+
+  # Test 3: Image subcommand help
+  - name: image-help-shows-subcommands
+    description: Image help should show list and pull
+    shell: bash
+    exec: nanofuse image --help 2>&1 | grep -qE "list|pull"
+    assert:
+      exit-code: 0
+
+  # Test 4: Short help flag works
+  - name: short-help-flag-works
+    description: Short -h flag should work like --help
+    shell: bash
+    exec: nanofuse -h 2>&1 | grep -qi "usage"
+    assert:
+      exit-code: 0
+
+  # Test 5: VM list help shows output flag
+  - name: vm-list-help-shows-flags
+    description: VM list help should mention format/output flags
+    shell: bash
+    exec: nanofuse vm list --help 2>&1 | grep -qiE "format|output|-o"
+    assert:
+      exit-code: 0

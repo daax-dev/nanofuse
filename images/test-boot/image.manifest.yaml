@@ -1,0 +1,42 @@
+# Test Boot Image Manifest
+# Minimal image for testing Firecracker boot with composed layers
+#
+# Uses only layers that have been built
+
+version: "1.0"
+name: "test-boot"
+description: "Minimal test image for Firecracker boot validation"
+
+kernel:
+  version: "6.1.102"
+  source: "local://test/fixtures/vmlinux"
+  cmdline: "console=ttyS0 root=/dev/vda rw init=/sbin/init panic=1 reboot=k"
+
+layers:
+  # Base OS Layer - Ubuntu 24.04 with systemd
+  - name: "base-os"
+    type: "base"
+    source: "local://layers/base-os"
+    required: true
+
+  # Python Runtime Layer
+  - name: "python-runtime"
+    type: "runtime"
+    source: "local://layers/python-runtime"
+    required: true
+    dependencies:
+      - "base-os"
+
+  # Node.js Runtime Layer
+  - name: "node-runtime"
+    type: "runtime"
+    source: "local://layers/node-runtime"
+    required: true
+    dependencies:
+      - "base-os"
+
+output:
+  path: "./build/test-boot"
+  format: "ext4"
+  size_mb: 2048
+  compression: "none"

@@ -1,0 +1,14 @@
+# Build artifacts
+build/
+*.ext4
+vmlinux
+vmlinux-*
+
+# Docker artifacts
+.container_id
+.docker_built
+
+# Test artifacts
+console.log
+firecracker.sock
+*.sock

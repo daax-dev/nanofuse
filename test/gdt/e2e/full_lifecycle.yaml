@@ -1,0 +1,130 @@
+name: Full E2E Lifecycle Test
+description: Tests complete nanofuse lifecycle from daemon to SSH connectivity
+
+# Note: These tests require sudo, KVM, and Firecracker installed
+# Run with: sudo go test -v -tags=e2e ./test/gdt/e2e/...
+
+tests:
+  - name: check-kvm-available
+    description: Verify KVM is available
+    exec: test -e /dev/kvm
+    assert:
+      exit-code: 0
+
+  - name: check-firecracker-installed
+    description: Verify Firecracker is installed
+    exec: which firecracker
+    assert:
+      exit-code: 0
+
+  - name: check-daemon-socket
+    description: Verify daemon is running
+    shell: bash
+    exec: test -S /var/run/nanofused.sock || test -S /run/nanofused.sock || test -S /tmp/nanofused.sock
+    assert:
+      exit-code: 0
+
+  - name: check-build-artifacts
+    description: Verify build artifacts exist
+    shell: bash
+    exec: test -f images/base/build/vmlinux && test -f images/base/build/rootfs.ext4
+    assert:
+      exit-code: 0
+
+  - name: list-images
+    description: List available images
+    exec: nanofuse image list
+    assert:
+      exit-code: 0
+
+  - name: cleanup-existing-vm
+    description: Clean up any existing test VM
+    shell: bash
+    exec: |
+      nanofuse vm stop e2e-test 2>/dev/null || true
+      nanofuse vm delete e2e-test 2>/dev/null || true
+      sleep 1
+      exit 0
+    assert:
+      exit-code: 0
+
+  - name: create-vm
+    description: Create test VM
+    exec: nanofuse vm create e2e-test --image base
+    assert:
+      exit-code: 0
+
+  - name: start-vm
+    description: Start test VM
+    exec: nanofuse vm start e2e-test
+    assert:
+      exit-code: 0
+    wait:
+      after: 5s
+
+  - name: verify-vm-running
+    description: Verify VM is running
+    exec: nanofuse vm status e2e-test
+    assert:
+      exit-code: 0
+      out:
+        contains:
+          - running
+    retry:
+      attempts: 15
+      interval: 4s
+
+  - name: get-vm-ip
+    description: Get VM IP address
+    shell: bash
+    exec: nanofuse vm show e2e-test --format json | jq -r '.ip_address'
+    assert:
+      exit-code: 0
+
+  - name: test-ssh-connectivity
+    description: Test SSH connectivity to VM
+    shell: bash
+    exec: |
+      VM_IP=$(nanofuse vm show e2e-test --format json | jq -r '.ip_address')
+      if [ -z "$VM_IP" ] || [ "$VM_IP" = "null" ]; then
+        echo "Could not get VM IP"
+        exit 1
+      fi
+      ssh -o ConnectTimeout=30 \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          -o BatchMode=yes \
+          root@${VM_IP} "echo SSH_SUCCESS"
+    assert:
+      exit-code: 0
+      out:
+        contains:
+          - SSH_SUCCESS
+    retry:
+      attempts: 10
+      interval: 5s
+
+  - name: test-http-outbound
+    description: Test HTTP outbound from VM
+    shell: bash
+    exec: |
+      VM_IP=$(nanofuse vm show e2e-test --format json | jq -r '.ip_address')
+      ssh -o ConnectTimeout=10 \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          root@${VM_IP} "wget -q -O- http://example.com 2>/dev/null | grep -qi html"
+    assert:
+      exit-code: 0
+    retry:
+      attempts: 3
+      interval: 5s
+
+  - name: cleanup-vm
+    description: Stop and delete test VM
+    shell: bash
+    exec: |
+      nanofuse vm stop e2e-test || true
+      sleep 2
+      nanofuse vm delete e2e-test || true
+    assert:
+      exit-code: 0

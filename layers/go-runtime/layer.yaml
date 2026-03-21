@@ -1,0 +1,40 @@
+# Go Runtime Layer
+# Provides minimal runtime environment for Go binaries.
+# Go binaries are typically statically linked, so this layer mainly provides:
+# - CA certificates for HTTPS
+# - CGO support libraries (libc6)
+# - Timezone data
+#
+# Target size: ~20MB
+# Use case: Running compiled Go binaries (nanofuse-envd, gateways, etc.)
+
+name: "go-runtime"
+version: "1.0.0"
+sha256: "6d817e5f0d5f305f55c370671d6eb1515d66a7e8fbd61a91c7a873a1f905eab1"
+size_mb: 87
+description: "Minimal runtime environment for Go binaries"
+type: "runtime"
+
+dependencies:
+  - "base-os>=1.0.0"
+
+provides:
+  - "go-runtime"
+  - "cgo-support"
+  - "tls-certificates"
+
+files:
+  - path: "/etc/ssl/certs"
+    mode: "0755"
+  - path: "/usr/share/zoneinfo"
+    mode: "0755"
+
+systemd:
+  enable: []
+  mask: []
+
+config_schema:
+  timezone:
+    type: string
+    default: "UTC"
+    description: "Default timezone for Go applications"

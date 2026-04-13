@@ -1,6 +1,6 @@
 module github.com/jpoley/nanofuse
 
-go 1.24.3
+go 1.25.0
 
 require (
 	github.com/fatih/color v1.18.0
@@ -14,7 +14,7 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/text v0.32.0
+	golang.org/x/text v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -48,7 +48,7 @@ require (
 	github.com/theory/jsonpath v0.10.1 // indirect
 	github.com/vbatts/tar-split v0.11.3 // indirect
 	golang.org/x/net v0.10.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/term v0.28.0 // indirect
 )

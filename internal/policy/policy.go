@@ -7,15 +7,15 @@
 // The WorkloadPolicy struct mirrors the Aembit API schema documented at
 // https://docs.aembit.io/reference/access-policies.  Key field mapping:
 //
-//   WorkloadPolicy.ID             → policy.id
-//   WorkloadPolicy.Name           → policy.name
-//   WorkloadPolicy.WorkloadSPIFFE → policy.workload_client_identity (SPIFFE URI)
-//   WorkloadPolicy.ServiceSPIFFE  → policy.server_workload_id (SPIFFE URI)
-//   WorkloadPolicy.Conditions     → policy.access_conditions[]
-//     TimeWindow                  → condition type "time_of_day"
-//     GeoRestriction              → condition type "geolocation"
-//     ApprovalGate                → condition type "just_in_time_approval"
-//   WorkloadPolicy.Enabled        → policy.is_enabled
+//	WorkloadPolicy.ID             → policy.id
+//	WorkloadPolicy.Name           → policy.name
+//	WorkloadPolicy.WorkloadSPIFFE → policy.workload_client_identity (SPIFFE URI)
+//	WorkloadPolicy.ServiceSPIFFE  → policy.server_workload_id (SPIFFE URI)
+//	WorkloadPolicy.Conditions     → policy.access_conditions[]
+//	  TimeWindow                  → condition type "time_of_day"
+//	  GeoRestriction              → condition type "geolocation"
+//	  ApprovalGate                → condition type "just_in_time_approval"
+//	WorkloadPolicy.Enabled        → policy.is_enabled
 //
 // Emit: every evaluation writes a structured audit log via log/slog with
 // key "event"="policy_evaluation" so consumers (SIEM, log pipelines) can

@@ -16,6 +16,40 @@ type Config struct {
 	Registry    RegistryConfig    `yaml:"registry"`
 	Logging     LoggingConfig     `yaml:"logging"`
 	SPIRE       SPIREConfig       `yaml:"spire"`
+	Auth        AuthConfig        `yaml:"auth"`
+}
+
+// AuthConfig holds authentication configuration for the daemon.
+// When DevStaticKeys is false (production), only SPIFFE SVIDs are accepted.
+// Set DEV_STATIC_KEYS=true in the environment to also allow static API key auth.
+type AuthConfig struct {
+	// Enabled turns the auth middleware on. When false all requests pass through.
+	Enabled bool `yaml:"enabled"`
+
+	// StaticAPIKeys lists API keys permitted when running in dev mode only.
+	// Production MUST leave this empty; the middleware enforces the restriction.
+	StaticAPIKeys []string `yaml:"static_api_keys,omitempty"`
+
+	// SVIDRotation controls the automatic rotation of SPIFFE SVIDs.
+	SVIDRotation SVIDRotationConfig `yaml:"svid_rotation"`
+}
+
+// SVIDRotationConfig controls SVID rotation behaviour (issue #4).
+type SVIDRotationConfig struct {
+	// MaxTTLSeconds is the maximum SVID lifetime (default 3600 = 60 min).
+	MaxTTLSeconds int `yaml:"max_ttl_seconds"`
+
+	// PreRefreshSeconds is how many seconds before expiry to trigger rotation
+	// (default 900 = 15 min).
+	PreRefreshSeconds int `yaml:"pre_refresh_seconds"`
+
+	// GracePeriodSeconds is how long the old SVID remains valid after the new
+	// one has been issued (default 300 = 5 min).
+	GracePeriodSeconds int `yaml:"grace_period_seconds"`
+
+	// StaleAlertSeconds is how long to wait for the agent to pick up the new
+	// SVID before emitting a warning alert (default 300 = 5 min).
+	StaleAlertSeconds int `yaml:"stale_alert_seconds"`
 }
 
 // SPIREConfig represents SPIRE integration configuration
@@ -130,6 +164,15 @@ func DefaultConfig() *Config {
 			AgentSocket:   "/run/spire/sockets/agent.sock",      // Default SPIRE agent socket
 			ContainerName: "spire-server",                       // Default Docker container name
 		},
+		Auth: AuthConfig{
+			Enabled: false, // Disabled by default; enable in production
+			SVIDRotation: SVIDRotationConfig{
+				MaxTTLSeconds:      3600, // 60 minutes
+				PreRefreshSeconds:  900,  // 15 minutes before expiry
+				GracePeriodSeconds: 300,  // 5-minute grace window
+				StaleAlertSeconds:  300,  // alert if agent hasn't picked up within 5 min
+			},
+		},
 	}
 }
 
@@ -142,7 +185,7 @@ func Load(path string) (*Config, error) {
 		return cfg, nil
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is from daemon config, not user input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return cfg, nil // Return defaults if file doesn't exist

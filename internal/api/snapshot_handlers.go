@@ -99,7 +99,7 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, vm
 
 	// Create snapshot directory
 	snapshotDir := filepath.Join(s.config.Storage.DataDir, "snapshots", vm.ID, snapshotID)
-	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
+	if err := os.MkdirAll(snapshotDir, 0750); err != nil { //nolint:gosec // snapshot dir is private to the daemon
 		s.logger.Printf("ERROR: Failed to create snapshot directory: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to create snapshot directory", nil)
 		return

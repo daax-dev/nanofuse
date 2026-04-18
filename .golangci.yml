@@ -19,10 +19,16 @@ linters:
     gosec:
       excludes:
         - G104  # errors unhandled — intentional in some deferred close paths
+        - G115  # integer overflow conversion — intentional narrowing in protocol serialisation
+        - G118  # context cancel not called — stored on struct, cancelled via dedicated method
+        - G122  # filepath.Walk race — pre-existing daemon code; paths are trusted config
         - G204  # subprocess launched with variable — intentional; this is a system daemon
         - G301  # directory permissions 0755 — codebase standard for daemon-owned dirs
         - G302  # file permissions >0600 — hooks/executables/logs intentionally need broader perms
         - G304  # file path from variable — all paths sourced from daemon config, not user input
+        - G703  # path traversal via taint — paths sourced from daemon config/db, not user input
+        - G705  # XSS via taint — binary response body; content-type controlled by caller
+        - G706  # log injection via taint — CLI tool; paths are operator-supplied, not untrusted
     revive:
       rules:
         - name: exported

@@ -6,7 +6,7 @@ package firecracker
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,8 +36,8 @@ type PoolConfig struct {
 
 // poolEntry is an internal pool slot holding a ready VM.
 type poolEntry struct {
-	vm       *types.VM
-	readyAt  time.Time
+	vm      *types.VM
+	readyAt time.Time
 }
 
 // PoolStats reports current pool health metrics.
@@ -93,7 +93,11 @@ func NewVMPool(cfg PoolConfig, manager *Manager) (*VMPool, error) {
 	// Pre-warm to MinSize synchronously so the pool is useful immediately.
 	for i := 0; i < cfg.MinSize; i++ {
 		if err := p.warmOne(); err != nil {
-			log.Printf("WARN [pool] initial warm failed (slot %d/%d): %v", i+1, cfg.MinSize, err)
+			slog.Warn("pool initial warm failed",
+				slog.Int("slot", i+1),
+				slog.Int("min_size", cfg.MinSize),
+				slog.Any("error", err),
+			)
 		}
 	}
 
@@ -113,14 +117,16 @@ func (p *VMPool) Acquire(ctx context.Context) (*types.VM, error) {
 		p.ready = p.ready[1:]
 		p.inFlight++
 		p.mu.Unlock()
-		log.Printf("INFO [pool] acquired pre-warmed VM %s (pool lag: %v)",
-			entry.vm.ID, time.Since(entry.readyAt).Round(time.Millisecond))
+		slog.Info("pool acquired pre-warmed VM",
+			slog.String("vm_id", entry.vm.ID),
+			slog.Duration("pool_lag", time.Since(entry.readyAt).Round(time.Millisecond)),
+		)
 		return entry.vm, nil
 	}
 	p.mu.Unlock()
 
 	// Cold path – warm a VM on demand.
-	log.Printf("WARN [pool] pool empty, falling back to on-demand warm")
+	slog.Warn("pool empty, falling back to on-demand warm")
 	vm, err := p.warmOneContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("pool: on-demand warm failed: %w", err)
@@ -140,9 +146,12 @@ func (p *VMPool) Release(vm *types.VM) {
 	p.mu.Unlock()
 
 	if atCapacity {
-		log.Printf("INFO [pool] pool full, destroying returned VM %s", vm.ID)
+		slog.Info("pool full, destroying returned VM", slog.String("vm_id", vm.ID))
 		if err := p.manager.Stop(vm, 5); err != nil {
-			log.Printf("WARN [pool] failed to stop returned VM %s: %v", vm.ID, err)
+			slog.Warn("pool failed to stop returned VM",
+				slog.String("vm_id", vm.ID),
+				slog.Any("error", err),
+			)
 		}
 		p.cleanupVMDir(vm)
 		return
@@ -152,7 +161,7 @@ func (p *VMPool) Release(vm *types.VM) {
 	p.mu.Lock()
 	p.ready = append(p.ready, &poolEntry{vm: vm, readyAt: time.Now()})
 	p.mu.Unlock()
-	log.Printf("INFO [pool] VM %s returned to pool", vm.ID)
+	slog.Info("pool VM returned to pool", slog.String("vm_id", vm.ID))
 }
 
 // Stats returns a snapshot of current pool metrics.
@@ -179,7 +188,10 @@ func (p *VMPool) Close() {
 
 	for _, e := range vms {
 		if err := p.manager.Stop(e.vm, 5); err != nil {
-			log.Printf("WARN [pool] error stopping VM %s during Close: %v", e.vm.ID, err)
+			slog.Warn("pool error stopping VM during Close",
+				slog.String("vm_id", e.vm.ID),
+				slog.Any("error", err),
+			)
 		}
 		p.cleanupVMDir(e.vm)
 	}
@@ -206,7 +218,7 @@ func (p *VMPool) refillLoop() {
 					return
 				}
 				if err := p.warmOne(); err != nil {
-					log.Printf("WARN [pool] refill warm failed: %v", err)
+					slog.Warn("pool refill warm failed", slog.Any("error", err))
 					break // back-off; retry next tick
 				}
 			}
@@ -237,9 +249,9 @@ func (p *VMPool) warmOneContext(ctx context.Context) (*types.VM, error) {
 	}
 
 	vm := &types.VM{
-		ID:    vmID,
-		State: types.StateStarting,
-		Config: p.cfg.VMDefaults,
+		ID:        vmID,
+		State:     types.StateStarting,
+		Config:    p.cfg.VMDefaults,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -255,7 +267,10 @@ func (p *VMPool) warmOneContext(ctx context.Context) (*types.VM, error) {
 	// Brief readiness poll – real implementation would query the Firecracker API
 	// or use a vsock handshake.  We time-box to keep cold-start under 250ms.
 	if err := waitForVMReady(ctx, vm, 200*time.Millisecond); err != nil {
-		log.Printf("WARN [pool] VM %s readiness timeout, marking as running anyway: %v", vmID, err)
+		slog.Warn("pool VM readiness timeout, marking as running anyway",
+			slog.String("vm_id", vmID),
+			slog.Any("error", err),
+		)
 	}
 
 	vm.State = types.StateRunning
@@ -284,6 +299,9 @@ func waitForVMReady(ctx context.Context, vm *types.VM, timeout time.Duration) er
 func (p *VMPool) cleanupVMDir(vm *types.VM) {
 	vmDir := filepath.Join(p.manager.dataDir, "pool", vm.ID)
 	if err := os.RemoveAll(vmDir); err != nil {
-		log.Printf("WARN [pool] failed to remove VM dir %s: %v", vmDir, err)
+		slog.Warn("pool failed to remove VM dir",
+			slog.String("vm_dir", vmDir),
+			slog.Any("error", err),
+		)
 	}
 }

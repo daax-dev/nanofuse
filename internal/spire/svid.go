@@ -204,11 +204,11 @@ func (st *SVIDStore) renewSVID(old *SVID) error {
 	// Re-register the workload entry to reset the TTL on the SPIRE server side.
 	// The SPIFFE ID stays the same, so clients see no disruption.
 	if err := st.svc.RegisterWorkload(ctx, &WorkloadEntry{
-		SpiffeID:    old.SpiffeID,
-		ParentID:    st.svc.cfg.ParentID,
-		Selectors:   []string{fmt.Sprintf("docker:label:vm_id:%s", old.VMID)},
-		TTL:         ttl,
-		WorkloadID:  old.VMID,
+		SpiffeID:   old.SpiffeID,
+		ParentID:   st.svc.cfg.ParentID,
+		Selectors:  []string{fmt.Sprintf("docker:label:vm_id:%s", old.VMID)},
+		TTL:        ttl,
+		WorkloadID: old.VMID,
 	}); err != nil {
 		return fmt.Errorf("re-register workload entry: %w", err)
 	}

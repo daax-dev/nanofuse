@@ -20,10 +20,10 @@ func makeTestVM(id string) *types.VM {
 // newDisabledService creates a SPIRE service with integration disabled.
 func newDisabledService() *Service {
 	return NewService(&config.SPIREConfig{
-		Enabled:    false,
+		Enabled:     false,
 		TrustDomain: "test.example",
-		ParentID:   "spiffe://test.example/agent",
-		DefaultTTL: 3600,
+		ParentID:    "spiffe://test.example/agent",
+		DefaultTTL:  3600,
 	})
 }
 

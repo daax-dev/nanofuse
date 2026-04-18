@@ -6,7 +6,7 @@ package layer
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -104,7 +104,10 @@ func (cl *CowLayer) mount() error {
 	}
 
 	cl.mounted = true
-	log.Printf("INFO [cow] overlayfs mounted for session %s at %s", cl.opts.SessionID, cl.mergedDir)
+	slog.Info("cow overlayfs mounted",
+		slog.String("session_id", cl.opts.SessionID),
+		slog.String("merged_dir", cl.mergedDir),
+	)
 	return nil
 }
 
@@ -160,7 +163,10 @@ func (cl *CowLayer) Snapshot(destDir string) error {
 		return fmt.Errorf("cow: snapshot for session %s timed out after 5s", cl.opts.SessionID)
 	}
 
-	log.Printf("INFO [cow] snapshot taken for session %s → %s", cl.opts.SessionID, destDir)
+	slog.Info("cow snapshot taken",
+		slog.String("session_id", cl.opts.SessionID),
+		slog.String("dest_dir", destDir),
+	)
 	return nil
 }
 
@@ -175,7 +181,7 @@ func (cl *CowLayer) Destroy() error {
 			return fmt.Errorf("cow: umount %s failed: %w: %s", cl.mergedDir, err, string(out))
 		}
 		cl.mounted = false
-		log.Printf("INFO [cow] overlayfs unmounted for session %s", cl.opts.SessionID)
+		slog.Info("cow overlayfs unmounted", slog.String("session_id", cl.opts.SessionID))
 	}
 
 	sessionRoot := filepath.Join(cl.opts.SessionDir, cl.opts.SessionID)
@@ -183,7 +189,7 @@ func (cl *CowLayer) Destroy() error {
 		return fmt.Errorf("cow: cleanup session dir %s: %w", sessionRoot, err)
 	}
 
-	log.Printf("INFO [cow] session %s cleaned up", cl.opts.SessionID)
+	slog.Info("cow session cleaned up", slog.String("session_id", cl.opts.SessionID))
 	return nil
 }
 

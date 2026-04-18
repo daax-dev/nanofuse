@@ -15,6 +15,7 @@ import (
 	"github.com/jpoley/nanofuse/internal/firecracker"
 	"github.com/jpoley/nanofuse/internal/logging"
 	"github.com/jpoley/nanofuse/internal/network"
+	"github.com/jpoley/nanofuse/internal/policy"
 	"github.com/jpoley/nanofuse/internal/recording"
 	"github.com/jpoley/nanofuse/internal/registry"
 	"github.com/jpoley/nanofuse/internal/spire"
@@ -32,6 +33,8 @@ type Server struct {
 	startTime        time.Time
 	recordingStorage RecordingStorageInterface
 	spireService     *spire.Service
+	policyEngine     *policy.Engine
+	rotationMgr      *spire.RotationManager
 }
 
 // loadExistingAllocations loads IP allocations from existing VMs in the database
@@ -365,6 +368,31 @@ func startServer(cfg *config.Config) error {
 		logger.Info("SPIRE workload registration enabled (trust domain: %s)", cfg.SPIRE.TrustDomain)
 	}
 
+	// Initialize policy engine (issue #3 — Aembit-compatible workload IAM).
+	policyEngine := policy.NewEngine()
+	logger.Info("Workload policy engine initialized")
+
+	// Initialize SVID rotation manager (issue #4).
+	rotationMgr := spire.NewRotationManager(
+		&cfg.Auth.SVIDRotation,
+		func(ctx context.Context, spiffeID string) {
+			// Default rotation callback: re-register the workload via SPIRE.
+			// In production this would trigger a SPIFFE workload API call.
+			logger.Info("SVID pre-refresh triggered for %s — re-registering workload", spiffeID)
+			if _, err := spireService.CreateVMWorkloadEntry(ctx, spiffeID, "", ""); err != nil {
+				logger.Warn("SVID rotation re-registration failed for %s: %v", spiffeID, err)
+			}
+		},
+		func(spiffeID string, issuedAt time.Time) {
+			logger.Warn("SVID stale pickup alert: agent has not confirmed new SVID for %s (issued at %s)",
+				spiffeID, issuedAt.Format(time.RFC3339))
+		},
+	)
+	if cfg.Auth.Enabled {
+		logger.Info("Auth middleware enabled (DEV_STATIC_KEYS=%s)", os.Getenv("DEV_STATIC_KEYS"))
+		go rotationMgr.Run(context.Background())
+	}
+
 	server := &Server{
 		config:           cfg,
 		db:               db,
@@ -375,6 +403,8 @@ func startServer(cfg *config.Config) error {
 		startTime:        time.Now(),
 		recordingStorage: recordingStorage,
 		spireService:     spireService,
+		policyEngine:     policyEngine,
+		rotationMgr:      rotationMgr,
 	}
 
 	// Set up process exit handler to reap zombies and update VM state
@@ -383,7 +413,10 @@ func startServer(cfg *config.Config) error {
 
 	// Setup HTTP routes and server
 	mux := setupHTTPRouter(server)
-	handler := loggingMiddleware(logger)(mux)
+	// Chain: logging → auth → routes
+	handler := loggingMiddleware(logger)(
+		AuthMiddleware(&cfg.Auth, policyEngine)(mux),
+	)
 
 	// Setup listeners (can have multiple: Unix socket + TCP)
 	listeners, err := setupListeners(cfg, logger)

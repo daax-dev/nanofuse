@@ -185,7 +185,7 @@ func Load(path string) (*Config, error) {
 		return cfg, nil
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is from daemon config, not user input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return cfg, nil // Return defaults if file doesn't exist

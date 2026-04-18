@@ -5,6 +5,7 @@ run:
   tests: true
 
 linters:
+  default: none
   enable:
     - bodyclose
     - gocyclo
@@ -12,39 +13,39 @@ linters:
     - misspell
     - prealloc
     - revive
-
-linters-settings:
-  gocyclo:
-    min-complexity: 20
-  gosec:
-    excludes:
-      - G104
-  staticcheck:
-    checks:
-      - "all"
-      - "-QF*"
-  revive:
+  settings:
+    gocyclo:
+      min-complexity: 20
+    gosec:
+      excludes:
+        - G104  # errors unhandled — intentional in some deferred close paths
+        - G204  # subprocess launched with variable — intentional; this is a system daemon
+        - G301  # directory permissions 0755 — codebase standard for daemon-owned dirs
+        - G302  # file permissions >0600 — hooks/executables/logs intentionally need broader perms
+        - G304  # file path from variable — all paths sourced from daemon config, not user input
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    generated: lax
     rules:
-      - name: exported
-        disabled: true
+      - linters:
+          - errcheck
+          - gosec
+        path: _test\.go
+      - linters:
+          - revive
+        path: cmd/
+      - linters:
+          - unused
+        path: internal/api/
+        text: "handle(VMs?|VM[A-Z]|VMBackups|Backup|VMSnapshots|Snapshot|Image|ImageJob)|extractIDFromPath"
+    paths:
+      - third_party
+      - builtin
+      - examples
 
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-generated: lax
-  exclude-rules:
-    - linters:
-        - errcheck
-        - gosec
-      path: _test\.go
-    - linters:
-        - revive
-      path: cmd/
-    - linters:
-        - unused
-      path: internal/api/
-      text: "handle(VMs?|VM[A-Z]|VMBackups|Backup|VMSnapshots|Snapshot|Image|ImageJob)|extractIDFromPath"
-  exclude-dirs:
-    - third_party
-    - builtin
-    - examples

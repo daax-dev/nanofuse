@@ -71,7 +71,7 @@ func loadExistingAllocations(db *storage.DB, ipam *network.IPAM, logger *logging
 // initializeInfrastructure initializes database and managers
 func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*storage.DB, *firecracker.Manager, *registry.Client, error) {
 	// Create data directory
-	if err := os.MkdirAll(cfg.Storage.DataDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.Storage.DataDir, 0750); err != nil { //nolint:gosec // data dir is private to the daemon
 		return nil, nil, nil, err
 	}
 
@@ -223,7 +223,7 @@ func setupListeners(cfg *config.Config, logger *logging.Logger) ([]net.Listener,
 		}
 
 		// Set socket permissions to allow group access
-		if err := os.Chmod(socketPath, 0666); err != nil {
+		if err := os.Chmod(socketPath, 0660); err != nil { //nolint:gosec // Unix socket needs group-readable perms for client access
 			logger.Warn("Failed to set socket permissions: %v", err)
 		}
 

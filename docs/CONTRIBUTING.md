@@ -221,8 +221,8 @@ When adding features, update:
 ## Getting Help
 
 - 📚 Check [documentation](docs/)
-- 🐛 Search [existing issues](https://github.com/jpoley/nanofuse/issues)
-- 💬 Start a [discussion](https://github.com/jpoley/nanofuse/discussions)
+- 🐛 Search [existing issues](https://github.com/daax-dev/nanofuse/issues)
+- 💬 Start a [discussion](https://github.com/daax-dev/nanofuse/discussions)
 - 📧 Contact maintainers
 
 ## Code of Conduct

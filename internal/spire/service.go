@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/config"
+	"github.com/daax-dev/nanofuse/internal/config"
 )
 
 // Service provides SPIRE workload registration operations.

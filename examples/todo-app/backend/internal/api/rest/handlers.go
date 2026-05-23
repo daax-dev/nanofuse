@@ -14,9 +14,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
-	"github.com/jpoley/nanofuse/examples/todo-app/backend/internal/domain"
-	"github.com/jpoley/nanofuse/examples/todo-app/backend/internal/observability"
-	"github.com/jpoley/nanofuse/examples/todo-app/backend/internal/storage"
+	"github.com/daax-dev/nanofuse/examples/todo-app/backend/internal/domain"
+	"github.com/daax-dev/nanofuse/examples/todo-app/backend/internal/observability"
+	"github.com/daax-dev/nanofuse/examples/todo-app/backend/internal/storage"
 )
 
 var validate *validator.Validate

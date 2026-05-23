@@ -15,7 +15,7 @@ A dual-track versioning system for NanoFuse that separates Go binary releases fr
 ### 2. Docker Images
 - **Tags**: `image-v0.0.1`, `image-v0.0.2`, etc.
 - **Script**: `./image-release.sh`
-- **Artifacts**: GHCR images at `ghcr.io/jpoley/nanofuse/base:X.Y.Z`
+- **Artifacts**: GHCR images at `ghcr.io/daax-dev/nanofuse/base:X.Y.Z`
 - **Use case**: When base image is stable and ready for versioned release
 
 ## Files Created/Modified
@@ -67,7 +67,7 @@ git push origin main
 3. Creates and pushes tag
 4. GitHub Actions:
    - Builds Docker image from `images/base/`
-   - Tags as `ghcr.io/jpoley/nanofuse/base:0.0.6`
+   - Tags as `ghcr.io/daax-dev/nanofuse/base:0.0.6`
    - Also updates `latest` tag
 5. Users can now: `nanofuse image pull --default --tag 0.0.6`
 
@@ -92,8 +92,8 @@ git push origin main
 
 ### Before:
 ```bash
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:latest
-nanofuse vm run ghcr.io/jpoley/nanofuse/base:latest my-vm
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:latest
+nanofuse vm run ghcr.io/daax-dev/nanofuse/base:latest my-vm
 ```
 
 ### After:
@@ -107,8 +107,8 @@ nanofuse image pull --default --tag 0.0.1
 nanofuse vm run default:0.0.1 my-vm
 
 # Shortcuts work
-nanofuse vm run base my-vm           # → ghcr.io/jpoley/nanofuse/base:latest
-nanofuse vm run default:0.0.5 my-vm  # → ghcr.io/jpoley/nanofuse/base:0.0.5
+nanofuse vm run base my-vm           # → ghcr.io/daax-dev/nanofuse/base:latest
+nanofuse vm run default:0.0.5 my-vm  # → ghcr.io/daax-dev/nanofuse/base:0.0.5
 ```
 
 ## Testing Plan
@@ -133,8 +133,8 @@ git fetch --tags
 # Push a test image tag
 git tag image-v0.0.1
 git push origin image-v0.0.1
-# Watch: https://github.com/jpoley/nanofuse/actions
-# Check GHCR: https://github.com/jpoley/nanofuse/pkgs/container/nanofuse%2Fbase
+# Watch: https://github.com/daax-dev/nanofuse/actions
+# Check GHCR: https://github.com/daax-dev/nanofuse/pkgs/container/nanofuse%2Fbase
 ```
 
 ### 4. Test CLI shortcuts

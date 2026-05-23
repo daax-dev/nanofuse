@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/client"
-	"github.com/jpoley/nanofuse/internal/clierrors"
-	"github.com/jpoley/nanofuse/internal/inspect"
-	"github.com/jpoley/nanofuse/internal/output"
-	"github.com/jpoley/nanofuse/internal/validate"
+	"github.com/daax-dev/nanofuse/internal/client"
+	"github.com/daax-dev/nanofuse/internal/clierrors"
+	"github.com/daax-dev/nanofuse/internal/inspect"
+	"github.com/daax-dev/nanofuse/internal/output"
+	"github.com/daax-dev/nanofuse/internal/validate"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
@@ -44,7 +44,7 @@ var (
 
 const (
 	// DefaultImageRegistry is the default GHCR registry for nanofuse images
-	DefaultImageRegistry = "ghcr.io/jpoley/nanofuse"
+	DefaultImageRegistry = "ghcr.io/daax-dev/nanofuse"
 	// DefaultBaseImage is the default base image name
 	DefaultBaseImage = "base"
 	// DefaultImageTag is the default image tag

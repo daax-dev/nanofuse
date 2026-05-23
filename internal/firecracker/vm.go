@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/types"
 )
 
 // ProcessExitHandler is called when a VM process exits

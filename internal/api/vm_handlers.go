@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/network"
+	"github.com/daax-dev/nanofuse/internal/types"
 	"github.com/google/uuid"
-	"github.com/jpoley/nanofuse/internal/network"
-	"github.com/jpoley/nanofuse/internal/types"
 )
 
 // handleListVMs lists all VMs

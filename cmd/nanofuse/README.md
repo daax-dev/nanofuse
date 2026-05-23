@@ -8,7 +8,7 @@ The `nanofuse` CLI is a command-line tool for managing Firecracker-based microVM
 
 ```bash
 # Clone the repository
-git clone https://github.com/jpoley/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 
 # Build the CLI
@@ -20,7 +20,7 @@ sudo make install
 
 ### Binary Download
 
-Download the latest release from [GitHub Releases](https://github.com/jpoley/nanofuse/releases).
+Download the latest release from [GitHub Releases](https://github.com/daax-dev/nanofuse/releases).
 
 ## Quick Start
 
@@ -310,7 +310,7 @@ This shows:
 
 ```bash
 # Clone repository
-git clone https://github.com/jpoley/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 
 # Download dependencies

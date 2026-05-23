@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/types"
 )
 
 func TestHealthEndpoint(t *testing.T) {

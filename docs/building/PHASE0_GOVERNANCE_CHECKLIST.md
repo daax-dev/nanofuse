@@ -620,7 +620,7 @@ This blocks MVP validation and CI confidence.
 set -euo pipefail
 
 # Configuration
-IMAGE="ghcr.io/jpoley/nanofuse/base:latest"
+IMAGE="ghcr.io/daax-dev/nanofuse/base:latest"
 VM_NAME="e2e-test-vm"
 API_URL="http://127.0.0.1:8080"
 

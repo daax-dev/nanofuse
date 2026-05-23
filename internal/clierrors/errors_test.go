@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jpoley/nanofuse/internal/client"
+	"github.com/daax-dev/nanofuse/internal/client"
 )
 
 func TestCLIError_Error(t *testing.T) {

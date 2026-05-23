@@ -178,7 +178,7 @@ go test -v -tags=integration ./test/integration/...
 --- PASS: TestIntegration_HealthCheck (0.10s)
 ...
 PASS
-ok      github.com/jpoley/nanofuse/test/integration     0.527s
+ok      github.com/daax-dev/nanofuse/test/integration     0.527s
 ```
 
 ---
@@ -239,7 +239,7 @@ $ go test -tags=integration -c ./test/integration/...
 $ mage testIntegration
 ...
 PASS
-ok      github.com/jpoley/nanofuse/test/integration     0.527s
+ok      github.com/daax-dev/nanofuse/test/integration     0.527s
 ```
 
 ### 3. All Assertions Pass

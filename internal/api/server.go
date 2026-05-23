@@ -11,14 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/config"
-	"github.com/jpoley/nanofuse/internal/firecracker"
-	"github.com/jpoley/nanofuse/internal/logging"
-	"github.com/jpoley/nanofuse/internal/network"
-	"github.com/jpoley/nanofuse/internal/recording"
-	"github.com/jpoley/nanofuse/internal/registry"
-	"github.com/jpoley/nanofuse/internal/spire"
-	"github.com/jpoley/nanofuse/internal/storage"
+	"github.com/daax-dev/nanofuse/internal/config"
+	"github.com/daax-dev/nanofuse/internal/firecracker"
+	"github.com/daax-dev/nanofuse/internal/logging"
+	"github.com/daax-dev/nanofuse/internal/network"
+	"github.com/daax-dev/nanofuse/internal/recording"
+	"github.com/daax-dev/nanofuse/internal/registry"
+	"github.com/daax-dev/nanofuse/internal/spire"
+	"github.com/daax-dev/nanofuse/internal/storage"
 )
 
 // Server represents the API server

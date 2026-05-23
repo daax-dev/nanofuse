@@ -447,4 +447,4 @@ sudo iptables -t nat -A POSTROUTING -s 172.16.0.0/24 ! -d 172.16.0.0/24 -j MASQU
 2. Review daemon logs: `sudo journalctl -u nanofused -n 100`
 3. Review VM console logs: `/var/lib/nanofuse/vms/<vm-id>/console.log`
 4. Run diagnostic scripts: `./scripts/health-check.sh <vm-name>`
-5. File an issue: https://github.com/peregrinesummit/nanofuse/issues
+5. File an issue: https://github.com/daax-dev/nanofuse/issues

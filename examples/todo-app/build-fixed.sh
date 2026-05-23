@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${SCRIPT_DIR}/output-fixed"
-IMAGE_TAG="ghcr.io/peregrinesummit/nanofuse/todo-app:latest"
+IMAGE_TAG="ghcr.io/daax-dev/nanofuse/todo-app:latest"
 
 echo "Building fixed NanoFuse Todo-App Image"
 echo ""

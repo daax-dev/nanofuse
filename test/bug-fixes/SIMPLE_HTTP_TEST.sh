@@ -22,7 +22,7 @@ curl -s http://localhost:8080/health | jq -r .status
 echo ""
 echo "2. Creating VM..."
 ./bin/nanofuse --api-url http://localhost:8080 vm create \
-    ghcr.io/jpoley/nanofuse/base:latest \
+    ghcr.io/daax-dev/nanofuse/base:latest \
     http-test-vm \
     --vcpus 2 \
     --memory 512

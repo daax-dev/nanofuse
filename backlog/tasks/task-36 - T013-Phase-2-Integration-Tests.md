@@ -57,7 +57,7 @@ End-to-end integration tests for recording integration.
 <!-- SECTION:NOTES:BEGIN -->
 ## Implementation Summary
 
-**PR**: https://github.com/peregrinesummit/nanofuse/pull/90
+**PR**: https://github.com/daax-dev/nanofuse/pull/90
 
 ### Tests Implemented
 

@@ -63,7 +63,7 @@ Error: Failed to get pull status: Job ID is required
 **Direct API Test** (WORKS):
 ```bash
 curl -X POST -H "Content-Type: application/json" \
-  -d '{"image_ref":"ghcr.io/jpoley/nanofuse/base:latest"}' \
+  -d '{"image_ref":"ghcr.io/daax-dev/nanofuse/base:latest"}' \
   http://localhost:8080/images/pull
 # Returns: {"job_id":"...","state":"pending",...}
 ```

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/daax-dev/nanofuse/internal/layer"
 	"github.com/fatih/color"
-	"github.com/jpoley/nanofuse/internal/layer"
 	"github.com/spf13/cobra"
 )
 

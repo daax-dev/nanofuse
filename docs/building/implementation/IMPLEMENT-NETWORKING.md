@@ -32,7 +32,7 @@ package main
 import (
 	"fmt"
 	"log"
-	"github.com/jpoley/nanofuse/internal/network"
+	"github.com/daax-dev/nanofuse/internal/network"
 )
 
 func main() {
@@ -227,7 +227,7 @@ Add network initialization before starting the API server:
 ```go
 import (
 	// ... existing imports ...
-	"github.com/jpoley/nanofuse/internal/network"
+	"github.com/daax-dev/nanofuse/internal/network"
 )
 
 func main() {

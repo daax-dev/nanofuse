@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/builder"
+	"github.com/daax-dev/nanofuse/internal/logging"
+	"github.com/daax-dev/nanofuse/internal/types"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/jpoley/nanofuse/internal/builder"
-	"github.com/jpoley/nanofuse/internal/logging"
-	"github.com/jpoley/nanofuse/internal/types"
 )
 
 // ClientOptions holds configuration for the registry client

@@ -52,8 +52,8 @@ Push/PR → Build → Test → Scan → Lint → Publish (main only) → Release
 ```
 ✅ Everything from PR check
 ✅ Pushes Docker image to GHCR:
-   - ghcr.io/jpoley/nanofuse/base:latest
-   - ghcr.io/jpoley/nanofuse/base:sha-abc123
+   - ghcr.io/daax-dev/nanofuse/base:latest
+   - ghcr.io/daax-dev/nanofuse/base:sha-abc123
 ❌ Does NOT create GitHub release
 ```
 
@@ -64,7 +64,7 @@ Push/PR → Build → Test → Scan → Lint → Publish (main only) → Release
 ```
 ✅ Everything from main
 ✅ Pushes Docker image with version tag:
-   - ghcr.io/jpoley/nanofuse/base:v1.0.0
+   - ghcr.io/daax-dev/nanofuse/base:v1.0.0
 ✅ Creates GitHub Release with:
    - nanofuse binary (Linux x86_64)
    - nanofused binary (Linux x86_64)
@@ -121,7 +121,7 @@ gh run watch
 gh run view --log-failed
 
 # Or visit
-# https://github.com/jpoley/nanofuse/actions
+# https://github.com/daax-dev/nanofuse/actions
 ```
 
 ### Download Artifacts
@@ -307,8 +307,8 @@ Configuration:
 Add to README:
 
 ```markdown
-[![CI/CD Pipeline](https://github.com/jpoley/nanofuse/actions/workflows/ci.yaml/badge.svg)](https://github.com/jpoley/nanofuse/actions/workflows/ci.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jpoley/nanofuse)](https://goreportcard.com/report/github.com/jpoley/nanofuse)
+[![CI/CD Pipeline](https://github.com/daax-dev/nanofuse/actions/workflows/ci.yaml/badge.svg)](https://github.com/daax-dev/nanofuse/actions/workflows/ci.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/daax-dev/nanofuse)](https://goreportcard.com/report/github.com/daax-dev/nanofuse)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ```
 
@@ -381,7 +381,7 @@ Add to README:
 1. Run `./scripts/check-build.sh` - fixes 90% of issues
 2. Check [CI/CD docs](docs/CI_CD.md) - comprehensive troubleshooting
 3. View logs: `gh run view --log-failed`
-4. Search [existing issues](https://github.com/jpoley/nanofuse/issues)
+4. Search [existing issues](https://github.com/daax-dev/nanofuse/issues)
 5. Open new issue with `ci` label
 
 ---

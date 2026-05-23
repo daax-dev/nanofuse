@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/storage"
-	"github.com/jpoley/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/storage"
+	"github.com/daax-dev/nanofuse/internal/types"
 )
 
 func main() {

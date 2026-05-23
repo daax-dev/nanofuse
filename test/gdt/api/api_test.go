@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jpoley/nanofuse/test/gdt/testutil"
+	"github.com/daax-dev/nanofuse/test/gdt/testutil"
 )
 
 // TestGdtAPISuite runs all gdt API tests.

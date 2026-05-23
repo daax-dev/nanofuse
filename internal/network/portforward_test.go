@@ -3,7 +3,7 @@ package network
 import (
 	"testing"
 
-	"github.com/jpoley/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/types"
 )
 
 func TestValidatePortForward(t *testing.T) {

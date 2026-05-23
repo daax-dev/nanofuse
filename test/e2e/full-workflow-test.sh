@@ -60,7 +60,7 @@ Environment:
 
 Examples:
   $(basename "$0")
-  $(basename "$0") --image ghcr.io/peregrinesummit/nanofuse/todo-app:latest
+  $(basename "$0") --image ghcr.io/daax-dev/nanofuse/todo-app:latest
   $(basename "$0") --verbose --skip-cleanup
 EOF
 }

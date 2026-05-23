@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/logging"
-	"github.com/jpoley/nanofuse/internal/recording"
+	"github.com/daax-dev/nanofuse/internal/logging"
+	"github.com/daax-dev/nanofuse/internal/recording"
 )
 
 // mockRecordingStorage implements RecordingStorageInterface for testing

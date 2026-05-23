@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package todo;
 
-option go_package = "github.com/jpoley/nanofuse/examples/todo-app/backend/proto/todopb";
+option go_package = "github.com/daax-dev/nanofuse/examples/todo-app/backend/proto/todopb";
 
 import "google/protobuf/timestamp.proto";
 

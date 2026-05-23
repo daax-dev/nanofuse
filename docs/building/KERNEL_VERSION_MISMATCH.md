@@ -102,7 +102,7 @@ sha256:aac30dfac...  5.10.240  # Another todo-app (OLD)
 ## Evidence in GHCR
 
 ```bash
-$ nanofuse image pull ghcr.io/peregrinesummit/nanofuse/todo-app:latest
+$ nanofuse image pull ghcr.io/daax-dev/nanofuse/todo-app:latest
 Error: MANIFEST_UNKNOWN: manifest unknown
 ```
 

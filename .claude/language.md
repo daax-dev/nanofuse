@@ -29,7 +29,7 @@ For each active language, this file records:
 - Used for build/install/fixture scripts under `scripts/` and `mage` shell-outs.
 - Version target: bash 5.x.
 - Linter: none observed; confirm with operator (shellcheck is referenced in a PRD spec and the `.flowspec` pre-commit template, but is not wired into CI or `mage`).
-- Style: `set -euo pipefail` in every script. Quote all expansions. No `eval`.
+- Style: Use `set -euo pipefail` in new or modified scripts where compatible. Quote all expansions. No `eval`.
 
 ---
 

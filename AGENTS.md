@@ -52,6 +52,6 @@ Read the matching file **before** you:
 - `api/` — `openapi.yaml` REST contract + README. `layers/` — microVM image layer definitions (base-os, runtimes, tools).
 - `magefile.go` — build/test/lint/CI automation (mage). `config.dev.yaml` — local dev daemon config.
 - `.github/workflows/` — CI (`ci.yaml`), release (`release.yaml`), PR comment (`pr-comment.yaml`).
-- `backlog/` — Backlog.md task system (source of work intake). `docs/` — user + developer docs; `docs/building/` — WIP/implementation docs.
+- `backlog.md` — task system (source of work intake). `docs/` — user + developer docs; `docs/building/` — WIP/implementation docs.
 - `.claude/CLAUDE.md` — extended repo-specific guidance (spec-driven dev, file-organization, no-stale-images). `.specify/` — jp-spec-kit artifacts and constitution.
 - `test/` — integration and e2e tests. `systemd/`, `nanofused.service` — daemon service units.

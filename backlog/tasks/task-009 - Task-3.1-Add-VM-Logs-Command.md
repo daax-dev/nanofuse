@@ -171,5 +171,5 @@ The vm logs command has been fully implemented and merged in PR #67.
 - Tests pass: `go test ./cmd/nanofuse/ -v`
 
 ### PR URL:
-https://daax-dev/nanofuse/pull/67
+https://github.com/daax-dev/nanofuse/pull/67
 <!-- SECTION:NOTES:END -->

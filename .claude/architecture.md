@@ -10,7 +10,7 @@ The project constitution (`.specify/memory/constitution.md` / `.claude/constitut
 - Control plane = `nanofused` daemon: owns microVM lifecycle, drives Firecracker processes, manages TAP networking + IPAM, images, and snapshots.
 - `nanofuse` CLI (cobra) and future SDKs are clients of the daemon REST API (`api/openapi.yaml`); they do not touch Firecracker or storage directly.
 - Daemon transport: unix socket (`api.socket`, mode-restricted) with optional TCP bind; host<->guest over vsock.
-- Internal package layout under `internal/`: `api` (HTTP handlers, auth middleware), `firecracker` (VMM control), `network` (TAP/IPAM), `storage` (SQLite + filesystem), `registry`/`layer`/`layerbuild`/`builder` (image pipeline), `policy` (authz), `config`, `logging`, `recording`, `spire`, `types`, `validate`.
+- Internal package layout under `internal/`: `api` (HTTP handlers, auth middleware), `firecracker` (VMM control), `network` (TAP/IPAM), `storage` (SQLite + filesystem), `registry`/`layer`/`layerbuild`/`builder` (image pipeline), `config`, `logging`, `recording`, `spire`, `types`, `validate`.
 
 ---
 

@@ -59,5 +59,5 @@ Final end-to-end tests and user documentation.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Created E2E tests (TestFullWorkflow, TestRecordingCapture, TestMultiLayerComposition, TestRegistryLayerFetch) and documentation (LAYER_AUTHORING.md, RECORDING.md). Updated QUICKSTART.md with layer build examples. PR #89: https://daax-dev/nanofuse/pull/89
+Created E2E tests (TestFullWorkflow, TestRecordingCapture, TestMultiLayerComposition, TestRegistryLayerFetch) and documentation (LAYER_AUTHORING.md, RECORDING.md). Updated QUICKSTART.md with layer build examples. PR #89: https://github.com/daax-dev/nanofuse/pull/89
 <!-- SECTION:NOTES:END -->

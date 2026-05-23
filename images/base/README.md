@@ -171,10 +171,10 @@ Once the NanoFuse API is implemented, this image can be used as:
 
 ```bash
 # Pull image (future)
-nanofuse image pull ghcr.io/daax-dev/nanofuse-base:latest
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:latest
 
 # Create VM from image (future)
-nanofuse vm create ghcr.io/daax-dev/nanofuse-base:latest my-vm
+nanofuse vm create ghcr.io/daax-dev/nanofuse/base:latest my-vm
 
 # Start VM (future)
 nanofuse vm start my-vm

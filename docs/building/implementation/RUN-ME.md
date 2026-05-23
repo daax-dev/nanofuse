@@ -300,7 +300,7 @@ export NANOFUSE_API_URL="http://127.0.0.1:8080"
 export GITHUB_TOKEN="your_token_here"
 
 # Pull image
-./bin/nanofuse image pull ghcr.io/daax-dev/nanofuse-base:latest
+./bin/nanofuse image pull ghcr.io/daax-dev/nanofuse/base:latest
 
 # List pulled images
 ./bin/nanofuse image list

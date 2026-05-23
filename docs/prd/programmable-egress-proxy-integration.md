@@ -1,7 +1,8 @@
 # nanofuse Integration: Programmable Egress Proxy (forced mode, v1)
 
 **Status**: Design — not yet implemented
-**Canonical PRD**: `daax-dev/dx` → `arch/prd/programmable-egress-proxy.md` (v1.3.0)
+**Canonical PRD**: `daax-dev/daax-egress` → `docs/prd/programmable-egress-proxy.md` (v2.0.0; mirrored in `daax-dev/dx` → `arch/prd/`)
+**Proxy binary**: [`daax-dev/daax-egress`](https://github.com/daax-dev/daax-egress) — nanofuse runs it as a sidecar; this repo owns only the *adapter*
 **Tracking issue**: [daax-dev/dx#55](https://github.com/daax-dev/dx/issues/55)
 **Builds on**: the L3/L4 egress policy (`daax-dev/dx` → `arch/prd/nanofuse-network-egress-policy.md`)
 **Related nanofuse issues**: #19 (credential isolation), #17 (SPIFFE SVID), #31 (signed capability grants)
@@ -37,19 +38,21 @@ this.** For a proxy-enabled job, the guest egress allowlist must be **only**:
 
 Upstream API IPs are **never** reachable directly from the guest — only the host proxy dials them.
 This must be ratified as an explicit "proxy-enabled job" mode in the L3 PRD before this integration
-can be implemented (PRD milestone M5 hard dependency). Until then, forced enforcement is undefined.
+can be implemented (PRD milestone M6 hard dependency). Until then, forced enforcement is undefined.
 
 ---
 
 ## What lands in nanofuse
 
-The proxy data plane and policy engine are a **shared Go library** (per the canonical PRD). The
-nanofuse repo owns the **adapter** — the wiring that makes enforcement *forced*:
+The proxy itself is the **standalone `daax-egress` binary** (its own repo). nanofuse does **not**
+embed it as a library — it runs the binary as a sidecar and configures it over the binary's local
+control API. The nanofuse repo owns only the **adapter** — the wiring that makes enforcement
+*forced*:
 
 | Area | nanofuse-specific responsibility | Touches |
 |------|----------------------------------|---------|
 | Forced routing | nftables on the TAP: drop-all-except-{proxy, DNS, boot}; **fail-closed** (deny installed before guest's first packet, before proxy readiness) | `internal/network/` (extends `nat.go`, `tap.go`, portforward) |
-| Proxy placement | Run the egress proxy as a `nanofused` component (or sibling daemon) bound to the VM bridge gateway IP | `cmd/nanofused`, `nanofused.service` |
+| Proxy placement | Launch/supervise the `daax-egress` binary as a **sidecar, one instance per VM**, bound to that VM's bridge gateway IP; configure it via its control socket | `cmd/nanofused`, `nanofused.service` |
 | Client identity | Per-sandbox **mTLS**: provision a client cert/key into the guest at boot; TAP source binds identity (candidate SPIFFE SVID, #17) | guest provisioning path |
 | CA trust | Install the **public** cert of the per-run CA into the guest trust store at image build/boot; CA **private key never enters the guest** | guest image / boot provisioning |
 | IPv6 off | Disable IPv6 in the guest stack; ensure DNS returns no AAAA; proxy refuses IPv6 upstream (FR-19, all three layers) | guest config + `internal/network/` |

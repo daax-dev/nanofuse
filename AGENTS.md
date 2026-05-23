@@ -17,7 +17,7 @@ Purpose: Firecracker-based microVM platform for running untrusted code in secure
 - State facts only. No sugarcoating.
 - Surface problems, blockers, and risks immediately.
 - Consult before one-way-door decisions and before any architectural change.
-- Never guess. If validation is not possible, say so explicitly.
+- Never answer from a guess. Validate claims against primary sources. If validation is not possible, say so explicitly.
 - Objective language. No first-person pronouns. No apologies or hedges.
 
 ---

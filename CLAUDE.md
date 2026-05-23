@@ -43,7 +43,7 @@ Read the matching file **before** you:
 
 ## Additional Repo Context
 This repo predates this template and carries its own deep guidance. Treat the following as authoritative repo context (not superseded by this template):
-- `.claude/CLAUDE.md` — spec-driven development (jp-spec-kit / SpecKit), Backlog.md task management, file-organization rules, no-stale-images policy, error-handling and TDD requirements.
+- `.claude/CLAUDE.md` — spec-driven development (jp-spec-kit / SpecKit), `backlog.md` task management, file-organization rules, no-stale-images policy, error-handling and TDD requirements.
 - `.specify/memory/constitution.md` and `.claude/constitution.md` — project constitution. On conflict, the constitution wins.
 - `docs/GOALS.md`, `ROADMAP.md`, `README.md` — mission, roadmap, and component overview.
 

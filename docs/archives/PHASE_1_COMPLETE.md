@@ -126,10 +126,10 @@ $ go build ./cmd/nanofused
 ### Test Status
 ```bash
 $ go test ./...
-ok  	github.com/jpoley/nanofuse/cmd/nanofuse	0.003s
-ok  	github.com/jpoley/nanofuse/internal/api	(cached)
-ok  	github.com/jpoley/nanofuse/internal/client	0.006s
-ok  	github.com/jpoley/nanofuse/internal/network	(cached)
+ok  	github.com/daax-dev/nanofuse/cmd/nanofuse	0.003s
+ok  	github.com/daax-dev/nanofuse/internal/api	(cached)
+ok  	github.com/daax-dev/nanofuse/internal/client	0.006s
+ok  	github.com/daax-dev/nanofuse/internal/network	(cached)
 ✅ All tests passing
 ```
 

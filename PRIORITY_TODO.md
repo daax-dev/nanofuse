@@ -423,7 +423,7 @@ When this is SOLVED, you should be able to:
 ```bash
 # Create and start VM
 nanofuse --api-url http://localhost:8080 vm create \
-  ghcr.io/peregrinesummit/nanofuse/todo-app:latest \
+  ghcr.io/daax-dev/nanofuse/todo-app:latest \
   my-todo-app --vcpus 2 --memory 1024
 
 nanofuse --api-url http://localhost:8080 vm start my-todo-app

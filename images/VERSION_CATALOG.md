@@ -6,7 +6,7 @@ This document describes the versioning and tagging strategy for NanoFuse base im
 
 All NanoFuse images are published to GitHub Container Registry (GHCR) under:
 ```
-ghcr.io/jpoley/nanofuse/base
+ghcr.io/daax-dev/nanofuse/base
 ```
 
 **Access**: Private repository - requires authentication with GitHub token (read:packages scope)
@@ -37,7 +37,7 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 # Pull latest
 nanofuse image pull --default
 # or
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:latest
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:latest
 # or shorthand
 nanofuse vm run default my-vm
 ```
@@ -52,7 +52,7 @@ nanofuse vm run default my-vm
 # Pull specific version
 nanofuse image pull --default --tag 1.0.0
 # or
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:1.0.0
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:1.0.0
 # or shorthand
 nanofuse vm run default:1.0.0 my-vm
 ```
@@ -65,7 +65,7 @@ nanofuse vm run default:1.0.0 my-vm
 
 ```bash
 # Pull by commit SHA
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:sha-abc1234
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:sha-abc1234
 ```
 
 ### Branch-based
@@ -77,7 +77,7 @@ nanofuse image pull ghcr.io/jpoley/nanofuse/base:sha-abc1234
 
 ```bash
 # Pull from main branch
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:main
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:main
 ```
 
 ## CLI Shortcuts
@@ -86,10 +86,10 @@ The `nanofuse` CLI provides convenient shortcuts:
 
 | Shortcut | Expands to | Description |
 |----------|------------|-------------|
-| `default` | `ghcr.io/jpoley/nanofuse/base:latest` | Default base image (latest) |
-| `default:1.0.0` | `ghcr.io/jpoley/nanofuse/base:1.0.0` | Specific version |
-| `base` | `ghcr.io/jpoley/nanofuse/base:latest` | Alias for default |
-| `base:1.0.0` | `ghcr.io/jpoley/nanofuse/base:1.0.0` | Base with version |
+| `default` | `ghcr.io/daax-dev/nanofuse/base:latest` | Default base image (latest) |
+| `default:1.0.0` | `ghcr.io/daax-dev/nanofuse/base:1.0.0` | Specific version |
+| `base` | `ghcr.io/daax-dev/nanofuse/base:latest` | Alias for default |
+| `base:1.0.0` | `ghcr.io/daax-dev/nanofuse/base:1.0.0` | Base with version |
 
 ## Image Labels
 
@@ -118,8 +118,8 @@ All images include OCI-compliant labels for metadata:
 
 ```bash
 # View all labels
-docker pull ghcr.io/jpoley/nanofuse/base:latest
-docker inspect ghcr.io/jpoley/nanofuse/base:latest | jq '.[0].Config.Labels'
+docker pull ghcr.io/daax-dev/nanofuse/base:latest
+docker inspect ghcr.io/daax-dev/nanofuse/base:latest | jq '.[0].Config.Labels'
 
 # Or via nanofuse CLI
 nanofuse image inspect default
@@ -176,13 +176,13 @@ git push origin image-v1.1.0
 
 ```yaml
 # Good: Pinned version
-image: ghcr.io/jpoley/nanofuse/base:1.0.0
+image: ghcr.io/daax-dev/nanofuse/base:1.0.0
 
 # Acceptable: Use variable for flexibility
-image: ghcr.io/jpoley/nanofuse/base:${NANOFUSE_VERSION:-1.0.0}
+image: ghcr.io/daax-dev/nanofuse/base:${NANOFUSE_VERSION:-1.0.0}
 
 # Risky: Latest tag (unpredictable)
-image: ghcr.io/jpoley/nanofuse/base:latest
+image: ghcr.io/daax-dev/nanofuse/base:latest
 ```
 
 ## Catalog API
@@ -193,7 +193,7 @@ Future enhancement: Add catalog endpoint to query available versions
 # Planned feature
 nanofuse image catalog
 # Would output:
-# Available versions for ghcr.io/jpoley/nanofuse/base:
+# Available versions for ghcr.io/daax-dev/nanofuse/base:
 #   latest (updated: 2025-11-03)
 #   1.0.1 (released: 2025-11-01)
 #   1.0.0 (released: 2025-10-15)
@@ -228,6 +228,6 @@ nanofuse vm create my-vm --image default:1.0.0
 
 ## Support
 
-- 📚 Documentation: https://github.com/jpoley/nanofuse
-- 🐛 Issues: https://github.com/jpoley/nanofuse/issues
-- 💬 Discussions: https://github.com/jpoley/nanofuse/discussions
+- 📚 Documentation: https://github.com/daax-dev/nanofuse
+- 🐛 Issues: https://github.com/daax-dev/nanofuse/issues
+- 💬 Discussions: https://github.com/daax-dev/nanofuse/discussions

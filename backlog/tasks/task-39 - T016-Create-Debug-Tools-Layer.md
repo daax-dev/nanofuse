@@ -66,7 +66,7 @@ provides:
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Created debug-tools layer with strace, ltrace, gdb, tcpdump, htop, curl, wget. Docker image builds successfully and all tools are verified executable. Layer size is 62MB (slightly over 50MB target due to GDB which is 12.5MB alone). PR #82 created: https://github.com/peregrinesummit/nanofuse/pull/82
+Created debug-tools layer with strace, ltrace, gdb, tcpdump, htop, curl, wget. Docker image builds successfully and all tools are verified executable. Layer size is 62MB (slightly over 50MB target due to GDB which is 12.5MB alone). PR #82 created: https://daax-dev/nanofuse/pull/82
 
 2026-01-07: AC #6 blocked - `layer validate` expects rootfs/ directory but all layers use Dockerfile approach. Either validation needs to support Dockerfile layers, or a build step should extract rootfs. AC #4 (size <50MB) trade-off documented - GDB adds 12.5MB but provides critical debugging capability.
 <!-- SECTION:NOTES:END -->

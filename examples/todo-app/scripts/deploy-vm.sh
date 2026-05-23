@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-IMAGE_NAME="ghcr.io/peregrinesummit/nanofuse-todo-app:latest"
+IMAGE_NAME="ghcr.io/daax-dev/nanofuse-todo-app:latest"
 VM_NAME="todo-app-test"
 VM_MEMORY=1024
 VM_VCPUS=2

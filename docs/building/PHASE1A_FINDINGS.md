@@ -18,11 +18,11 @@ Error: Failed to get pull status: Job ID is required
 Tested the CLI pull command with debug mode:
 ```bash
 $ nanofuse --api-url http://localhost:8080 --debug image pull --default
-Using default image: ghcr.io/jpoley/nanofuse/base:latest
+Using default image: ghcr.io/daax-dev/nanofuse/base:latest
 DEBUG: POST /images/pull
-DEBUG: Request: {"image_ref":"ghcr.io/jpoley/nanofuse/base:latest"}
+DEBUG: Request: {"image_ref":"ghcr.io/daax-dev/nanofuse/base:latest"}
 DEBUG: Response: 202 202 Accepted
-Pulling ghcr.io/jpoley/nanofuse/base:latest...
+Pulling ghcr.io/daax-dev/nanofuse/base:latest...
 DEBUG: GET /images/jobs/job-9cb28cc8-1778-4c5a-b680-e5a61e946f56
 DEBUG: Response: 200 200 OK
 ```

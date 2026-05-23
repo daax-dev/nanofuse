@@ -48,7 +48,7 @@ Read the matching file **before** you:
 
 ## Repository Map
 - `cmd/nanofuse/` — CLI entry point (cobra). `cmd/nanofused/` — API daemon entry point. `cmd/extract-test/` — test helper.
-- `internal/` — implementation packages: `api`, `builder`, `client`, `clierrors`, `config`, `firecracker`, `inspect`, `layer`, `layerbuild`, `logging`, `network`, `output`, `policy`, `recording`, `registry`, `spire`, `storage`, `types`, `validate`.
+- `internal/` — implementation packages: `api`, `builder`, `client`, `clierrors`, `config`, `firecracker`, `inspect`, `layer`, `layerbuild`, `logging`, `network`, `output`, `recording`, `registry`, `spire`, `storage`, `types`, `validate`.
 - `api/` — `openapi.yaml` REST contract + README. `layers/` — microVM image layer definitions (base-os, runtimes, tools).
 - `magefile.go` — build/test/lint/CI automation (mage). `config.dev.yaml` — local dev daemon config.
 - `.github/workflows/` — CI (`ci.yaml`), release (`release.yaml`), PR comment (`pr-comment.yaml`).

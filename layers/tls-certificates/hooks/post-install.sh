@@ -83,7 +83,7 @@ chmod 644 "${ROOTFS_PATH}/etc/nanofuse/cert-manager.conf"
 cat > "${ROOTFS_PATH}/etc/systemd/system/cert-renewal.timer" << EOF
 [Unit]
 Description=Certificate Renewal Timer
-Documentation=https://github.com/peregrinesummit/nanofuse
+Documentation=https://github.com/daax-dev/nanofuse
 
 [Timer]
 OnCalendar=daily
@@ -98,7 +98,7 @@ EOF
 cat > "${ROOTFS_PATH}/etc/systemd/system/cert-renewal.service" << EOF
 [Unit]
 Description=Certificate Renewal Service
-Documentation=https://github.com/peregrinesummit/nanofuse
+Documentation=https://github.com/daax-dev/nanofuse
 After=network.target
 
 [Service]

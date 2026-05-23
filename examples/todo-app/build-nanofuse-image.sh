@@ -6,7 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${SCRIPT_DIR}/output"
-IMAGE_TAG="ghcr.io/peregrinesummit/nanofuse/todo-app:latest"
+IMAGE_TAG="ghcr.io/daax-dev/nanofuse/todo-app:latest"
 
 # Parse flags
 NO_CACHE=""

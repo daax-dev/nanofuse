@@ -20,8 +20,8 @@ This guide shows you how to start the NanoFuse API daemon and make your first AP
 
 ```bash
 # Download latest release
-VERSION=v0.1.0  # Check https://github.com/jpoley/nanofuse/releases for latest
-curl -LO https://github.com/jpoley/nanofuse/releases/download/${VERSION}/nanofused
+VERSION=v0.1.0  # Check https://github.com/daax-dev/nanofuse/releases for latest
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofused
 
 # Make executable and install
 chmod +x nanofused
@@ -32,7 +32,7 @@ sudo mv nanofused /usr/local/bin/
 
 ```bash
 # Clone repository
-git clone https://github.com/jpoley/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 
 # Install build tool
@@ -118,7 +118,7 @@ curl --unix-socket /var/run/nanofused.sock \
   -X POST \
   -H "Content-Type: application/json" \
   -d '{
-    "image": "ghcr.io/jpoley/nanofuse/base:latest",
+    "image": "ghcr.io/daax-dev/nanofuse/base:latest",
     "auth": {
       "username": "YOUR_GITHUB_USERNAME",
       "password": "YOUR_GITHUB_TOKEN"
@@ -170,7 +170,7 @@ curl --unix-socket /var/run/nanofused.sock \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-first-vm",
-    "image": "ghcr.io/jpoley/nanofuse/base:latest",
+    "image": "ghcr.io/daax-dev/nanofuse/base:latest",
     "vcpus": 2,
     "memory_mib": 512
   }' \
@@ -181,7 +181,7 @@ curl --unix-socket /var/run/nanofused.sock \
 #   "id": "550e8400-e29b-41d4-a716-446655440000",
 #   "name": "my-first-vm",
 #   "state": "created",
-#   "image": "ghcr.io/jpoley/nanofuse/base:latest",
+#   "image": "ghcr.io/daax-dev/nanofuse/base:latest",
 #   "created_at": "2025-11-09T16:35:00Z"
 # }
 ```
@@ -220,7 +220,7 @@ curl --unix-socket /var/run/nanofused.sock \
 #   "id": "550e8400-e29b-41d4-a716-446655440000",
 #   "name": "my-first-vm",
 #   "state": "running",
-#   "image": "ghcr.io/jpoley/nanofuse/base:latest",
+#   "image": "ghcr.io/daax-dev/nanofuse/base:latest",
 #   "config": {
 #     "vcpus": 2,
 #     "memory_mib": 512
@@ -325,7 +325,7 @@ api_call "$API/health" | jq .
 
 echo -e "\n2. Creating VM..."
 VM_RESPONSE=$(api_call -X POST -H "Content-Type: application/json" \
-  -d '{"name":"test-vm","image":"ghcr.io/jpoley/nanofuse/base:latest","vcpus":2,"memory_mib":512}' \
+  -d '{"name":"test-vm","image":"ghcr.io/daax-dev/nanofuse/base:latest","vcpus":2,"memory_mib":512}' \
   "$API/vms")
 VM_ID=$(echo "$VM_RESPONSE" | jq -r .id)
 echo "VM ID: $VM_ID"
@@ -515,7 +515,7 @@ sudo usermod -aG nanofuse $(whoami)
 ```bash
 curl --unix-socket /var/run/nanofused.sock \
   -X POST -H "Content-Type: application/json" \
-  -d '{"image":"ghcr.io/jpoley/nanofuse/base:latest","auth":{...}}' \
+  -d '{"image":"ghcr.io/daax-dev/nanofuse/base:latest","auth":{...}}' \
   http://localhost/images/pull
 ```
 
@@ -558,9 +558,9 @@ Find more examples in the repository:
 
 ## Getting Help
 
-- **Issues**: https://github.com/jpoley/nanofuse/issues
-- **Discussions**: https://github.com/jpoley/nanofuse/discussions
-- **Documentation**: https://github.com/jpoley/nanofuse/tree/main/docs
+- **Issues**: https://github.com/daax-dev/nanofuse/issues
+- **Discussions**: https://github.com/daax-dev/nanofuse/discussions
+- **Documentation**: https://github.com/daax-dev/nanofuse/tree/main/docs
 
 ---
 

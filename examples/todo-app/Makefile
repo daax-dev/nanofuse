@@ -1,7 +1,7 @@
 .PHONY: help build test clean run-local build-image push-image deploy
 
 # Configuration
-IMAGE_NAME ?= ghcr.io/peregrinesummit/nanofuse/todo-app
+IMAGE_NAME ?= ghcr.io/daax-dev/nanofuse/todo-app
 IMAGE_TAG ?= latest
 BACKEND_BIN ?= backend/bin/todo-server
 

@@ -1,7 +1,7 @@
 # microvm-sandbox → nanofuse: Reuse Analysis
 *Written: 2026-03-16*  
 *Source: microvm-sandbox eval (github.com/jpoley/microvm-sandbox)*  
-*Target: nanofuse (github.com/peregrinesummit/nanofuse)*
+*Target: nanofuse (github.com/daax-dev/nanofuse)*
 
 ---
 

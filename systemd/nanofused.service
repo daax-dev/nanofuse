@@ -1,6 +1,6 @@
 [Unit]
 Description=NanoFuse API Daemon
-Documentation=https://github.com/jpoley/nanofuse
+Documentation=https://github.com/daax-dev/nanofuse
 After=network.target
 
 [Service]

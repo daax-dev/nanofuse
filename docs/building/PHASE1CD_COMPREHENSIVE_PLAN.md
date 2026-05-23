@@ -19,7 +19,7 @@
 - Console shows: `[FAILED] Failed to start nginx.service`
 
 ### Known Facts
-- **Image**: `ghcr.io/peregrinesummit/nanofuse/todo-app:latest`
+- **Image**: `ghcr.io/daax-dev/nanofuse/todo-app:latest`
 - **Image Digest**: `sha256:0c8543d7...`
 - **Architecture**: x86_64
 - **Kernel**: 5.10.240 (bundled with image)

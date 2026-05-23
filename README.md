@@ -1,7 +1,7 @@
 # Nanofuse
 
-[![CI/CD Pipeline](https://github.com/peregrinesummit/nanofuse/actions/workflows/ci.yaml/badge.svg)](https://github.com/peregrinesummit/nanofuse/actions/workflows/ci.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/peregrinesummit/nanofuse)](https://goreportcard.com/report/github.com/peregrinesummit/nanofuse)
+[![CI/CD Pipeline](https://github.com/daax-dev/nanofuse/actions/workflows/ci.yaml/badge.svg)](https://github.com/daax-dev/nanofuse/actions/workflows/ci.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/daax-dev/nanofuse)](https://goreportcard.com/report/github.com/daax-dev/nanofuse)
 
 A Firecracker-based microVM platform for running untrusted code in secure, isolated sandboxes. Think [E2B](https://e2b.dev) but self-hosted.
 
@@ -58,8 +58,8 @@ Nanofuse provides hardware-level isolation for running untrusted workloads with 
 ```bash
 # Download latest release
 VERSION=v0.1.0
-curl -LO https://github.com/peregrinesummit/nanofuse/releases/download/${VERSION}/nanofuse
-curl -LO https://github.com/peregrinesummit/nanofuse/releases/download/${VERSION}/nanofused
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofuse
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofused
 chmod +x nanofuse nanofused
 sudo mv nanofuse nanofused /usr/local/bin/
 ```
@@ -124,8 +124,8 @@ See [Project Goals](docs/GOALS.md) for the complete roadmap.
 
 ## Support
 
-- [Issue Tracker](https://github.com/peregrinesummit/nanofuse/issues)
-- [Discussions](https://github.com/peregrinesummit/nanofuse/discussions)
+- [Issue Tracker](https://github.com/daax-dev/nanofuse/issues)
+- [Discussions](https://github.com/daax-dev/nanofuse/discussions)
 - [FAQ](docs/FAQ.md)
 
 ## Acknowledgments

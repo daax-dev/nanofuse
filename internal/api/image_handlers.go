@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/types"
 	"github.com/google/uuid"
-	"github.com/jpoley/nanofuse/internal/types"
 )
 
 // handleImages handles image list operations

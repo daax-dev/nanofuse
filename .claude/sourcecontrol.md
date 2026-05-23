@@ -4,7 +4,7 @@
 
 ## Repository
 - Host: GitHub — `github.com/daax-dev/nanofuse` (the `origin` remote).
-- Identity note: the Go module path is `github.com/jpoley/nanofuse`, and `README.md` badges / install URLs reference `peregrinesummit/nanofuse`. Three identities are in play. [FILL IN — operator: confirm which org is canonical for badges/install docs and whether the module path should be retargeted.]
+- Identity note: the canonical org is `daax-dev`. The Go module path (`github.com/daax-dev/nanofuse`), `README.md` badges / install URLs, GHCR image references, and repo metadata are all aligned to `daax-dev/nanofuse`. A prior three-way drift (`jpoley`, `peregrinesummit`, `daax-dev`) was resolved in favor of `daax-dev`; see `.logs/decisions.jsonl`.
 - Default branch: `main`.
 - All work lands via PR. No direct commits to `main`.
 

@@ -640,7 +640,7 @@ components:
         image:
           type: string
           description: Original image reference
-          example: ghcr.io/jpoley/nanofuse/base:latest
+          example: ghcr.io/daax-dev/nanofuse/base:latest
         image_digest:
           type: string
           description: Image digest
@@ -840,7 +840,7 @@ components:
         image:
           type: string
           description: Image reference or digest
-          example: ghcr.io/jpoley/nanofuse/base:latest
+          example: ghcr.io/daax-dev/nanofuse/base:latest
         config:
           $ref: '#/components/schemas/VMConfigRequest'
         owner_user_id:
@@ -1163,7 +1163,7 @@ components:
           example: sha256:abc123...
         reference:
           type: string
-          example: ghcr.io/jpoley/nanofuse/base:latest
+          example: ghcr.io/daax-dev/nanofuse/base:latest
         kernel_path:
           type: string
         rootfs_path:
@@ -1183,7 +1183,7 @@ components:
         reference:
           type: string
           description: Image reference (registry/repo:tag)
-          example: ghcr.io/jpoley/nanofuse/base:latest
+          example: ghcr.io/daax-dev/nanofuse/base:latest
 
     ListImagesResponse:
       type: object

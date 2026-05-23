@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jpoley/nanofuse/test/gdt/testutil"
+	"github.com/daax-dev/nanofuse/test/gdt/testutil"
 )
 
 // TestGdtE2ESuite runs all gdt E2E lifecycle tests.

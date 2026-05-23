@@ -83,9 +83,9 @@ docs/
 
 ## Quick Links
 
-- [GitHub Repository](https://github.com/peregrinesummit/nanofuse)
-- [Issues](https://github.com/peregrinesummit/nanofuse/issues)
-- [Releases](https://github.com/peregrinesummit/nanofuse/releases)
+- [GitHub Repository](https://github.com/daax-dev/nanofuse)
+- [Issues](https://github.com/daax-dev/nanofuse/issues)
+- [Releases](https://github.com/daax-dev/nanofuse/releases)
 
 ## Getting Help
 

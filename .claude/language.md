@@ -1,6 +1,6 @@
 # Language Conventions
 
-`[FILL IN]` marks a gap. Treat as "ask the operator," not a guess.
+Entries marked "none observed; confirm with operator" are gaps — treat as a question for the operator, not a guess.
 
 For each active language, this file records:
 1. Pinned version and how it is pinned.
@@ -15,12 +15,12 @@ For each active language, this file records:
 ## Active Languages
 
 ### Go (primary)
-- Version: 1.24 — CI pins `GO_VERSION: '1.24'` (`.github/workflows/ci.yaml`); `go.mod` declares `go 1.24.3`. Module path `github.com/jpoley/nanofuse`.
+- Version: 1.24 — CI pins `GO_VERSION: '1.24'` (`.github/workflows/ci.yaml`); `go.mod` declares `go 1.24.3`. Module path `github.com/daax-dev/nanofuse`.
 - Package manager: Go modules (`go.mod` / `go.sum`), `modules-download-mode: readonly`. No vendoring. `go.sum` is committed; Dependabot manages bumps.
 - Formatter: gofmt via `go fmt ./...` (run by `mage lint`). No hand-formatting.
 - Linter: golangci-lint, config `.golangci.yml` — enables `bodyclose`, `gocyclo` (min-complexity 20), `gosec` (G104 excluded), `misspell`, `prealloc`, `revive` (exported-symbol-doc rule disabled). `revive` skipped under `cmd/`; `errcheck`/`gosec` skipped in `_test.go`. Excludes `third_party`, `builtin`, `examples`. Plus `go vet ./...`.
 - Type checker: `go vet` + golangci-lint static analysis (staticcheck `all` minus `QF*`).
-- Tests: stdlib `testing` with `-race` (table-driven where practical); gdt (`github.com/gdt-dev/gdt`) for declarative scenario tests (`mage testgdt*`). Integration tests under build tag `integration` in `test/integration` (`mage testintegration`, needs sudo for networking).
+- Tests: stdlib `testing` with `-race` (table-driven where practical); gdt (`github.com/gdt-dev/gdt`) for declarative scenario tests (`mage testgdt`, or the per-suite targets `mage testgdtbuild`, `mage testgdtcli`, `mage testgdtapi`, `mage testgdte2e`). Integration tests under build tag `integration` in `test/integration` (`mage testintegration`, needs sudo for networking).
   - Unit: `mage test` -> `go test -v -race -coverprofile=coverage.out ./...`.
 - Coverage threshold: project rule >= 80% for new code (per `.claude/CLAUDE.md`). Not enforced as a CI gate — Codecov upload uses `fail_ci_if_error: false`.
 - Error handling: explicit on every path. No silent failures, no ignored error returns, no generic messages. Wrap with context (`fmt.Errorf("...: %w", err)`).

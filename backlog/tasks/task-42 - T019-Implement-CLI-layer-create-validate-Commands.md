@@ -70,5 +70,5 @@ Checks:
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Implemented layer create/validate CLI commands with scaffolding and validation. PR #88 created: https://github.com/peregrinesummit/nanofuse/pull/88
+Implemented layer create/validate CLI commands with scaffolding and validation. PR #88 created: https://daax-dev/nanofuse/pull/88
 <!-- SECTION:NOTES:END -->

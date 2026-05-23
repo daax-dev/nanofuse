@@ -5,7 +5,7 @@ NanoFuse uses separate versioning for Go binaries and Docker images to allow ind
 ## Overview
 
 - **Go Binaries**: `v0.0.1`, `v0.0.2`, etc. → GitHub Releases with downloadable binaries
-- **Docker Images**: `image-v0.0.1`, `image-v0.0.2`, etc. → GHCR images at `ghcr.io/jpoley/nanofuse/base`
+- **Docker Images**: `image-v0.0.1`, `image-v0.0.2`, etc. → GHCR images at `ghcr.io/daax-dev/nanofuse/base`
 
 ## Go Binary Releases
 
@@ -46,7 +46,7 @@ This will:
 4. GitHub Actions will:
    - Build the Docker image from `images/base/`
    - Tag it with the version number (e.g., `0.0.2`)
-   - Push to `ghcr.io/jpoley/nanofuse/base:0.0.2`
+   - Push to `ghcr.io/daax-dev/nanofuse/base:0.0.2`
    - Also update the `latest` tag if on main branch
 
 **Manual version:**
@@ -59,10 +59,10 @@ git push origin image-v0.1.0
 
 After `image-v0.0.5` is pushed, the following tags are available:
 
-- `ghcr.io/jpoley/nanofuse/base:0.0.5` - Specific version
-- `ghcr.io/jpoley/nanofuse/base:latest` - Latest from main branch
-- `ghcr.io/jpoley/nanofuse/base:sha-abc1234` - Specific commit (for reproducibility)
-- `ghcr.io/jpoley/nanofuse/base:main` - Latest main branch build
+- `ghcr.io/daax-dev/nanofuse/base:0.0.5` - Specific version
+- `ghcr.io/daax-dev/nanofuse/base:latest` - Latest from main branch
+- `ghcr.io/daax-dev/nanofuse/base:sha-abc1234` - Specific commit (for reproducibility)
+- `ghcr.io/daax-dev/nanofuse/base:main` - Latest main branch build
 
 Users can pull with (after authenticating):
 ```bash
@@ -74,10 +74,10 @@ nanofuse image pull --default
 
 # Specific version
 nanofuse image pull --default --tag 0.0.5
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:0.0.5
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:0.0.5
 
 # Specific commit
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:sha-abc1234
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:sha-abc1234
 ```
 
 ## Release Workflow
@@ -103,17 +103,17 @@ nanofuse image pull ghcr.io/jpoley/nanofuse/base:sha-abc1234
 # Day 1: Feature work
 git commit -m "feat: add port forwarding"
 git push origin main
-# → CI builds image as ghcr.io/jpoley/nanofuse/base:latest
+# → CI builds image as ghcr.io/daax-dev/nanofuse/base:latest
 
 # Day 2: Image is stable, create versioned release
 ./image-release.sh
 # → Creates image-v0.0.1
-# → CI builds ghcr.io/jpoley/nanofuse/base:0.0.1
+# → CI builds ghcr.io/daax-dev/nanofuse/base:0.0.1
 
 # Day 5: More features
 git commit -m "feat: add snapshot support"
 git push origin main
-# → CI updates ghcr.io/jpoley/nanofuse/base:latest
+# → CI updates ghcr.io/daax-dev/nanofuse/base:latest
 
 # Day 6: Ready for binary release
 ./release.sh
@@ -123,7 +123,7 @@ git push origin main
 # Day 10: New image features tested
 ./image-release.sh
 # → Creates image-v0.0.2
-# → CI builds ghcr.io/jpoley/nanofuse/base:0.0.2
+# → CI builds ghcr.io/daax-dev/nanofuse/base:0.0.2
 ```
 
 ## Version Bumping
@@ -156,7 +156,7 @@ Currently only patch bumps are implemented. Edit `release.sh` or `image-release.
 
 ### Image not appearing on GHCR
 
-1. Check workflow ran: https://github.com/jpoley/nanofuse/actions
+1. Check workflow ran: https://github.com/daax-dev/nanofuse/actions
 2. Ensure package is public: See `.github/GHCR_SETUP.md`
 3. Check tag format: Must be exactly `image-vX.Y.Z`
 

@@ -2,13 +2,13 @@
 
 All significant decisions and citable references log to disk as JSONL.
 One JSON object per line. No prose, no markdown, no commentary inside the JSON.
-This repo already keeps `.logs/decisions/decisions.jsonl`; keep new entries consistent with that file's style and topic-split as below.
+This repo already keeps a root log at `.logs/decisions.jsonl` plus topic/date-split files under `.logs/decisions/` (e.g., `2025-12-28-debug-session.jsonl`). The existing root entries use the schema `{"timestamp":"...","decision":"...","reasoning":"...","action":"..."}`. New decisions append to `.logs/decisions.jsonl` (or a topic file under `.logs/decisions/`) using either that existing schema or the richer schema below — be consistent within a file, and do not mix incompatible schemas on adjacent lines.
 
 ---
 
 ## Decisions
 
-**Location:** `.logs/decisions/<topic>.jsonl` (e.g., `architecture.jsonl`, `networking.jsonl`, `images.jsonl`).
+**Location:** root log `.logs/decisions.jsonl`, or topic/date-split files under `.logs/decisions/<topic>.jsonl` (e.g., `architecture.jsonl`, `networking.jsonl`, `images.jsonl`).
 
 **Format:**
 ```json

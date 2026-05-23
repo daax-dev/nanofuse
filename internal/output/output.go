@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/client"
 	"github.com/fatih/color"
-	"github.com/jpoley/nanofuse/internal/client"
 	"github.com/olekukonko/tablewriter"
 	"github.com/schollz/progressbar/v3"
 )

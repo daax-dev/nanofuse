@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/types"
 )
 
 // handleHealth handles the health check endpoint (GET /health)

@@ -151,8 +151,8 @@ EXPOSE 80 9090
 LABEL org.opencontainers.image.title="NanoFuse Todo App Example"
 LABEL org.opencontainers.image.description="Production-quality reference implementation demonstrating long-running VM stability"
 LABEL org.opencontainers.image.vendor="NanoFuse Project"
-LABEL org.opencontainers.image.source="https://github.com/peregrinesummit/nanofuse"
-LABEL org.opencontainers.image.documentation="https://github.com/peregrinesummit/nanofuse/blob/main/examples/todo-app/README.md"
+LABEL org.opencontainers.image.source="https://github.com/daax-dev/nanofuse"
+LABEL org.opencontainers.image.documentation="https://github.com/daax-dev/nanofuse/blob/main/examples/todo-app/README.md"
 LABEL org.opencontainers.image.version="1.0.0"
 
 # Constitutional compliance labels

@@ -54,7 +54,7 @@ Create the image manifest for falcondev-agents - a microVM image with AI agent e
 - `layers/agent-tools/layer.yaml` + rootfs
 
 **Build Steps (Fetch & Flatten)**:
-1. Fetch base-os from docker://ghcr.io/jpoley/nanofuse/base:latest
+1. Fetch base-os from docker://ghcr.io/daax-dev/nanofuse/base:latest
 2. Fetch python-runtime from local://layers/python-runtime
 3. Fetch node-runtime from local://layers/node-runtime
 4. Fetch recording-agent from local://layers/recording-agent

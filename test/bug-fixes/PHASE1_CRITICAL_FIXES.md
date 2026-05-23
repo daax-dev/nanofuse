@@ -98,14 +98,14 @@ Priority order for investigation:
 nanofuse --api-url http://localhost:8080 image pull --default
 
 # Expected:
-# 1. "Pulling ghcr.io/jpoley/nanofuse/base:latest..." message
+# 1. "Pulling ghcr.io/daax-dev/nanofuse/base:latest..." message
 # 2. Progress updates or job status
 # 3. Success message when complete
 # 4. Image appears in `nanofuse image list`
 
 # Verify:
 nanofuse --api-url http://localhost:8080 image list
-# Should show: ghcr.io/jpoley/nanofuse/base with latest tag
+# Should show: ghcr.io/daax-dev/nanofuse/base with latest tag
 ```
 
 **Test Case 1.2: Pull with Authentication Failure**
@@ -124,7 +124,7 @@ nanofuse --api-url http://localhost:8080 image pull --default
 **Test Case 1.3: Pull Custom Image**
 ```bash
 # Test:
-nanofuse --api-url http://localhost:8080 image pull ghcr.io/jpoley/nanofuse/base:v1.0.0
+nanofuse --api-url http://localhost:8080 image pull ghcr.io/daax-dev/nanofuse/base:v1.0.0
 
 # Expected:
 # Pulls specific version
@@ -436,7 +436,7 @@ nanofuse image pull --default
 # Verify image pulled
 echo "3. Verify image exists..."
 nanofuse image list
-# Expected: Shows ghcr.io/jpoley/nanofuse/base:latest
+# Expected: Shows ghcr.io/daax-dev/nanofuse/base:latest
 
 # Get image digest
 IMAGE=$(nanofuse image list --json | jq -r '.images[0].digest')
@@ -703,7 +703,7 @@ sudo ./api-demo.sh
 #
 # ===> 3. Checking for images...
 # ✓ Found 1 images
-# ✓ Using image: ghcr.io/jpoley/nanofuse/base:latest
+# ✓ Using image: ghcr.io/daax-dev/nanofuse/base:latest
 #
 # ===> 4. Creating VM...
 # ✓ Created VM: demo-vm-1731612309 (ID: vm-abc123)

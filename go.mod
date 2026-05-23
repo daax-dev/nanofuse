@@ -1,4 +1,4 @@
-module github.com/jpoley/nanofuse
+module github.com/daax-dev/nanofuse
 
 go 1.24.3
 

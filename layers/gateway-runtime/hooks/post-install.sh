@@ -61,7 +61,7 @@ chmod 0640 "${ROOTFS_PATH}/etc/nanofuse/gateway.yaml"
 {
   printf '%s\n' '[Unit]'
   printf '%s\n' 'Description=NanoFuse Gateway Service'
-  printf '%s\n' 'Documentation=https://github.com/peregrinesummit/nanofuse'
+  printf '%s\n' 'Documentation=https://github.com/daax-dev/nanofuse'
   printf '%s\n' 'After=network.target nftables.service'
   printf '%s\n' 'Wants=network.target'
   printf '\n'

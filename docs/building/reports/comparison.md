@@ -248,15 +248,15 @@ This document provides an in-depth comparison of three microVM management system
 1. **Pre-built binaries** (Recommended):
 ```bash
 VERSION=v0.1.0
-curl -LO https://github.com/jpoley/nanofuse/releases/download/${VERSION}/nanofuse
-curl -LO https://github.com/jpoley/nanofuse/releases/download/${VERSION}/nanofused
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofuse
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofused
 chmod +x nanofuse nanofused
 sudo mv nanofuse nanofused /usr/local/bin/
 ```
 
 2. **Build from source**:
 ```bash
-git clone https://github.com/jpoley/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 make build
 sudo make install
@@ -718,7 +718,7 @@ FROM ubuntu:24.04
 
 **CLI**:
 ```bash
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:latest
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:latest
 nanofuse image list
 ```
 
@@ -1918,9 +1918,9 @@ Choose based on your priorities: **Simplicity vs. Features vs. Support**.
 ### Links & Resources
 
 **NanoFuse**:
-- Repository: `https://github.com/jpoley/nanofuse`
-- Documentation: `https://github.com/jpoley/nanofuse/docs`
-- Issues: `https://github.com/jpoley/nanofuse/issues`
+- Repository: `https://github.com/daax-dev/nanofuse`
+- Documentation: `https://github.com/daax-dev/nanofuse/docs`
+- Issues: `https://github.com/daax-dev/nanofuse/issues`
 - License: MIT
 
 **K7 (Katakate)**:

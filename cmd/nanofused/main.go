@@ -4,7 +4,7 @@ import (
 	"flag"
 	"log"
 
-	"github.com/jpoley/nanofuse/internal/api"
+	"github.com/daax-dev/nanofuse/internal/api"
 )
 
 func main() {

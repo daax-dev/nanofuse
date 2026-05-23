@@ -3,7 +3,7 @@ package falcondevagents_test
 import (
 	"testing"
 
-	"github.com/jpoley/nanofuse/internal/layerbuild"
+	"github.com/daax-dev/nanofuse/internal/layerbuild"
 )
 
 func TestFalconDevAgentsManifest(t *testing.T) {

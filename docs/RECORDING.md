@@ -320,7 +320,7 @@ Recordings are stored in the configured storage path:
 Currently, recordings can be read programmatically:
 
 ```go
-import "github.com/jpoley/nanofuse/internal/recording"
+import "github.com/daax-dev/nanofuse/internal/recording"
 
 // Read events from a file
 file, _ := os.Open("/var/lib/nanofuse/recordings/{id}/events.bin")

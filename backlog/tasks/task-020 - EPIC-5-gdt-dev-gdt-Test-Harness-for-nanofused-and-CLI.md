@@ -275,7 +275,7 @@ Output Files:
 <!-- SECTION:NOTES:BEGIN -->
 ## 2025-12-30: Implementation Complete
 
-PR #77 submitted: https://github.com/peregrinesummit/nanofuse/pull/77
+PR #77 submitted: https://daax-dev/nanofuse/pull/77
 
 ### Deliverables
 - CLI test suite: 11 boundary tests (error_handling.yaml + help_usage.yaml)

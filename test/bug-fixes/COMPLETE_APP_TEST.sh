@@ -17,7 +17,7 @@ make build-image IMAGE_TAG=test
 echo ""
 echo "2. Converting Docker image to NanoFuse format..."
 cd /home/jpoley/ps/nanofuse
-sudo ./bin/register-local-image ghcr.io/peregrinesummit/nanofuse/todo-app:test
+sudo ./bin/register-local-image ghcr.io/daax-dev/nanofuse/todo-app:test
 
 # Step 3: Restart daemon
 echo ""
@@ -41,7 +41,7 @@ echo "5. Available images:"
 echo ""
 echo "6. Creating VM with todo-app..."
 ./bin/nanofuse --api-url http://localhost:8080 vm create \
-    ghcr.io/peregrinesummit/nanofuse/todo-app:test \
+    ghcr.io/daax-dev/nanofuse/todo-app:test \
     todo-app-vm \
     --vcpus 2 \
     --memory 1024

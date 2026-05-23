@@ -29,7 +29,7 @@ This guide covers building, running, debugging, and troubleshooting Nanofuse for
 
 ```bash
 # Clone the repository
-git clone https://github.com/peregrinesummit/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 
 # Install Mage build tool
@@ -333,7 +333,7 @@ Create a custom image by extending the base:
 
 ```dockerfile
 # images/myapp/Dockerfile
-FROM ghcr.io/peregrinesummit/nanofuse/base:latest
+FROM ghcr.io/daax-dev/nanofuse/base:latest
 
 # Install your application
 RUN apt-get update && apt-get install -y python3
@@ -438,7 +438,7 @@ sudo systemctl restart nanofused
 
 1. Check the [FAQ](FAQ.md) for common questions
 2. Review the [Troubleshooting Guide](TROUBLESHOOTING.md) for detailed diagnostics
-3. Search [existing issues](https://github.com/peregrinesummit/nanofuse/issues)
+3. Search [existing issues](https://github.com/daax-dev/nanofuse/issues)
 4. Open a new issue with logs and reproduction steps
 
 ---

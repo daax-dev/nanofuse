@@ -29,7 +29,7 @@ Purpose: Firecracker-based microVM platform for running untrusted code in secure
 ---
 
 ## Stack
-- Runtime: Go 1.24 (CI pins `1.24`; `go.mod` declares `go 1.24.3`). Module path: `github.com/jpoley/nanofuse`.
+- Runtime: Go 1.24 (CI pins `1.24`; `go.mod` declares `go 1.24.3`). Module path: `github.com/daax-dev/nanofuse`.
 - Build tool: mage (`magefile.go`). Package manager: Go modules (`go.mod` / `go.sum`, readonly mode).
 - Test framework: `go test` (stdlib testing) with `-race`; gdt for declarative scenario tests.
 - Persistence: SQLite (`mattn/go-sqlite3`) + local filesystem data dir. Backend: stdlib `net/http`. CLI: cobra.
@@ -74,5 +74,5 @@ A task is done only when:
 - Formatter and linter pass with no errors.
 - PR opened with problem statement, approach, and test evidence.
 - No `[FILL IN]` placeholders left in affected files.
-- Decisions logged in `.logs/decisions/` if a non-trivial choice was made.
+- Decisions logged in `.logs/decisions.jsonl` (or a topic file under `.logs/decisions/`) if a non-trivial choice was made.
 - Backlog.md task updated to done with a link to the PR/commit.

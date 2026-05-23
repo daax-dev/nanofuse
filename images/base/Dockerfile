@@ -9,7 +9,7 @@
 # - Console MUST be on ttyS0 for Firecracker compatibility
 # - Keep CMD unchanged (expects systemd)
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # Build arguments for OCI labels (passed from CI)
 ARG VERSION=dev

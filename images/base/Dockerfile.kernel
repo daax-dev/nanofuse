@@ -2,7 +2,7 @@
 # Builds: Linux 6.1.90 with Firecracker microVM optimizations
 # Output: vmlinux binary for use with Firecracker
 
-FROM ubuntu:24.04 AS kernel-builder
+FROM ubuntu:26.04 AS kernel-builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -42,6 +42,7 @@ func (f *fakeRunner) contains(fragment string) bool {
 
 func TestSetupEgressPolicyDefaultDeny(t *testing.T) {
 	runner := &fakeRunner{}
+	chainName := egressChainName("550e8400-e29b-41d4-a716-446655440000")
 	policy := &types.EgressPolicy{
 		Enabled:       true,
 		DefaultAction: "deny",
@@ -64,16 +65,17 @@ func TestSetupEgressPolicyDefaultDeny(t *testing.T) {
 	}
 
 	assertCommandContains(t, runner, "sysctl -w net.bridge.bridge-nf-call-iptables=1")
-	assertCommandContains(t, runner, "iptables -N NF-EG-550e8400e29b")
-	assertCommandContains(t, runner, "iptables -I FORWARD 1 -i nanofuse0 -s 172.16.0.10 -j NF-EG-550e8400e29b")
-	assertCommandContains(t, runner, "iptables -I FORWARD 1 -m physdev --physdev-in tap-550e8400 -s 172.16.0.10 -j NF-EG-550e8400e29b")
-	assertCommandContains(t, runner, "iptables -A NF-EG-550e8400e29b -p udp -d 172.16.0.1 --dport 53 -j ACCEPT")
-	assertCommandContains(t, runner, "iptables -A NF-EG-550e8400e29b -p tcp -d 203.0.113.10 --dport 443 -j ACCEPT")
-	assertCommandContains(t, runner, "iptables -A NF-EG-550e8400e29b -j DROP")
+	assertCommandContains(t, runner, "iptables -N "+chainName)
+	assertCommandContains(t, runner, "iptables -I FORWARD 1 -i nanofuse0 -s 172.16.0.10 -j "+chainName)
+	assertCommandContains(t, runner, "iptables -I FORWARD 1 -m physdev --physdev-in tap-550e8400 -s 172.16.0.10 -j "+chainName)
+	assertCommandContains(t, runner, "iptables -A "+chainName+" -p udp -d 172.16.0.1 --dport 53 -j ACCEPT")
+	assertCommandContains(t, runner, "iptables -A "+chainName+" -p tcp -d 203.0.113.10 --dport 443 -j ACCEPT")
+	assertCommandContains(t, runner, "iptables -A "+chainName+" -j DROP")
 }
 
 func TestSetupEgressPolicyProxyOnly(t *testing.T) {
 	runner := &fakeRunner{}
+	chainName := egressChainName("vm-1")
 	policy := &types.EgressPolicy{
 		Enabled:   true,
 		ProxyOnly: true,
@@ -90,11 +92,11 @@ func TestSetupEgressPolicyProxyOnly(t *testing.T) {
 		t.Fatalf("setup egress policy: %v", err)
 	}
 
-	assertCommandContains(t, runner, "iptables -A NF-EG-vm1 -p tcp -d 172.16.0.1 --dport 3128 -j ACCEPT")
+	assertCommandContains(t, runner, "iptables -A "+chainName+" -p tcp -d 172.16.0.1 --dport 3128 -j ACCEPT")
 	if runner.contains("203.0.113.10") {
 		t.Fatalf("proxy-only policy installed direct upstream allow rule")
 	}
-	assertCommandContains(t, runner, "iptables -A NF-EG-vm1 -j DROP")
+	assertCommandContains(t, runner, "iptables -A "+chainName+" -j DROP")
 }
 
 func TestSetupEgressPolicyRejectsProxyOnlyWithoutProxy(t *testing.T) {
@@ -109,14 +111,33 @@ func TestSetupEgressPolicyRejectsProxyOnlyWithoutProxy(t *testing.T) {
 
 func TestCleanupEgressPolicyRemovesJumpAndChain(t *testing.T) {
 	runner := &fakeRunner{}
+	chainName := egressChainName("vm-1")
 	if err := cleanupEgressPolicy(runner, "vm-1", "tap-vm1", "172.16.0.11"); err != nil {
 		t.Fatalf("cleanup egress policy: %v", err)
 	}
 
-	assertCommandContains(t, runner, "iptables -D FORWARD -i nanofuse0 -s 172.16.0.11 -j NF-EG-vm1")
-	assertCommandContains(t, runner, "iptables -D FORWARD -m physdev --physdev-in tap-vm1 -s 172.16.0.11 -j NF-EG-vm1")
-	assertCommandContains(t, runner, "iptables -F NF-EG-vm1")
-	assertCommandContains(t, runner, "iptables -X NF-EG-vm1")
+	assertCommandContains(t, runner, "iptables -D FORWARD -i nanofuse0 -s 172.16.0.11 -j "+chainName)
+	assertCommandContains(t, runner, "iptables -D FORWARD -m physdev --physdev-in tap-vm1 -s 172.16.0.11 -j "+chainName)
+	assertCommandContains(t, runner, "iptables -F "+chainName)
+	assertCommandContains(t, runner, "iptables -X "+chainName)
+}
+
+func TestEgressChainNameUsesFullVMID(t *testing.T) {
+	shortPrefixID := "550e8400-e29b-first"
+	longPrefixID := "550e8400-e29b-second"
+
+	first := egressChainName(shortPrefixID)
+	second := egressChainName(longPrefixID)
+
+	if first == second {
+		t.Fatalf("egress chain names collided for distinct VM IDs: %q", first)
+	}
+	if len(first) > 29 || len(second) > 29 {
+		t.Fatalf("egress chain name exceeds iptables chain limit: %q (%d), %q (%d)", first, len(first), second, len(second))
+	}
+	if !strings.HasPrefix(first, "NF-EG-") || !strings.HasPrefix(second, "NF-EG-") {
+		t.Fatalf("egress chain name missing prefix: %q, %q", first, second)
+	}
 }
 
 func assertCommandContains(t *testing.T, runner *fakeRunner, fragment string) {

@@ -10,6 +10,8 @@ import (
 	"github.com/daax-dev/nanofuse/internal/client"
 	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/renderer"
+	"github.com/olekukonko/tablewriter/tw"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -38,6 +40,38 @@ func (f *Formatter) PrintJSON(v interface{}) error {
 	return enc.Encode(v)
 }
 
+func newPlainTable(headers []string) *tablewriter.Table {
+	table := tablewriter.NewTable(
+		os.Stdout,
+		tablewriter.WithRenderer(renderer.NewBlueprint(tw.Rendition{
+			Borders: tw.Border{
+				Left:   tw.Off,
+				Right:  tw.Off,
+				Top:    tw.Off,
+				Bottom: tw.Off,
+			},
+			Settings: tw.Settings{
+				Separators: tw.Separators{
+					ShowHeader:     tw.On,
+					ShowFooter:     tw.Off,
+					BetweenRows:    tw.Off,
+					BetweenColumns: tw.Off,
+				},
+				Lines: tw.Lines{
+					ShowTop:        tw.Off,
+					ShowBottom:     tw.Off,
+					ShowHeaderLine: tw.Off,
+					ShowFooterLine: tw.Off,
+				},
+			},
+		})),
+		tablewriter.WithHeaderAlignment(tw.AlignLeft),
+		tablewriter.WithRowAlignment(tw.AlignLeft),
+	)
+	table.Header(headers)
+	return table
+}
+
 // PrintVMList prints VM list
 func (f *Formatter) PrintVMList(vms []client.VM) error {
 	if f.format == "json" {
@@ -47,13 +81,7 @@ func (f *Formatter) PrintVMList(vms []client.VM) error {
 		})
 	}
 
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "Name", "State", "Image", "VCPUs", "Memory", "Uptime"})
-	table.SetBorder(false)
-	table.SetHeaderLine(false)
-	table.SetColumnSeparator("")
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table := newPlainTable([]string{"ID", "Name", "State", "Image", "VCPUs", "Memory", "Uptime"})
 
 	for _, vm := range vms {
 		id := vm.ID
@@ -74,7 +102,7 @@ func (f *Formatter) PrintVMList(vms []client.VM) error {
 			uptime = formatDuration(time.Duration(*vm.UptimeSeconds) * time.Second)
 		}
 
-		table.Append([]string{
+		if err := table.Append([]string{
 			id,
 			vm.Name,
 			state,
@@ -82,11 +110,12 @@ func (f *Formatter) PrintVMList(vms []client.VM) error {
 			fmt.Sprintf("%d", vm.Config.VCPUs),
 			memory,
 			uptime,
-		})
+		}); err != nil {
+			return err
+		}
 	}
 
-	table.Render()
-	return nil
+	return table.Render()
 }
 
 // PrintVM prints single VM details
@@ -144,13 +173,7 @@ func (f *Formatter) PrintImageList(images []client.Image) error {
 		})
 	}
 
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Digest", "Tags", "Size", "Pulled"})
-	table.SetBorder(false)
-	table.SetHeaderLine(false)
-	table.SetColumnSeparator("")
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table := newPlainTable([]string{"Digest", "Tags", "Size", "Pulled"})
 
 	for _, img := range images {
 		digest := img.Digest
@@ -166,11 +189,12 @@ func (f *Formatter) PrintImageList(images []client.Image) error {
 		size := formatBytes(img.SizeBytes)
 		pulled := formatTimeAgo(img.PulledAt)
 
-		table.Append([]string{digest, tags, size, pulled})
+		if err := table.Append([]string{digest, tags, size, pulled}); err != nil {
+			return err
+		}
 	}
 
-	table.Render()
-	return nil
+	return table.Render()
 }
 
 // PrintImage prints single image details
@@ -225,13 +249,7 @@ func (f *Formatter) PrintSnapshotList(snapshots []client.Snapshot) error {
 		})
 	}
 
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "Name", "Size", "Created"})
-	table.SetBorder(false)
-	table.SetHeaderLine(false)
-	table.SetColumnSeparator("")
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table := newPlainTable([]string{"ID", "Name", "Size", "Created"})
 
 	for _, snap := range snapshots {
 		name := snap.Name
@@ -242,11 +260,12 @@ func (f *Formatter) PrintSnapshotList(snapshots []client.Snapshot) error {
 		size := formatBytes(snap.SizeBytes)
 		created := formatTimeAgo(snap.CreatedAt)
 
-		table.Append([]string{snap.ID, name, size, created})
+		if err := table.Append([]string{snap.ID, name, size, created}); err != nil {
+			return err
+		}
 	}
 
-	table.Render()
-	return nil
+	return table.Render()
 }
 
 // PrintSnapshot prints single snapshot details

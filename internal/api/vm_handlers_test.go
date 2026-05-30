@@ -122,6 +122,47 @@ func TestMaterializeWritableRootDisksSkipsReadOnlyRootfs(t *testing.T) {
 	}
 }
 
+func TestMaterializeWritableRootDisksContinuesAfterExistingDestinationPath(t *testing.T) {
+	dataDir := t.TempDir()
+	sourceRootfs := filepath.Join(t.TempDir(), "source-rootfs.ext4")
+	if err := os.WriteFile(sourceRootfs, []byte("source-rootfs"), 0600); err != nil {
+		t.Fatalf("write source rootfs: %v", err)
+	}
+
+	existingDestination := vmRootfsPath(dataDir, "vm-123")
+	cfg := types.VMConfig{
+		Disks: []types.DiskConfig{
+			{
+				DriveID:      "rootfs-existing",
+				PathOnHost:   existingDestination,
+				IsReadOnly:   false,
+				IsRootDevice: true,
+			},
+			{
+				DriveID:      "rootfs-source",
+				PathOnHost:   sourceRootfs,
+				IsReadOnly:   false,
+				IsRootDevice: true,
+			},
+		},
+	}
+
+	if err := materializeWritableRootDisks(dataDir, "vm-123", &cfg); err != nil {
+		t.Fatalf("materialize rootfs: %v", err)
+	}
+
+	got, err := os.ReadFile(existingDestination)
+	if err != nil {
+		t.Fatalf("read VM rootfs: %v", err)
+	}
+	if string(got) != "source-rootfs" {
+		t.Fatalf("VM rootfs contents = %q, want source copy", got)
+	}
+	if cfg.Disks[1].PathOnHost != existingDestination {
+		t.Fatalf("second root disk path = %q, want %q", cfg.Disks[1].PathOnHost, existingDestination)
+	}
+}
+
 func TestCleanupVMStorageRemovesVMDirectory(t *testing.T) {
 	dataDir := t.TempDir()
 	vmDir := vmStorageDir(dataDir, "vm-123")

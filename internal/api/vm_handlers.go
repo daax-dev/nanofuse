@@ -213,7 +213,7 @@ func materializeWritableRootDisks(dataDir, vmID string, config *types.VMConfig) 
 		}
 
 		if srcAbs == destAbs {
-			return nil
+			continue
 		}
 
 		if _, err := os.Stat(dest); err == nil {
@@ -258,7 +258,7 @@ func (s *Server) cleanupCreatedVMResources(vmID string, config types.VMConfig) {
 	}
 }
 
-func (s *Server) cleanupDeletedVMResources(vm *types.VM) error {
+func (s *Server) cleanupDeletedVMResources(vm *types.VM) {
 	if len(vm.Config.Network.PortForwards) > 0 && vm.Config.Network.IPAddress != "" {
 		s.logger.Printf("INFO: Cleaning up %d port forward(s) for deleted VM %s", len(vm.Config.Network.PortForwards), vm.Name)
 		if err := network.CleanupPortForwards(vm.Config.Network.IPAddress, vm.Config.Network.PortForwards); err != nil {
@@ -285,7 +285,9 @@ func (s *Server) cleanupDeletedVMResources(vm *types.VM) error {
 		s.logger.Printf("INFO: Released IP address: %s", vm.Config.Network.IPAddress)
 	}
 
-	return cleanupVMStorage(s.config.Storage.DataDir, vm.ID)
+	if err := cleanupVMStorage(s.config.Storage.DataDir, vm.ID); err != nil {
+		s.logger.Printf("WARN: Failed to cleanup VM storage for deleted VM %s: %v", vm.ID, err)
+	}
 }
 
 // validateVMResourceLimits checks if VM config exceeds limits
@@ -583,11 +585,7 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request, vmID str
 		}
 	}
 
-	if err := s.cleanupDeletedVMResources(vm); err != nil {
-		s.logger.Printf("ERROR: Failed to cleanup VM storage for %s: %v", vm.ID, err)
-		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to cleanup VM storage", nil)
-		return
-	}
+	s.cleanupDeletedVMResources(vm)
 
 	// Delete from database
 	if err := s.db.DeleteVM(vm.ID); err != nil {

@@ -1,6 +1,8 @@
 package network
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"os/exec"
@@ -237,23 +239,6 @@ func egressDefaultAction(policy *types.EgressPolicy) string {
 }
 
 func egressChainName(vmID string) string {
-	clean := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z':
-			return r
-		case r >= 'A' && r <= 'Z':
-			return r
-		case r >= '0' && r <= '9':
-			return r
-		default:
-			return -1
-		}
-	}, vmID)
-	if len(clean) > 12 {
-		clean = clean[:12]
-	}
-	if clean == "" {
-		clean = "unknown"
-	}
-	return "NF-EG-" + clean
+	sum := sha256.Sum256([]byte(vmID))
+	return "NF-EG-" + hex.EncodeToString(sum[:])[:16]
 }

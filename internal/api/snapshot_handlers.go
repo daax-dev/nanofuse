@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/daax-dev/nanofuse/internal/types"
@@ -181,9 +182,15 @@ func (s *Server) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request, sn
 		return
 	}
 
-	// Delete snapshot files
-	snapshotDir := filepath.Dir(snapshot.MemoryFilePath)
-	if err := os.RemoveAll(snapshotDir); err != nil {
+	// Delete snapshot files, but only within the managed snapshots tree.
+	// This guards against removing a path outside the snapshots root if the
+	// stored MemoryFilePath is ever malformed (path-traversal defense).
+	snapshotsRoot := filepath.Clean(filepath.Join(s.config.Storage.DataDir, "snapshots"))
+	snapshotDir := filepath.Clean(filepath.Dir(snapshot.MemoryFilePath))
+	if rel, relErr := filepath.Rel(snapshotsRoot, snapshotDir); relErr != nil ||
+		rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		s.logger.Printf("WARN: refusing to delete snapshot dir outside snapshots root: %s", snapshotDir)
+	} else if err := os.RemoveAll(snapshotDir); err != nil {
 		s.logger.Printf("WARN: Failed to delete snapshot files: %v", err)
 	}
 

@@ -49,17 +49,19 @@ func main() {
 	}
 	defer db.Close()
 
+	// Paths below are operator-supplied CLI arguments to a local dev tool, not
+	// untrusted network input; the gosec taint findings are false positives here.
 	// Check if rootfs and kernel exist
-	if _, err := os.Stat(resolvedRootfs); os.IsNotExist(err) {
-		log.Fatalf("Rootfs not found: %s", resolvedRootfs)
+	if _, err := os.Stat(resolvedRootfs); os.IsNotExist(err) { //nolint:gosec // operator-supplied CLI path
+		log.Fatalf("Rootfs not found: %s", resolvedRootfs) //nolint:gosec // operator-supplied CLI path
 	}
-	if _, err := os.Stat(resolvedKernel); os.IsNotExist(err) {
-		log.Fatalf("Kernel not found: %s", resolvedKernel)
+	if _, err := os.Stat(resolvedKernel); os.IsNotExist(err) { //nolint:gosec // operator-supplied CLI path
+		log.Fatalf("Kernel not found: %s", resolvedKernel) //nolint:gosec // operator-supplied CLI path
 	}
 
 	// Get file sizes
-	rootfsInfo, _ := os.Stat(resolvedRootfs)
-	kernelInfo, _ := os.Stat(resolvedKernel)
+	rootfsInfo, _ := os.Stat(resolvedRootfs) //nolint:gosec // operator-supplied CLI path
+	kernelInfo, _ := os.Stat(resolvedKernel) //nolint:gosec // operator-supplied CLI path
 	totalSize := rootfsInfo.Size() + kernelInfo.Size()
 
 	// Generate digest from rootfs file
@@ -95,7 +97,7 @@ func main() {
 }
 
 func generateDigest(filePath string) (string, error) {
-	f, err := os.Open(filePath)
+	f, err := os.Open(filePath) //nolint:gosec // operator-supplied CLI path (local dev tool)
 	if err != nil {
 		return "", err
 	}

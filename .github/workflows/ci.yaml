@@ -9,7 +9,7 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.25'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
@@ -341,7 +341,7 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.12.2
 
       - name: Install Mage
         run: go install github.com/magefile/mage@latest

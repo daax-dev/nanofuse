@@ -124,6 +124,10 @@ type snapshotLoadRequest struct {
 	ResumeVM           bool       `json:"resume_vm"`
 }
 
+type vmStateRequest struct {
+	State string `json:"state"`
+}
+
 type memBackend struct {
 	BackendPath string `json:"backend_path"`
 	BackendType string `json:"backend_type"`
@@ -460,16 +464,26 @@ func (m *Manager) IsRunning(pid int) bool {
 
 // Pause pauses a VM
 func (m *Manager) Pause(vm *types.VM) error {
-	// TODO: Implement via Firecracker API
-	// For now, just a stub
-	return fmt.Errorf("pause not yet implemented")
+	socketPath, err := vmAPISocket(vm)
+	if err != nil {
+		return err
+	}
+	if err := firecrackerPATCH(socketPath, "/vm", vmStateRequest{State: "Paused"}); err != nil {
+		return fmt.Errorf("failed to pause Firecracker VM %s: %w", vm.ID, err)
+	}
+	return nil
 }
 
 // Resume resumes a VM
 func (m *Manager) Resume(vm *types.VM) error {
-	// TODO: Implement via Firecracker API
-	// For now, just a stub
-	return fmt.Errorf("resume not yet implemented")
+	socketPath, err := vmAPISocket(vm)
+	if err != nil {
+		return err
+	}
+	if err := firecrackerPATCH(socketPath, "/vm", vmStateRequest{State: "Resumed"}); err != nil {
+		return fmt.Errorf("failed to resume Firecracker VM %s: %w", vm.ID, err)
+	}
+	return nil
 }
 
 func vmAPISocket(vm *types.VM) (string, error) {
@@ -483,6 +497,14 @@ func vmAPISocket(vm *types.VM) (string, error) {
 }
 
 func firecrackerPUT(socketPath, endpoint string, payload any) error {
+	return firecrackerJSONRequest(socketPath, http.MethodPut, endpoint, payload)
+}
+
+func firecrackerPATCH(socketPath, endpoint string, payload any) error {
+	return firecrackerJSONRequest(socketPath, http.MethodPatch, endpoint, payload)
+}
+
+func firecrackerJSONRequest(socketPath, method, endpoint string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal Firecracker request: %w", err)
@@ -501,7 +523,7 @@ func firecrackerPUT(socketPath, endpoint string, payload any) error {
 		Timeout:   30 * time.Second,
 	}
 
-	req, err := http.NewRequest(http.MethodPut, "http://unix"+endpoint, bytes.NewReader(body))
+	req, err := http.NewRequest(method, "http://unix"+endpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to build Firecracker request: %w", err)
 	}

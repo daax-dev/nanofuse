@@ -212,3 +212,57 @@ func TestLoadSnapshotWithResumeFalse(t *testing.T) {
 		t.Fatal("resume_vm = true, want false")
 	}
 }
+
+func TestPauseSendsFirecrackerVMStateRequest(t *testing.T) {
+	socketPath, calls := startUnixSnapshotAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	manager := NewManager("/usr/bin/firecracker", t.TempDir())
+	if err := manager.Pause(snapshotTestVM(socketPath)); err != nil {
+		t.Fatalf("Pause: %v", err)
+	}
+
+	call := <-calls
+	if call.method != http.MethodPatch {
+		t.Fatalf("method = %s, want %s", call.method, http.MethodPatch)
+	}
+	if call.path != "/vm" {
+		t.Fatalf("path = %s, want /vm", call.path)
+	}
+
+	var got vmStateRequest
+	if err := json.Unmarshal(call.body, &got); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if got.State != "Paused" {
+		t.Fatalf("state = %q, want Paused", got.State)
+	}
+}
+
+func TestResumeSendsFirecrackerVMStateRequest(t *testing.T) {
+	socketPath, calls := startUnixSnapshotAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	manager := NewManager("/usr/bin/firecracker", t.TempDir())
+	if err := manager.Resume(snapshotTestVM(socketPath)); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	call := <-calls
+	if call.method != http.MethodPatch {
+		t.Fatalf("method = %s, want %s", call.method, http.MethodPatch)
+	}
+	if call.path != "/vm" {
+		t.Fatalf("path = %s, want /vm", call.path)
+	}
+
+	var got vmStateRequest
+	if err := json.Unmarshal(call.body, &got); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if got.State != "Resumed" {
+		t.Fatalf("state = %q, want Resumed", got.State)
+	}
+}

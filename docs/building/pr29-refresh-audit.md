@@ -80,6 +80,8 @@ The refreshed branch implements the Firecracker snapshot API calls needed before
 
 - `Manager.CreateSnapshot` sends `PUT /snapshot/create` over the VM Firecracker Unix socket.
 - Snapshot creation uses `snapshot_type: "Full"`, `snapshot_path`, and `mem_file_path`.
+- `POST /vms/{id}/snapshots` now rejects non-paused VMs before calling Firecracker.
+- `Manager.Pause` and `Manager.Resume` send `PATCH /vm` with `state: "Paused"` or `state: "Resumed"` so the public API can move running VMs into the valid snapshot state.
 - `Manager.LoadSnapshot` sends `PUT /snapshot/load` over the VM Firecracker Unix socket.
 - Snapshot loading uses `snapshot_path`, `mem_backend.backend_type: "File"`, `mem_backend.backend_path`, `enable_diff_snapshots: false`, and defaults `resume_vm` to `true`.
 - `Manager.LoadSnapshotWithResume` exposes the same load path with explicit `resume_vm` control.
@@ -92,6 +94,14 @@ This is not a VM pool implementation. It does not make a cold-start latency clai
 Primary reference: Firecracker v1.7.0 swagger, `https://raw.githubusercontent.com/firecracker-microvm/firecracker/v1.7.0/src/firecracker/swagger/firecracker.yaml`.
 
 Supporting reference: Firecracker snapshot support documentation, `https://github.com/firecracker-microvm/firecracker/blob/main/docs/snapshotting/snapshot-support.md`.
+
+## Replacement PR Copilot Audit
+
+Closed PR #29 still retained Copilot inline comments, but the comments inspected before this replacement pass were attached to stale commit `a74d20904c51175b6a6fdde52c34bc7193ea836d` and reported as outdated review threads. No current-head Copilot comments were found against branch head `a2c1c5910d7505ffbd4c5283c4fddaf24ead070f`.
+
+The stale comments target old VM pool, SVID rotation, and CoW layer files that are no longer in the effective branch diff. Those implementations remain removed rather than patched in place.
+
+The current-head gap found during this pass was the public snapshot API accepting running VMs even though Firecracker snapshot creation requires a paused microVM. The replacement branch now rejects non-paused snapshot requests and wires the existing pause/resume routes to Firecracker `PATCH /vm` state transitions.
 
 Future implementation should start from a new spec and should land as smaller independently validated slices:
 
@@ -108,6 +118,8 @@ PR #29 was closed and stale. Its implementation overclaimed production behavior 
 Approach:
 
 Merged current main non-destructively, resolved conflicts toward current main, removed the unverified PR29 feature files, preserved `github.com/daax-dev/nanofuse`, implemented the narrow Firecracker snapshot create/load API client slice, and documented the audit findings. Copilot review blockers against the old VMPool/SVID/CoW files are closed by removal of the affected stale files rather than by carrying partial fixes.
+
+Replacement PR hardening also makes the public snapshot endpoint require a paused VM, matching the Firecracker snapshot lifecycle requirement instead of accepting running VMs and failing later inside the VMM. The same hardening replaces the pause/resume handler stubs with Firecracker `PATCH /vm` calls.
 
 Validation:
 

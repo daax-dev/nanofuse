@@ -51,13 +51,13 @@ npx @redocly/cli preview-docs openapi.yaml --port 8080
 - `POST /vms/{vmId}/start` - Start a VM
 - `POST /vms/{vmId}/stop` - Stop a VM
 - `POST /vms/{vmId}/kill` - Force kill a VM
-- `POST /vms/{vmId}/pause` - Pause a VM (⚠️ not yet implemented)
-- `POST /vms/{vmId}/resume` - Resume a paused VM (⚠️ not yet implemented)
+- `POST /vms/{vmId}/pause` - Pause a running VM
+- `POST /vms/{vmId}/resume` - Resume a paused VM
 - `GET /vms/{vmId}/logs` - Get console logs
 
 ### Snapshots
 - `GET /vms/{vmId}/snapshots` - List VM snapshots
-- `POST /vms/{vmId}/snapshots` - Create a snapshot
+- `POST /vms/{vmId}/snapshots` - Create a snapshot of a paused VM
 - `GET /snapshots/{snapshotId}` - Get snapshot details
 - `DELETE /snapshots/{snapshotId}` - Delete a snapshot
 
@@ -153,7 +153,7 @@ curl http://localhost:8080/vms/{vmId}/logs
 ### Create a Snapshot
 
 ```bash
-# Create a snapshot
+# Create a snapshot after pausing the VM
 curl -X POST http://localhost:8080/vms/{vmId}/snapshots \
   -H "Content-Type: application/json" \
   -d '{
@@ -189,16 +189,15 @@ curl -X POST http://localhost:8080/backups/{backupId}/restore \
 
 ### ✅ Implemented
 - Health check
-- VM lifecycle (create, start, stop, kill, delete)
+- VM lifecycle (create, start, stop, kill, pause, resume, delete)
 - Image pull and management
 - Snapshot create, list, delete
 - Console logs
 - Port forwarding
 
 ### 🚧 Not Yet Implemented
-- **Pause/Resume** - VM pause and resume operations via Firecracker API
 - **S3 Backups** - Complete backup and restore functionality:
-  - Create snapshot from running VM
+  - Create snapshot from paused VM
   - Compress and upload to S3
   - Download and restore from S3
   - Backup job status tracking

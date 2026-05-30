@@ -227,12 +227,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-        '501':
-          description: Not yet implemented
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
 
   /vms/{vmId}/resume:
     post:
@@ -254,12 +248,6 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
-        '501':
-          description: Not yet implemented
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
 
   /vms/{vmId}/logs:
     get:
@@ -302,7 +290,7 @@ paths:
                 $ref: '#/components/schemas/ListSnapshotsResponse'
     post:
       summary: Create snapshot
-      description: Creates a new snapshot of the VM
+      description: Creates a new snapshot of a paused VM
       operationId: createSnapshot
       tags:
         - Snapshots
@@ -323,7 +311,11 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          $ref: '#/components/responses/Conflict'
+          description: VM must be paused before snapshot creation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /snapshots/{snapshotId}:
     get:

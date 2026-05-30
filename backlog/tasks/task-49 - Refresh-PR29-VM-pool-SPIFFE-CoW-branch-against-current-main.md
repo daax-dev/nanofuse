@@ -1,10 +1,10 @@
 ---
 id: TASK-49
 title: Refresh PR29 VM pool/SPIFFE/CoW branch against current main
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-30 23:01'
-updated_date: '2026-05-30 23:27'
+updated_date: '2026-05-30 23:28'
 labels:
   - pr29
   - branch-refresh
@@ -14,6 +14,7 @@ dependencies: []
 references:
   - /Users/jasonpoley/prj/dx/src/nanofuse-pr29
   - 'https://github.com/daax-dev/nanofuse/pull/29'
+  - 'https://github.com/daax-dev/nanofuse/pull/47'
 documentation:
   - api/openapi.yaml
   - api/README.md
@@ -36,7 +37,7 @@ Audit the PR29 branch fix/issues-11-12-13-v2 against origin/main after PR #46. I
 - [x] #5 Focused formatter/linter/tests are run where possible, with exact commands and results reported.
 - [x] #6 Closed PR #29 Copilot comments are audited against the current branch head and stale/outdated threads are documented rather than blindly reintroduced.
 - [x] #7 Current-head snapshot/API defects found during the audit are fixed on fix/issues-11-12-13-v2 without reverting current-main behavior.
-- [ ] #8 The updated branch is pushed and a replacement PR is opened from the same branch.
+- [x] #8 The updated branch is pushed and a replacement PR is opened from the same branch.
 - [x] #9 Existing pause/resume API stubs are wired to Firecracker VM state calls or explicitly documented if validation blocks that wiring.
 <!-- AC:END -->
 
@@ -60,3 +61,9 @@ Reopened on 2026-05-30 for replacement PR hardening after closed PR #29 retained
 
 Replacement hardening completed: closed PR #29 Copilot threads were stale/outdated against old commit a74d209; current-head fixes require paused snapshots and wire pause/resume to Firecracker PATCH /vm. Validation: go test ./internal/api; go test ./internal/firecracker; jq -c . .logs/decisions/pr29-refresh.jsonl; git diff --check; mage ci.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Replacement PR opened: https://github.com/daax-dev/nanofuse/pull/47. Closed PR #29 Copilot threads were audited and found stale/outdated against old commit a74d209. Current-head hardening requires paused VMs for snapshot creation, wires pause/resume handlers to Firecracker v1.7.0 PATCH /vm state transitions, updates OpenAPI/API docs/audit docs, and records JSONL decisions pr29-refresh-003 and pr29-refresh-004. Validation passed: go test ./internal/api; go test ./internal/firecracker; jq -c . .logs/decisions/pr29-refresh.jsonl; git diff --check; mage ci. mage ci printed existing non-fatal gosec-not-found and macOS linker warnings.
+<!-- SECTION:FINAL_SUMMARY:END -->

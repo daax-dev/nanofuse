@@ -1,10 +1,10 @@
 ---
 id: TASK-50
 title: Refresh PR30 auth branch against current main
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-30 23:18'
-updated_date: '2026-05-30 23:27'
+updated_date: '2026-05-30 23:28'
 labels:
   - pr30
   - auth
@@ -14,6 +14,7 @@ dependencies: []
 references:
   - /Users/jasonpoley/prj/dx/src/nanofuse-pr30
   - 'https://github.com/daax-dev/nanofuse/pull/30'
+  - 'https://github.com/daax-dev/nanofuse/pull/48'
 documentation:
   - api/README.md
   - config.dev.yaml
@@ -37,7 +38,7 @@ Audit the PR30 branch fix/issues-2-3-4-v2 against origin/main after PR #46. Repl
 - [x] #6 Focused tests and mage ci are run, with exact results reported.
 - [x] #7 Closed PR #30 Copilot comments are audited against the current branch head and stale/outdated threads are documented rather than blindly reintroduced.
 - [x] #8 Current-head mTLS/API auth defects found during the audit are fixed on fix/issues-2-3-4-v2 without reverting current-main behavior.
-- [ ] #9 The updated branch is pushed and a replacement PR is opened from the same branch.
+- [x] #9 The updated branch is pushed and a replacement PR is opened from the same branch.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -60,3 +61,9 @@ Reopened on 2026-05-30 for replacement PR hardening after closed PR #30 retained
 
 Replacement hardening completed: closed PR #30 Copilot threads were stale/outdated against old commit f21a353; current-head fixes add spoofed X-SPIFFE-ID rejection/ignore coverage and TCP mTLS config validation tests. Validation: go test ./internal/api; go test ./internal/config; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Replacement PR opened: https://github.com/daax-dev/nanofuse/pull/48. Closed PR #30 Copilot threads were audited and found stale/outdated against old commit f21a353. Current-head hardening adds explicit spoofed X-SPIFFE-ID rejection/ignore coverage, TCP mTLS config validation tests, API docs, audit docs, and JSONL decision auth-002. Validation passed: go test ./internal/api; go test ./internal/config; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci. mage ci printed existing non-fatal gosec-not-found and macOS linker warnings.
+<!-- SECTION:FINAL_SUMMARY:END -->

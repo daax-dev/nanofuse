@@ -5,7 +5,7 @@ status: Done
 assignee:
   - codex
 created_date: '2026-05-30 20:05'
-updated_date: '2026-05-30 20:28'
+updated_date: '2026-05-30 20:33'
 labels:
   - sandbox
   - microvm
@@ -93,5 +93,5 @@ Plan:
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Completed sandbox objective validation work on branch `codex-goal` and opened draft PR https://github.com/daax-dev/nanofuse/pull/46. Implemented per-VM writable rootfs materialization and cleanup, typed egress policy support with iptables default-deny/proxy-only enforcement, API/client schema updates, corrected platform/runtime goals, Vagrant closed-loop tooling, and JSONL decision/reference/validation logs. Local `mage ci` passed; shell/Vagrantfile syntax and Vagrant validation passed where possible. Local Parallels validation is blocked for Firecracker execution because `/dev/kvm` is not exposed, and enabling Parallels nested virtualization prevents the VM from starting on this host.
+Completed sandbox objective validation work on branch `codex-goal` and opened ready-for-review PR https://github.com/daax-dev/nanofuse/pull/46. Implemented per-VM writable rootfs materialization and cleanup, typed egress policy support with iptables default-deny/proxy-only enforcement, API/client schema updates, corrected platform/runtime goals, Vagrant closed-loop tooling, and JSONL decision/reference/validation logs. Local `mage ci` passed; shell/Vagrantfile syntax and Vagrant validation passed where possible. Local Parallels validation is blocked for Firecracker execution because `/dev/kvm` is not exposed, and enabling Parallels nested virtualization prevents the VM from starting on this host.
 <!-- SECTION:FINAL_SUMMARY:END -->

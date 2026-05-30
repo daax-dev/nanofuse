@@ -4,7 +4,7 @@ title: Refresh PR29 VM pool/SPIFFE/CoW branch against current main
 status: Done
 assignee: []
 created_date: '2026-05-30 23:01'
-updated_date: '2026-05-30 23:28'
+updated_date: '2026-05-30 23:41'
 labels:
   - pr29
   - branch-refresh
@@ -60,10 +60,12 @@ Completed. Effective branch-specific diff against origin/main is limited to Fire
 Reopened on 2026-05-30 for replacement PR hardening after closed PR #29 retained outdated Copilot threads but no open current-head review threads.
 
 Replacement hardening completed: closed PR #29 Copilot threads were stale/outdated against old commit a74d209; current-head fixes require paused snapshots and wire pause/resume to Firecracker PATCH /vm. Validation: go test ./internal/api; go test ./internal/firecracker; jq -c . .logs/decisions/pr29-refresh.jsonl; git diff --check; mage ci.
+
+Fresh Copilot review on replacement PR #47 identified that LoadSnapshotWithResume cannot restore into a real Firecracker process because /snapshot/load must run before microVM configuration. Scope revised to remove the unusable load helper and document restore as future restore-specific launch work.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Replacement PR opened: https://github.com/daax-dev/nanofuse/pull/47. Closed PR #29 Copilot threads were audited and found stale/outdated against old commit a74d209. Current-head hardening requires paused VMs for snapshot creation, wires pause/resume handlers to Firecracker v1.7.0 PATCH /vm state transitions, updates OpenAPI/API docs/audit docs, and records JSONL decisions pr29-refresh-003 and pr29-refresh-004. Validation passed: go test ./internal/api; go test ./internal/firecracker; jq -c . .logs/decisions/pr29-refresh.jsonl; git diff --check; mage ci. mage ci printed existing non-fatal gosec-not-found and macOS linker warnings.
+Replacement PR open: https://github.com/daax-dev/nanofuse/pull/47. Closed PR #29 Copilot threads were audited and found stale/outdated against old commit a74d209. Fresh PR #47 Copilot feedback was addressed by removing the attempted LoadSnapshotWithResume helper because Firecracker requires /snapshot/load before microVM configuration; restore now remains explicitly future restore-specific launch work. Current branch hardening requires paused VMs for snapshot creation, wires pause/resume handlers to Firecracker v1.7.0 PATCH /vm state transitions, updates OpenAPI/API docs/audit docs, and records JSONL decisions pr29-refresh-003 through pr29-refresh-005. Validation passed after the fresh fix: go test ./internal/api ./internal/firecracker; jq -c . .logs/decisions/pr29-refresh.jsonl .logs/references/pr29-refresh.jsonl; git diff --check; mage ci. mage ci printed existing non-fatal gosec-not-found and macOS linker warnings.
 <!-- SECTION:FINAL_SUMMARY:END -->

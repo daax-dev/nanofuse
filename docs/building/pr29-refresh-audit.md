@@ -71,7 +71,7 @@ The refreshed branch is intentionally narrow:
 - Merge current main into the old PR29 branch.
 - Resolve conflicts toward current main for guidance, tooling, dependencies, API, SPIRE service, and config.
 - Remove unverified VM pool, SVID rotation, and CoW layer code.
-- Replace the previous snapshot stubs with real Firecracker snapshot create/load API calls on the existing manager.
+- Replace the previous snapshot stubs with real Firecracker snapshot create and VM pause/resume API calls on the existing manager.
 - Keep an audit trail for why the scope was narrowed.
 
 ## Implemented Snapshot Slice
@@ -82,9 +82,6 @@ The refreshed branch implements the Firecracker snapshot API calls needed before
 - Snapshot creation uses `snapshot_type: "Full"`, `snapshot_path`, and `mem_file_path`.
 - `POST /vms/{id}/snapshots` now rejects non-paused VMs before calling Firecracker.
 - `Manager.Pause` and `Manager.Resume` send `PATCH /vm` with `state: "Paused"` or `state: "Resumed"` so the public API can move running VMs into the valid snapshot state.
-- `Manager.LoadSnapshot` sends `PUT /snapshot/load` over the VM Firecracker Unix socket.
-- Snapshot loading uses `snapshot_path`, `mem_backend.backend_type: "File"`, `mem_backend.backend_path`, `enable_diff_snapshots: false`, and defaults `resume_vm` to `true`.
-- `Manager.LoadSnapshotWithResume` exposes the same load path with explicit `resume_vm` control.
 - Unit tests use an Unix-socket `httptest` server and validate request path, method, and JSON body.
 
 This targets the repo-pinned Firecracker v1.7.0 API. The Vagrant setup pins Firecracker 1.7.0 in `dev/vagrant/setup.sh`, and the v1.7.0 swagger is the primary contract for the exact request fields. Firecracker upgrades must include an API-field review before changing these request shapes.
@@ -103,9 +100,11 @@ The stale comments target old VM pool, SVID rotation, and CoW layer files that a
 
 The current-head gap found during this pass was the public snapshot API accepting running VMs even though Firecracker snapshot creation requires a paused microVM. The replacement branch now rejects non-paused snapshot requests and wires the existing pause/resume routes to Firecracker `PATCH /vm` state transitions.
 
+Fresh Copilot review on replacement PR #47 correctly identified that a low-level `PUT /snapshot/load` helper using an already-started VM runtime socket cannot restore snapshots in production because Firecracker requires snapshot loading before microVM configuration. That helper has been removed. Snapshot restore requires a future restore-specific launch path that starts Firecracker with an API socket, loads the snapshot before normal configuration, and then reconciles daemon lifecycle state.
+
 Future implementation should start from a new spec and should land as smaller independently validated slices:
 
-- Snapshot restore API integration before any VM pool performance target.
+- Snapshot restore-specific launch path before any VM pool performance target.
 - VM lifecycle-owned identity registration/revocation before SVID rotation.
 - Disk isolation strategy selection and validation before overlayfs or CoW claims.
 
@@ -117,7 +116,7 @@ PR #29 was closed and stale. Its implementation overclaimed production behavior 
 
 Approach:
 
-Merged current main non-destructively, resolved conflicts toward current main, removed the unverified PR29 feature files, preserved `github.com/daax-dev/nanofuse`, implemented the narrow Firecracker snapshot create/load API client slice, and documented the audit findings. Copilot review blockers against the old VMPool/SVID/CoW files are closed by removal of the affected stale files rather than by carrying partial fixes.
+Merged current main non-destructively, resolved conflicts toward current main, removed the unverified PR29 feature files, preserved `github.com/daax-dev/nanofuse`, implemented the narrow Firecracker snapshot create and VM pause/resume API client slice, and documented the audit findings. Copilot review blockers against the old VMPool/SVID/CoW files are closed by removal of the affected stale files rather than by carrying partial fixes.
 
 Replacement PR hardening also makes the public snapshot endpoint require a paused VM, matching the Firecracker snapshot lifecycle requirement instead of accepting running VMs and failing later inside the VMM. The same hardening replaces the pause/resume handler stubs with Firecracker `PATCH /vm` calls.
 

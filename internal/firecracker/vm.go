@@ -117,20 +117,8 @@ type snapshotCreateRequest struct {
 	MemFilePath  string `json:"mem_file_path"`
 }
 
-type snapshotLoadRequest struct {
-	SnapshotPath       string     `json:"snapshot_path"`
-	MemBackend         memBackend `json:"mem_backend"`
-	EnableDiffSnapshot bool       `json:"enable_diff_snapshots"`
-	ResumeVM           bool       `json:"resume_vm"`
-}
-
 type vmStateRequest struct {
 	State string `json:"state"`
-}
-
-type memBackend struct {
-	BackendPath string `json:"backend_path"`
-	BackendType string `json:"backend_type"`
 }
 
 // addDrivesToConfig adds disk drives to Firecracker config
@@ -573,39 +561,6 @@ func (m *Manager) CreateSnapshot(vm *types.VM, snapshotPath, memPath string) err
 	}
 	if err := firecrackerPUT(socketPath, "/snapshot/create", req); err != nil {
 		return fmt.Errorf("failed to create Firecracker snapshot for VM %s: %w", vm.ID, err)
-	}
-	return nil
-}
-
-// LoadSnapshot loads a snapshot
-func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error {
-	return m.LoadSnapshotWithResume(vm, snapshotPath, memPath, true)
-}
-
-// LoadSnapshotWithResume loads a snapshot and controls whether Firecracker resumes the VM.
-func (m *Manager) LoadSnapshotWithResume(vm *types.VM, snapshotPath, memPath string, resumeVM bool) error {
-	socketPath, err := vmAPISocket(vm)
-	if err != nil {
-		return err
-	}
-	if snapshotPath == "" {
-		return fmt.Errorf("snapshot path is required")
-	}
-	if memPath == "" {
-		return fmt.Errorf("snapshot memory path is required")
-	}
-
-	req := snapshotLoadRequest{
-		SnapshotPath: snapshotPath,
-		MemBackend: memBackend{
-			BackendPath: memPath,
-			BackendType: "File",
-		},
-		EnableDiffSnapshot: false,
-		ResumeVM:           resumeVM,
-	}
-	if err := firecrackerPUT(socketPath, "/snapshot/load", req); err != nil {
-		return fmt.Errorf("failed to load Firecracker snapshot for VM %s: %w", vm.ID, err)
 	}
 	return nil
 }

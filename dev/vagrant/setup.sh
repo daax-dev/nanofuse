@@ -313,7 +313,7 @@ setup_nanofuse_service() {
 api:
   socket: /var/run/nanofused.sock
   socket_mode: "0660"
-  tcp_bind: "127.0.0.1:8080"
+  tcp_bind: "0.0.0.0:8080"
 
 storage:
   data_dir: /var/lib/nanofuse
@@ -394,9 +394,12 @@ info "  binaries:         /usr/local/bin/nanofuse, nanofused"
 info "  config:           /etc/nanofuse/nanofused.yaml"
 info "  base image:       /var/lib/nanofuse/images/"
 info "  data:             /var/lib/nanofuse/"
+info "  guest API:        http://0.0.0.0:8080"
+info "  host API:         http://127.0.0.1:18080 (Vagrant forwarded port; override with NANOFUSE_API_HOST_PORT)"
 info ""
 info "Quick start:"
 info "  sudo systemctl start nanofused"
 info "  nanofuse health"
+info "  curl http://127.0.0.1:18080/health   # from host when Vagrant port forwarding is active"
 info "  nanofuse vm list"
 info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

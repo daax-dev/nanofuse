@@ -49,6 +49,8 @@ const (
 	DefaultBaseImage = "base"
 	// DefaultImageTag is the default image tag
 	DefaultImageTag = "latest"
+	// DefaultAPISocketPath is the default nanofused Unix socket.
+	DefaultAPISocketPath = "/var/run/nanofused.sock"
 )
 
 func main() {
@@ -91,6 +93,10 @@ It provides simple commands for VM lifecycle management, snapshots, and image ha
 			return nil
 		}
 
+		if err := applyClientEnvironment(); err != nil {
+			return err
+		}
+
 		// Determine color usage
 		useColor := !noColor && isTerminal()
 		if os.Getenv("NO_COLOR") != "" {
@@ -109,13 +115,54 @@ It provides simple commands for VM lifecycle management, snapshots, and image ha
 			apiClient = client.NewTCPClient(apiURL, timeout, debug)
 		} else {
 			if apiSocket == "" {
-				apiSocket = "/run/nanofused.sock"
+				apiSocket = DefaultAPISocketPath
 			}
 			apiClient = client.NewClient(apiSocket, timeout, debug)
 		}
 
 		return nil
 	},
+}
+
+func applyClientEnvironment() error {
+	if cfgFile == "" {
+		cfgFile = os.Getenv("NANOFUSE_CONFIG")
+	}
+	if apiURL == "" {
+		apiURL = os.Getenv("NANOFUSE_API_URL")
+	}
+	if apiSocket == "" {
+		apiSocket = os.Getenv("NANOFUSE_API_SOCKET")
+	}
+	if timeout == 30*time.Second {
+		if value := os.Getenv("NANOFUSE_TIMEOUT"); value != "" {
+			parsed, err := time.ParseDuration(value)
+			if err != nil {
+				return fmt.Errorf("parse NANOFUSE_TIMEOUT: %w", err)
+			}
+			timeout = parsed
+		}
+	}
+	if !debug && envTruthy(os.Getenv("NANOFUSE_DEBUG")) {
+		debug = true
+	}
+	if !jsonOutput && strings.EqualFold(os.Getenv("NANOFUSE_OUTPUT"), "json") {
+		jsonOutput = true
+	}
+	if !noColor && envTruthy(os.Getenv("NANOFUSE_NO_COLOR")) {
+		noColor = true
+	}
+
+	return nil
+}
+
+func envTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func init() {

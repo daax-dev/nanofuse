@@ -15,7 +15,7 @@ info:
 servers:
   - url: http://localhost:8080
     description: Local development server
-  - url: unix:///var/run/nanofuse.sock
+  - url: unix:///var/run/nanofused.sock
     description: Unix socket (default)
 
 tags:
@@ -45,6 +45,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+
+  /capabilities:
+    get:
+      summary: Runtime capabilities
+      description: Returns daemon host, KVM, Firecracker, and API transport capability details for CLI, SDK, and tray clients.
+      operationId: getCapabilities
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Runtime capability details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
 
   /vms:
     get:
@@ -501,7 +516,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PullJob'
+                $ref: '#/components/schemas/PullImageResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
 
@@ -614,6 +629,96 @@ components:
           type: integer
           format: int64
           example: 3600
+
+    CapabilitiesResponse:
+      type: object
+      required:
+        - status
+        - version
+        - host
+        - runtime
+        - api
+      properties:
+        status:
+          type: string
+          example: ok
+        version:
+          type: string
+          example: 0.1.0
+        host:
+          $ref: '#/components/schemas/HostCapabilities'
+        runtime:
+          $ref: '#/components/schemas/RuntimeCapabilities'
+        api:
+          $ref: '#/components/schemas/APITransportCapabilities'
+
+    HostCapabilities:
+      type: object
+      required:
+        - os
+        - arch
+        - kvm_device
+        - kvm_exists
+        - kvm_read_write
+      properties:
+        os:
+          type: string
+          example: linux
+        arch:
+          type: string
+          example: amd64
+        kvm_device:
+          type: string
+          example: /dev/kvm
+        kvm_exists:
+          type: boolean
+          example: true
+        kvm_read_write:
+          type: boolean
+          example: true
+        kvm_error:
+          type: string
+          example: not found
+
+    RuntimeCapabilities:
+      type: object
+      required:
+        - native_runtime
+        - firecracker_binary
+        - firecracker_available
+        - root_required
+        - network_setup_required
+        - message
+      properties:
+        native_runtime:
+          type: boolean
+          description: True only when this daemon host can run Firecracker microVMs directly.
+          example: true
+        firecracker_binary:
+          type: string
+          example: /usr/local/bin/firecracker
+        firecracker_available:
+          type: boolean
+          example: true
+        root_required:
+          type: boolean
+          example: true
+        network_setup_required:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Linux KVM and Firecracker are available for local microVM execution
+
+    APITransportCapabilities:
+      type: object
+      properties:
+        unix_socket:
+          type: string
+          example: /var/run/nanofused.sock
+        tcp_bind:
+          type: string
+          example: 0.0.0.0:8080
 
     VM:
       type: object
@@ -1235,18 +1340,25 @@ components:
       type: object
       required:
         - digest
-        - reference
+        - tags
+        - architecture
         - kernel_path
         - rootfs_path
         - size_bytes
-        - created_at
+        - pulled_at
       properties:
         digest:
           type: string
           example: sha256:abc123...
-        reference:
+        tags:
+          type: array
+          items:
+            type: string
+          example:
+            - ghcr.io/daax-dev/nanofuse/base:latest
+        architecture:
           type: string
-          example: ghcr.io/daax-dev/nanofuse/base:latest
+          example: x86_64
         kernel_path:
           type: string
         rootfs_path:
@@ -1254,19 +1366,46 @@ components:
         size_bytes:
           type: integer
           format: int64
-        created_at:
+        kernel_version:
+          type: string
+          example: 6.1.90
+        pulled_at:
           type: string
           format: date-time
+        labels:
+          type: object
+          additionalProperties:
+            type: string
 
     PullImageRequest:
       type: object
       required:
-        - reference
+        - image_ref
       properties:
-        reference:
+        image_ref:
           type: string
           description: Image reference (registry/repo:tag)
           example: ghcr.io/daax-dev/nanofuse/base:latest
+
+    PullImageResponse:
+      type: object
+      required:
+        - job_id
+        - image_ref
+        - state
+        - status_url
+      properties:
+        job_id:
+          type: string
+          example: job-550e8400-e29b-41d4-a716-446655440000
+        image_ref:
+          type: string
+          example: ghcr.io/daax-dev/nanofuse/base:latest
+        state:
+          $ref: '#/components/schemas/PullJobState'
+        status_url:
+          type: string
+          example: /images/jobs/job-550e8400-e29b-41d4-a716-446655440000
 
     ListImagesResponse:
       type: object
@@ -1284,23 +1423,21 @@ components:
     PullJob:
       type: object
       required:
-        - job_id
-        - reference
-        - status
+        - id
+        - image_ref
+        - state
         - created_at
       properties:
-        job_id:
+        id:
           type: string
-        reference:
+          example: job-550e8400-e29b-41d4-a716-446655440000
+        image_ref:
           type: string
-        status:
-          type: string
-          enum: [pending, pulling, extracting, completed, failed]
+          example: ghcr.io/daax-dev/nanofuse/base:latest
+        state:
+          $ref: '#/components/schemas/PullJobState'
         progress:
-          type: number
-          format: float
-          minimum: 0
-          maximum: 100
+          $ref: '#/components/schemas/PullProgress'
         created_at:
           type: string
           format: date-time
@@ -1308,12 +1445,36 @@ components:
           type: string
           format: date-time
           nullable: true
-        error_message:
+        error:
           type: string
           nullable: true
-        image:
-          $ref: '#/components/schemas/Image'
+        result_digest:
+          type: string
           nullable: true
+
+    PullJobState:
+      type: string
+      enum: [pending, in_progress, completed, failed]
+      example: in_progress
+
+    PullProgress:
+      type: object
+      required:
+        - current_bytes
+        - total_bytes
+        - percentage
+      properties:
+        current_bytes:
+          type: integer
+          format: int64
+          example: 1048576
+        total_bytes:
+          type: integer
+          format: int64
+          example: 10485760
+        percentage:
+          type: integer
+          example: 10
 
     Error:
       type: object

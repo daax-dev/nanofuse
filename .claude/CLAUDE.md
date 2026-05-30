@@ -8,41 +8,41 @@
 
 **✅ REQUIRED:**
 
-### jp-spec-kit Workflow
+### Flowspec Workflow
 
-This project uses **jp-spec-kit** for specification-driven development. All features MUST follow the spec → plan → implement workflow.
+This project uses **Flowspec** for specification-driven development. All features MUST follow the spec -> plan -> implement workflow.
 
 #### Installation Verification
 ```bash
-# Verify jp-spec-kit is installed
-specify --help
+# Verify Flowspec is installed
+flowspec --help
 
 # If not installed, run:
-uv tool install specify-cli --from git+https://github.com/jpoley/jp-spec-kit.git
+uv tool install flowspec-cli --from git+https://github.com/jpoley/flowspec.git
 ```
 
 #### Workflow Commands
 
-**JPSpec Commands** (High-level multi-agent workflows):
+**Flow Commands** (High-level workflow):
 ```bash
-/jpspec.specify   # PM Planner agent creates specifications
-/jpspec.plan      # Architect & Platform Engineer design artifacts
-/jpspec.research  # Market and technical research + business validation
-/jpspec.implement # Frontend/Backend engineers with code review
-/jpspec.validate  # QA, security, documentation, release management
-/jpspec.operate   # SRE agents for CI/CD, DevSecOps, resilience
+/flow:assess     # Classify work and validate readiness
+/flow:specify    # Create feature specification from natural language
+/flow:research   # Capture research and alternatives when required
+/flow:plan       # Generate technical implementation plan
+/flow:implement  # Execute implementation from tasks.md
+/flow:validate   # QA, security, documentation, release management
+/flow:operate    # Operational follow-through
 ```
 
-**SpecKit Commands** (Detailed workflow steps):
+**Spec Commands** (Detailed workflow steps):
 ```bash
-/speckit.specify      # Create feature specification from natural language
-/speckit.clarify      # Resolve ambiguities (max 3 questions)
-/speckit.plan         # Generate technical implementation plan
-/speckit.tasks        # Break down into dependency-ordered tasks
-/speckit.implement    # Execute implementation from tasks.md
-/speckit.analyze      # Cross-artifact consistency validation
-/speckit.constitution # Create/update project constitution
-/speckit.taskstoissues # Convert tasks to GitHub issues
+/spec.flowspec      # Create or select a feature specification
+/spec.clarify       # Resolve ambiguities (max 3 questions)
+/spec.plan          # Generate technical implementation plan
+/spec.tasks         # Break down into dependency-ordered tasks
+/spec.implement     # Execute implementation from tasks.md
+/spec.checklist     # Cross-artifact consistency validation
+/spec.constitution  # Create/update project constitution
 ```
 
 #### Mandatory Principles
@@ -51,12 +51,12 @@ uv tool install specify-cli --from git+https://github.com/jpoley/jp-spec-kit.git
 2. **Maximum 3 clarifications**: Make informed guesses rather than over-marking `[NEEDS CLARIFICATION]`
 3. **Success criteria must be measurable**: Every criterion must be verifiable
 4. **No implementation leakage**: Never mention languages, frameworks, databases in spec.md
-5. **Follow templates**: All specs follow `.specify/templates/spec-template.md`
+5. **Follow templates**: All specs follow `.flowspec/templates/spec-template.md`
 6. **Human approval at phase boundaries**: AI executes, humans govern
 
 #### Directory Structure
 ```
-.specify/
+.flowspec/
 ├── features/{branch}/    # Feature-specific artifacts
 │   ├── spec.md          # Technology-agnostic specification
 │   ├── plan.md          # Technical implementation plan
@@ -157,11 +157,11 @@ mcp__sequential__sequentialthinking with:
 
 ## 4. Constitution as Supreme Authority (MANDATORY)
 
-**✅ REQUIRED: .specify/memory/constitution.md is the authoritative source**
+**✅ REQUIRED: .flowspec/memory/constitution.md is the authoritative source**
 
 ### Constitutional Hierarchy
 
-1. **Constitution** (`.specify/memory/constitution.md`) - SUPREME AUTHORITY
+1. **Constitution** (`.flowspec/memory/constitution.md`) - SUPREME AUTHORITY
 2. **CLAUDE.md** (this file) - Quick reference and workflows
 3. **README.md** - User-facing documentation
 4. **Other docs** - Supporting guidance
@@ -188,8 +188,8 @@ Most projects follow these core principles:
 ## 5. Quality Gates Checklist
 
 Before committing code:
-- [ ] Specification exists in `.specify/features/{branch}/spec.md`
-- [ ] Plan exists in `.specify/features/{branch}/plan.md`
+- [ ] Specification exists in `.flowspec/features/{branch}/spec.md`
+- [ ] Plan exists in `.flowspec/features/{branch}/plan.md`
 - [ ] Tasks tracked in `backlog/tasks/`
 - [ ] Tests written BEFORE implementation (TDD)
 - [ ] All tests passing
@@ -204,24 +204,24 @@ Before committing code:
 
 1. **Create specification**:
    ```
-   /jpspec.specify <feature description>
+   /flow:specify <feature description>
    ```
    Creates branch, generates spec.md, validates quality
 
 2. **Clarify ambiguities** (if needed, max 3):
    ```
-   /speckit.clarify
+   /spec.clarify
    ```
 
 3. **Generate implementation plan**:
    ```
-   /jpspec.plan
+   /flow:plan
    ```
    Creates research.md, data-model.md, contracts/, quickstart.md
 
 4. **Create tasks**:
    ```
-   /speckit.tasks
+   /spec.tasks
    ```
    Generates dependency-ordered tasks.md
 
@@ -232,13 +232,13 @@ Before committing code:
 
 6. **Implement**:
    ```
-   /jpspec.implement
+   /flow:implement
    ```
    Dispatches specialized engineer agents
 
 7. **Validate**:
    ```
-   /jpspec.validate
+   /flow:validate
    ```
    QA, security review, documentation check
 
@@ -249,7 +249,7 @@ Before committing code:
 backlog task list --status "In Progress"
 
 # Work on tasks using spec-driven approach
-/speckit.implement
+/flow:implement
 
 # Track progress
 backlog task edit <task-id> --status "In Progress"
@@ -267,13 +267,13 @@ backlog browser
 
 | File Type | Correct Location | WRONG Location |
 |-----------|-----------------|----------------|
-| Specifications | `.specify/features/{branch}/spec.md` | Root, docs/ |
-| Plans | `.specify/features/{branch}/plan.md` | Root, docs/ |
+| Specifications | `.flowspec/features/{branch}/spec.md` | Root, docs/ |
+| Plans | `.flowspec/features/{branch}/plan.md` | Root, docs/ |
 | Tasks | `backlog/tasks/` | Root, docs/ |
-| Constitution | `.specify/memory/constitution.md` | Root |
-| Templates | `.specify/templates/` | Root, docs/ |
-| Scripts | `.specify/scripts/bash/` | Root, scripts/ |
-| Documentation | `docs/` | Root, .specify/ |
+| Constitution | `.flowspec/memory/constitution.md` | Root |
+| Templates | `.flowspec/templates/` | Root, docs/ |
+| Scripts | `.flowspec/scripts/bash/` | Root, scripts/ |
+| Documentation | `docs/` | Root, .flowspec/ |
 | WIP docs | `docs/building/` | Root, docs/ |
 
 **No exceptions. Maintain repository cleanliness.**
@@ -310,9 +310,9 @@ backlog browser
 
 ## 10. When in Doubt
 
-1. **Consult the constitution**: `.specify/memory/constitution.md`
+1. **Consult the constitution**: `.flowspec/memory/constitution.md`
 2. **Use sequential thinking**: Break down the problem
-3. **Ask for clarification**: Use `/speckit.clarify`
+3. **Ask for clarification**: Use `/spec.clarify`
 4. **Escalate to human**: Don't guess on critical decisions
 5. **Document decisions**: Create ADR for architectural choices
 

@@ -1,11 +1,11 @@
 # Implementation Plan: Sandbox Objective Closed-Loop Validation
 
 **Branch**: `codex-goal` | **Date**: 2026-05-30 | **Spec**: `spec.md`
-**Input**: Feature specification from `.specify/features/codex-goal/spec.md`
+**Input**: Feature specification from `.flowspec/features/codex-goal/spec.md`
 
 ## Summary
 
-Deliver a truthful, testable slice of the sandbox objective: per-VM writable root disks, typed egress policy enforcement hooks, corrected platform/security documentation, and Vagrant closed-loop validation. The platform remains Firecracker-on-Linux/KVM at runtime; macOS and Windows are operator/developer hosts only when they can reach a Linux/KVM execution environment.
+Deliver a truthful, testable slice of the sandbox objective: per-VM writable root disks, typed egress policy enforcement hooks, corrected platform/security documentation, API-driven Mac/Windows client paths, tray-app requirements, and Vagrant closed-loop validation. The platform remains Firecracker-on-Linux/KVM at runtime; macOS and Windows are operator/developer hosts only when they can reach a Linux/KVM execution environment.
 
 ## Technical Context
 
@@ -33,7 +33,7 @@ Deliver a truthful, testable slice of the sandbox objective: per-VM writable roo
 ### Documentation
 
 ```text
-.specify/features/codex-goal/
+.flowspec/features/codex-goal/
 ├── spec.md
 ├── plan.md
 ├── tasks.md
@@ -41,16 +41,34 @@ Deliver a truthful, testable slice of the sandbox objective: per-VM writable roo
 
 docs/
 ├── GOALS.md
+├── API_QUICK_START.md
+├── MAC_WINDOWS_CLIENTS.md
 └── building/
-    └── sandbox-objective-validation.md
+    ├── sandbox-objective-validation.md
+    ├── sandbox-api-comparison.md
+    └── nanofuse-tray-app.md
 ```
 
 ### Source Code
 
 ```text
+api/openapi.yaml
+
+cmd/nanofuse/
+├── main.go
+└── main_test.go
+
 internal/api/
+├── handlers.go
+├── server.go
+├── server_test.go
 ├── vm_handlers.go
 └── vm_handlers_test.go
+
+internal/client/
+├── client.go
+├── client_test.go
+└── types.go
 
 internal/network/
 ├── egress.go
@@ -67,7 +85,7 @@ dev/vagrant/
 └── closed-loop.sh
 ```
 
-**Structure Decision**: VM lifecycle and root disk materialization belong in the daemon API layer because the daemon owns storage and privileged lifecycle. Firewall policy belongs in `internal/network`. Public request/response shape belongs in `internal/types` and `api/openapi.yaml`.
+**Structure Decision**: VM lifecycle and root disk materialization belong in the daemon API layer because the daemon owns storage and privileged lifecycle. Firewall policy belongs in `internal/network`. Runtime capability reporting belongs in the daemon API because clients and tray apps must gate VM actions without touching host internals. Public request/response shape belongs in `internal/types`, `internal/client`, and `api/openapi.yaml`.
 
 ## Implementation Notes
 
@@ -77,8 +95,10 @@ dev/vagrant/
 4. Implement egress policy setup/cleanup with idempotent iptables chain operations and explicit proxy-only validation.
 5. Wire egress policy into VM create/delete cleanup without changing default legacy behavior unless a policy is requested.
 6. Update OpenAPI and docs to expose the new policy shape.
-7. Improve Vagrant validation so unsupported providers fail with exact diagnostics instead of ambiguous provisioning errors.
-8. Run targeted tests after each behavior slice, then `mage ci`, then Vagrant.
+7. Add API capabilities reporting and CLI environment configuration for remote API clients.
+8. Improve Vagrant validation so unsupported providers fail with exact diagnostics instead of ambiguous provisioning errors and forward the guest API to the host.
+9. Document sandbox API differences and tray/menu app requirements without selecting a desktop runtime.
+10. Run targeted tests after each behavior slice, then `mage ci`, then Vagrant.
 
 ## Complexity Tracking
 

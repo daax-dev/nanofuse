@@ -97,6 +97,16 @@ nanofuse vm delete web-vm
 
 ## Configuration
 
+Remote clients can configure the API with environment variables:
+
+```bash
+export NANOFUSE_API_URL="http://linux-kvm-host:8080"
+export NANOFUSE_TIMEOUT="30s"
+nanofuse health
+```
+
+Supported variables: `NANOFUSE_API_URL`, `NANOFUSE_API_SOCKET`, `NANOFUSE_TIMEOUT`, `NANOFUSE_OUTPUT=json`, `NANOFUSE_DEBUG=true`, and `NANOFUSE_NO_COLOR=true`.
+
 Create a configuration file at `~/.config/nanofuse/config.yaml`:
 
 ```yaml

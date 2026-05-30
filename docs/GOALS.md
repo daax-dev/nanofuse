@@ -12,8 +12,8 @@ Nanofuse is a self-hosted microVM sandbox platform for running untrusted and sem
 | Host family | Current support | Constraint |
 |-------------|-----------------|------------|
 | Linux | Native runtime target when `/dev/kvm` is present and readable/writable. | Firecracker requires Linux KVM. |
-| macOS | Operator/developer host only. Use a Linux VM, Vagrant provider, or remote Linux/KVM runner when the provider exposes `/dev/kvm`. | Native macOS Firecracker runtime is not supported. |
-| Windows | Operator/developer host only. Use WSL2 or a Linux VM/remote runner only when Linux KVM is exposed. | Native Windows Firecracker runtime is not supported. |
+| macOS | Operator/developer host only. Use the API, CLI, curl, SSH tunnel, or planned tray app against a Linux/KVM `nanofused` daemon. Local Vagrant only works when the provider exposes `/dev/kvm`. | Native macOS Firecracker runtime is not supported. |
+| Windows | Operator/developer host only. Use the API, CLI, PowerShell, SSH tunnel, or planned tray app against a Linux/KVM `nanofused` daemon. WSL2 or local VM paths only work when Linux KVM is exposed. | Native Windows Firecracker runtime is not supported. |
 
 Do not treat macOS or Windows local OS sandboxing as equivalent to the Nanofuse security boundary. The runtime security boundary is the Linux/KVM microVM.
 
@@ -29,6 +29,8 @@ Primary Firecracker references:
 |-----------|---------------|--------|
 | Small security surface | Firecracker VMM with TAP networking and optional SPIRE vsock proxy. Jailer integration is configured but not the default launch path. | Firecracker launched through jailer by default with cgroups, chroot, seccomp, least-privilege file layout, and release-gated escape tests. |
 | Container workload support | OCI/container images can be extracted into microVM rootfs artifacts through Docker/Podman and layer build paths. | Any supported container workload can be wrapped into a bootable rootfs or container-capable guest image and run inside microVM isolation. |
+| API-driven control | `nanofused` exposes the REST API over Unix socket or optional TCP. CLI clients can use `--api-url` or `NANOFUSE_API_URL`; `GET /capabilities` reports runtime readiness. | Authenticated/TLS API profiles, generated SDKs, and tray/menu clients for macOS and Windows. |
+| Desktop management UI | No desktop UI is implemented. Requirements are captured for an API-only tray/menu app so it does not bypass the daemon boundary. | macOS and Windows tray apps manage daemon profiles, health, images, VMs, logs, and lifecycle actions through the REST API only. |
 | Persistent filesystem | Writable root disks are materialized per VM under daemon storage; registered image rootfs files remain sources. | Policy-selectable ephemeral, persistent, and snapshot-backed filesystems. |
 | Fast short-running sessions | Create/start/stop/kill lifecycle exists. Fast-start targets are not yet proven by current gates. | Measured cold-start and warm-start budgets with regression tests. |
 | Long-running sessions | VMs can remain running until stopped or killed. | Lease, quota, idle timeout, and recovery policies for long-running sessions. |
@@ -90,6 +92,10 @@ Host Linux/KVM
 | Document | Description |
 |----------|-------------|
 | [Sandbox Objective Validation](building/sandbox-objective-validation.md) | Current validation plan and evidence |
+| [API Quick Start](API_QUICK_START.md) | Runnable Linux/KVM API daemon and client examples |
+| [Mac and Windows Clients](MAC_WINDOWS_CLIENTS.md) | Cross-platform client runbook |
+| [Sandbox API Comparison](building/sandbox-api-comparison.md) | Comparison against current sandbox APIs |
+| [Tray App Plan](building/nanofuse-tray-app.md) | macOS/Windows tray app requirements |
 | [Firecracker Runner Design](firecracker-runner-design.md) | Daemon/Firecracker design |
 | [Programmable Egress Proxy Integration](prd/programmable-egress-proxy-integration.md) | Forced proxy model for LLM/API/MCP egress |
 | [SPIFFE/SPIRE Integration Status](specs/spiffe-integration-status.md) | Current identity implementation status |

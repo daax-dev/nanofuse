@@ -1,13 +1,13 @@
 # Tasks: Sandbox Objective Closed-Loop Validation
 
-**Input**: `.specify/features/codex-goal/spec.md`, `.specify/features/codex-goal/plan.md`
+**Input**: `.flowspec/features/codex-goal/spec.md`, `.flowspec/features/codex-goal/plan.md`
 **Prerequisites**: Backlog task `TASK-47`
 
 ## Phase 1: Specification and Governance
 
-- [ ] T001 Create `.specify/features/codex-goal/spec.md`
-- [ ] T002 Create `.specify/features/codex-goal/plan.md`
-- [ ] T003 Create `.specify/features/codex-goal/tasks.md`
+- [ ] T001 Create `.flowspec/features/codex-goal/spec.md`
+- [ ] T002 Create `.flowspec/features/codex-goal/plan.md`
+- [ ] T003 Create `.flowspec/features/codex-goal/tasks.md`
 - [ ] T004 Log architecture and validation decisions under `.logs/decisions/`
 - [ ] T005 Log primary references under `.logs/references/`
 
@@ -31,19 +31,23 @@
 - [ ] T015 Add `docs/building/sandbox-objective-validation.md`
 - [ ] T016 Add or update `dev/vagrant/closed-loop.sh` and provider preflight diagnostics
 - [ ] T017 Update `dev/vagrant/README.md` with exact Linux/KVM, macOS, and Windows paths
+- [ ] T018 Add API capability reporting and remote client configuration support
+- [ ] T019 Add Mac/Windows API client runbook and fix API examples
+- [ ] T020 Add sandbox API comparison and tray/menu app requirements
 
 ## Phase 5: Validation and PR
 
-- [ ] T018 Run `go fmt ./...`
-- [ ] T019 Run targeted Go tests for changed packages
-- [ ] T020 Run `mage ci`
-- [ ] T021 Run Vagrant closed-loop validation and record output
-- [ ] T022 Update `TASK-47` acceptance criteria and final summary
-- [ ] T023 Commit, push, and create PR
+- [ ] T021 Run `go fmt ./...`
+- [ ] T022 Run targeted Go tests for changed packages
+- [ ] T023 Run `mage ci`
+- [ ] T024 Run Vagrant closed-loop validation and record output
+- [ ] T025 Update Backlog acceptance criteria and final summaries
+- [ ] T026 Commit, push, and update PR
 
 ## Dependencies
 
 - T001-T005 block implementation.
 - T006-T008 are independent of T009-T013 after shared types are agreed.
 - T014-T017 depend on implementation decisions and validation results.
-- T018-T023 run after all code and docs are complete.
+- T018-T020 depend on the API boundary decision.
+- T021-T026 run after all code and docs are complete.

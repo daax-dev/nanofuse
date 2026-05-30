@@ -2,14 +2,14 @@
 
 **Date:** 2026-05-30
 **Backlog:** `TASK-47`
-**Spec:** `.specify/features/codex-goal/spec.md`
+**Spec:** `.flowspec/features/codex-goal/spec.md`
 
 ## Scope
 
 This validation covers the `objective.md` sandbox requirements on the current branch:
 
 - Linux/KVM microVM execution path.
-- macOS and Windows operator paths through a Linux/KVM execution environment.
+- macOS and Windows operator paths through the `nanofused` API on a Linux/KVM execution environment.
 - OCI/container-to-rootfs wrapping path.
 - Per-VM persistent filesystem state.
 - Short-running and long-running lifecycle behavior.
@@ -24,6 +24,8 @@ The current host is macOS arm64 and has no `/dev/kvm`. Firecracker cannot run na
 1. Run in a Vagrant guest/provider that exposes Linux KVM, or
 2. Fail before VM boot with an explicit `/dev/kvm` capability error.
 
+The runnable API requirement is satisfied by `nanofused` on the Linux/KVM runtime host. macOS and Windows hosts run as clients using `NANOFUSE_API_URL`, `--api-url`, curl, PowerShell, or the planned tray app. See `docs/API_QUICK_START.md` and `docs/MAC_WINDOWS_CLIENTS.md`.
+
 ## Validation Commands
 
 Local code gates:
@@ -37,6 +39,9 @@ mage ci
 Local result on 2026-05-30:
 
 - `mage ci` passed on the macOS arm64 host.
+- `go test ./...` passed on the macOS arm64 host.
+- YAML/OpenAPI parsing and JSONL parsing passed.
+- Shell syntax, Ruby syntax, and `vagrant validate` passed.
 - `gosec` was not installed; the existing `mage ci` target reports that condition and continues.
 
 Vagrant closed-loop:
@@ -58,9 +63,11 @@ Local Vagrant result on 2026-05-30:
 
 - Provider: `vagrant-parallels` with `bento/ubuntu-24.04` arm64.
 - Guest boot and rsync succeeded.
+- Updated Vagrant port forwarding was applied: guest API `8080` forwarded to host `127.0.0.1:18080`.
 - Provisioning failed at the required KVM preflight: `/dev/kvm not found. Nested KVM required`.
 - A second attempt enabling Parallels nested virtualization reached `prlctl start` and failed before guest boot with `Unable to start the virtual machine`.
-- Guest-side `mage ci`, daemon health, and Firecracker boot verification did not run because Firecracker cannot execute without guest KVM.
+- Guest-side `mage ci`, daemon health/capabilities, and Firecracker boot verification did not run because Firecracker cannot execute without guest KVM.
+- The Parallels VM was halted after the latest blocked run.
 
 The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-2026-05-30.log` and `.logs/validation/vagrant-closed-loop-2026-05-30-nested.log` in the local working tree. The committed validation record is `.logs/validation/sandbox-objective.jsonl`.
 
@@ -73,6 +80,7 @@ The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-20
 | Container wrapping | Existing Docker/Podman extraction and layer composer paths remain the container-to-rootfs mechanism; Vagrant validation checks build prerequisites where supported. |
 | Secrets/identity | SPIFFE/vsock path remains identity-only. Raw secret broker and Vault exchange are not implemented in this PR. |
 | Cross-platform support | Documentation now separates Linux/KVM runtime support from macOS/Windows operator paths. |
+| API-driven operation | `GET /capabilities` reports host/runtime readiness, CLI env vars support remote API configuration, and Vagrant forwards host `127.0.0.1:18080` to guest API port `8080`. |
 
 ## Known Gaps
 

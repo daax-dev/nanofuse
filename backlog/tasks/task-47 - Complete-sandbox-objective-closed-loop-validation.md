@@ -5,7 +5,7 @@ status: Done
 assignee:
   - codex
 created_date: '2026-05-30 20:05'
-updated_date: '2026-05-30 20:33'
+updated_date: '2026-05-30 21:11'
 labels:
   - sandbox
   - microvm
@@ -22,21 +22,12 @@ references:
   - .logs/references/sandbox-objective.jsonl
   - .logs/validation/sandbox-objective.jsonl
 documentation:
-  - objective.md
   - docs/GOALS.md
-  - .claude/workflow.md
-  - .claude/CLAUDE.md
-  - .claude/language.md
-  - .claude/architecture.md
-  - .claude/stack.md
-  - .claude/sourcecontrol.md
-  - .claude/history.md
-  - .specify/features/codex-goal/spec.md
-  - .specify/features/codex-goal/plan.md
-  - .specify/features/codex-goal/tasks.md
-  - .specify/features/codex-goal/quickstart.md
   - docs/building/sandbox-objective-validation.md
-  - dev/vagrant/closed-loop.sh
+  - .flowspec/features/codex-goal/spec.md
+  - .flowspec/features/codex-goal/plan.md
+  - .flowspec/features/codex-goal/tasks.md
+  - .flowspec/features/codex-goal/quickstart.md
 priority: high
 ---
 
@@ -65,19 +56,12 @@ Deliver the repository objective from objective.md on the current branch only. N
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Operator authorization: the operator explicitly approved autonomous plan approval on 2026-05-30 and asked execution not to stop while away.
-
-Plan:
-1. Create repo-local spec artifacts under .specify/features/codex-goal/ for the sandbox objective: spec.md, plan.md, tasks.md, and a validation quickstart. Keep the spec technology-agnostic; put implementation details in plan/tasks.
-2. Correct the documented platform model: Firecracker runtime requires Linux + KVM; macOS and Windows support are host/developer paths through a Linux VM/WSL2/remote Linux runner only when /dev/kvm is exposed. Do not claim native macOS/Windows Firecracker support.
-3. Fix per-VM filesystem persistence/isolation by materializing a writable per-VM root disk from the registered image rootfs before first boot, preserving it across stop/start and removing it on VM delete. Add unit coverage for copy behavior and cleanup.
-4. Add a first implementation slice for forced egress controls: typed VM network egress policy, iptables command generation/application/cleanup, fail-closed default-deny mode, DNS/proxy-only allowances for future LLM/API/MCP interception, and unit tests using a fake command runner. Integrate cleanup into VM delete/stop paths where policy created host rules.
-5. Strengthen identity/secrets posture without introducing a full secret broker in this PR: document that raw secrets are not injected into guest-visible config; preserve existing SPIFFE/vsock path; improve/validate SPIRE command construction where practical; clearly mark remaining Vault/credential-broker work as not yet implemented.
-6. Update docs/GOALS.md and directly related docs so goals match validated implementation state and current constraints. Replace unsupported performance/security claims with measurable current/target states.
-7. Add/repair Vagrant closed-loop validation under dev/vagrant so host capability checks are explicit. Run the Vagrant workflow from dev/vagrant; on this macOS arm64 host with Parallels, record exact KVM/provider constraints if /dev/kvm cannot be exposed. Do not edit any other repo.
-8. Run local gates: go fmt, targeted tests while developing, then mage ci. Run Vagrant closed-loop tests. Record every blocked gate with exact command and failure cause.
-9. Log non-trivial decisions in .logs/decisions/*.jsonl and cite primary references in .logs/references/*.jsonl.
-10. Commit the branch, push to origin, and open a PR with problem statement, approach, alternatives, test evidence, and AI producer/validator statement. Do not merge.
+1. Create repo-local spec artifacts under .flowspec/features/codex-goal/ for the sandbox objective: spec.md, plan.md, tasks.md, and a validation quickstart. Keep the spec technology-agnostic; put implementation details in plan/tasks.
+2. Implement per-VM writable root disk materialization and cleanup.
+3. Implement typed L3/L4 egress policy generation and cleanup with proxy-only behavior.
+4. Update GOALS.md, API/OpenAPI docs, and Vagrant closed-loop validation docs.
+5. Run mage ci and Vagrant closed-loop validation where the host/provider exposes Linux KVM.
+6. Push the branch and open PR #46 with evidence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -94,4 +78,6 @@ Plan:
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Completed sandbox objective validation work on branch `codex-goal` and opened ready-for-review PR https://github.com/daax-dev/nanofuse/pull/46. Implemented per-VM writable rootfs materialization and cleanup, typed egress policy support with iptables default-deny/proxy-only enforcement, API/client schema updates, corrected platform/runtime goals, Vagrant closed-loop tooling, and JSONL decision/reference/validation logs. Local `mage ci` passed; shell/Vagrantfile syntax and Vagrant validation passed where possible. Local Parallels validation is blocked for Firecracker execution because `/dev/kvm` is not exposed, and enabling Parallels nested virtualization prevents the VM from starting on this host.
+
+Follow-up on 2026-05-30: PR #46 now also includes the explicit API run path required by the operator: GET /capabilities, Mac/Windows API client docs, corrected OpenAPI examples, Vagrant host port forwarding for the guest API, sandbox API comparison, tray/menu-app requirements, and Flowspec artifact path corrections. Local Parallels Vagrant remains blocked at /dev/kvm not found.
 <!-- SECTION:FINAL_SUMMARY:END -->

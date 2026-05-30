@@ -2,7 +2,7 @@
 
 Architectural decisions require operator approval before implementation.
 ADRs log to `.logs/decisions/architecture.jsonl` (see `.claude/history.md`).
-The project constitution (`.specify/memory/constitution.md` / `.claude/constitution.md`) is the supreme authority; on conflict, follow the constitution.
+The project constitution (`.flowspec/memory/constitution.md` / `.claude/constitution.md`) is the supreme authority; on conflict, follow the constitution.
 
 ---
 

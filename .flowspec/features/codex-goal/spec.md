@@ -3,7 +3,7 @@
 **Feature Branch**: `codex-goal`
 **Created**: 2026-05-30
 **Status**: Approved
-**Input**: User description: "provide a microvm with a small security surface area - capable of running on Linux, Windows, Mac. Containers, persistent filesystem, fast and long lifetimes, secrets/identity away from LLM, egress/API/MCP interception/restriction, Vagrant closed-loop testing, and GOALS.md fixes."
+**Input**: User description: "provide a microvm with a small security surface area - capable of running on Linux, Windows, Mac. Containers, persistent filesystem, fast and long lifetimes, secrets/identity away from LLM, egress/API/MCP interception/restriction, Vagrant closed-loop testing, API-driven Mac/Windows clients, tray/menu app requirements, and GOALS.md fixes."
 
 ## User Scenarios & Testing
 
@@ -83,6 +83,20 @@ An operator on Linux, macOS, or Windows can understand the supported execution m
 2. **Given** macOS or Windows without exposed nested KVM, **When** validation runs, **Then** validation reports that a Linux/KVM runner is required.
 3. **Given** a remote or Vagrant Linux VM exposing KVM, **When** validation runs, **Then** kernel-level tests can execute inside that VM.
 
+### User Story 6 - API Client Management (Priority: P2)
+
+An operator on macOS or Windows can point a client at a Linux/KVM Nanofuse daemon and manage VM/image lifecycle through the API without local Firecracker support.
+
+**Why this priority**: Cross-platform use depends on a real API path because macOS and Windows cannot be claimed as native Firecracker runtime hosts.
+
+**Independent Test**: Call the daemon health and capabilities endpoints over TCP, then list VMs from a remote CLI or HTTP client.
+
+**Acceptance Scenarios**:
+
+1. **Given** a Linux/KVM host running `nanofused`, **When** a macOS or Windows client sets an API URL, **Then** client commands use the remote API instead of a local Unix socket.
+2. **Given** a client connects to the daemon, **When** it requests capabilities, **Then** the response states host OS, architecture, KVM readiness, Firecracker binary status, and available API transports.
+3. **Given** a tray/menu app is implemented later, **When** it manages VMs, **Then** it uses the Nanofuse API boundary and does not bypass `nanofused`.
+
 ### Edge Cases
 
 - KVM unavailable, unreadable, or not writable.
@@ -107,6 +121,9 @@ An operator on Linux, macOS, or Windows can understand the supported execution m
 - **FR-008**: System MUST retain a container-to-rootfs path for wrapping container-distributed workloads in the microVM boundary.
 - **FR-009**: System MUST provide closed-loop validation that exercises local build/test gates and Vagrant/hypervisor capability checks.
 - **FR-010**: System MUST document supported and unsupported platform paths for Linux, macOS, and Windows without overstating security guarantees.
+- **FR-011**: System MUST expose API capabilities so remote clients can distinguish control-plane reachability from Linux/KVM runtime readiness.
+- **FR-012**: System MUST document Mac and Windows client instructions for running against a Linux/KVM daemon.
+- **FR-013**: System MUST capture tray/menu app requirements as an API-only client until a desktop framework is explicitly selected.
 
 ### Key Entities
 
@@ -125,3 +142,5 @@ An operator on Linux, macOS, or Windows can understand the supported execution m
 - **SC-003**: Closed-loop Vagrant validation records pass/fail evidence for KVM, Firecracker, image artifacts, daemon gates, and VM boot where the host supports it.
 - **SC-004**: `docs/GOALS.md` states current support, target support, and constraints for every objective listed in `objective.md`.
 - **SC-005**: `mage ci` passes, or any blocker includes the exact command, environment, and failure cause.
+- **SC-006**: API examples and OpenAPI schemas match implemented request fields for image pull and VM creation.
+- **SC-007**: A comparison against current sandbox APIs identifies Nanofuse API gaps without claiming unsupported parity.

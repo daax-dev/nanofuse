@@ -56,6 +56,15 @@ func (c *Client) Health(ctx context.Context) (*HealthResponse, error) {
 	return &resp, nil
 }
 
+// Capabilities returns daemon runtime capabilities.
+func (c *Client) Capabilities(ctx context.Context) (*CapabilitiesResponse, error) {
+	var resp CapabilitiesResponse
+	if err := c.get(ctx, "/capabilities", &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 // CreateVM creates a new VM
 func (c *Client) CreateVM(ctx context.Context, req *CreateVMRequest) (*VM, error) {
 	var vm VM

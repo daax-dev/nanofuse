@@ -21,10 +21,14 @@ With KVM available, the guest includes:
 
 ```bash
 # From this directory
-vagrant up           # ~10-15 min first run (kernel build)
-vagrant ssh          # full sudo inside
-vagrant destroy -f   # clean slate
+vagrant up                         # ~10-15 min first run (kernel build)
+vagrant ssh                        # full sudo inside
+vagrant ssh -c "sudo systemctl start nanofused"
+curl http://127.0.0.1:18080/health # host -> guest API forwarded port
+vagrant destroy -f                 # clean slate
 ```
+
+Set `NANOFUSE_API_HOST_PORT=<port>` before `vagrant up` to change the host forwarded port. The guest daemon listens on `0.0.0.0:8080` inside the VM.
 
 ## Placement
 
@@ -87,6 +91,7 @@ vagrant destroy -f && vagrant up
 | `/var/lib/nanofuse/` | Data directory (DB, images) |
 | `/var/lib/nanofuse/images/` | vmlinux + rootfs.ext4 |
 | `/vagrant-scripts/` | These setup/verify scripts |
+| `127.0.0.1:18080` on host | Forwarded to guest `nanofused` TCP API port 8080 |
 
 ## VM Specs
 

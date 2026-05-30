@@ -15,10 +15,13 @@
 
 ## Why nanofuse is the forced-mode target
 
-A nanofuse microVM guest has **no network path off the VM except through the host**. The L3/L4
-layer already drops `0.0.0.0/0` on the TAP interface and permits only an allowlist. By pointing
-that allowlist at the egress proxy and *nothing else*, the guest is physically unable to bypass
-the proxy — there is no other route. This is what makes "the agent uses a credential it never
+A nanofuse microVM guest has **no network path off the VM except through the host**. Today
+`internal/network` only sets up NAT and FORWARD-accept rules with iptables (`nat.go`,
+`portforward.go`) — there is **no** per-TAP default-deny/allowlist egress policy yet. The L3/L4
+PRD specifies that the host **will** drop `0.0.0.0/0` on the TAP interface and permit only an
+allowlist; this integration depends on that enforcement landing. Once it does, by pointing that
+allowlist at the egress proxy and *nothing else*, the guest is physically unable to bypass the
+proxy — there is no other route. This is what makes "the agent uses a credential it never
 possesses" a real guarantee rather than a convention.
 
 This is the property the daax-devtools container **cannot** provide (shared kernel, bypassable
@@ -58,7 +61,7 @@ control API. The nanofuse repo owns only the **adapter** — the wiring that mak
 | IPv6 off | Disable IPv6 in the guest stack; ensure DNS returns no AAAA; proxy refuses IPv6 upstream (FR-19, all three layers) | guest config + `internal/network/` |
 | Job spec | Extend the job/sandbox spec so a tenant declares egress allow rules + secret references (names only) | job spec schema |
 | Audit | Emit `egress_brokered`/`egress_denied` JSONL into the nanofuse audit stream with `enforcement: "forced"` | audit log |
-| Teardown | Delete per-run CA material, revoke client cert, remove the iptables chain/rules on VM teardown | VM lifecycle (`Drop` on TAP handle) |
+| Teardown | Delete per-run CA material, revoke client cert, remove the iptables chain/rules on VM teardown | VM lifecycle cleanup path (`network.DeleteTAPDevice` / `network.CleanupNAT`) |
 
 ---
 

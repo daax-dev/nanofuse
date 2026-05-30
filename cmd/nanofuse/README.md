@@ -8,7 +8,7 @@ The `nanofuse` CLI is a command-line tool for managing Firecracker-based microVM
 
 ```bash
 # Clone the repository
-git clone https://github.com/jpoley/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 
 # Build the CLI
@@ -20,7 +20,7 @@ sudo make install
 
 ### Binary Download
 
-Download the latest release from [GitHub Releases](https://github.com/jpoley/nanofuse/releases).
+Download the latest release from [GitHub Releases](https://github.com/daax-dev/nanofuse/releases).
 
 ## Quick Start
 
@@ -96,6 +96,16 @@ nanofuse vm delete web-vm
 - `--timeout <duration>` - API request timeout (default: 30s)
 
 ## Configuration
+
+Remote clients can configure the API with environment variables:
+
+```bash
+export NANOFUSE_API_URL="http://linux-kvm-host:8080"
+export NANOFUSE_TIMEOUT="30s"
+nanofuse health
+```
+
+Supported variables: `NANOFUSE_API_URL`, `NANOFUSE_API_SOCKET`, `NANOFUSE_TIMEOUT`, `NANOFUSE_OUTPUT=json`, `NANOFUSE_DEBUG=true`, and `NANOFUSE_NO_COLOR=true`.
 
 Create a configuration file at `~/.config/nanofuse/config.yaml`:
 
@@ -310,7 +320,7 @@ This shows:
 
 ```bash
 # Clone repository
-git clone https://github.com/jpoley/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 
 # Download dependencies

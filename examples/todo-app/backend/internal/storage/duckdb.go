@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/marcboeker/go-duckdb"
 
-	"github.com/jpoley/nanofuse/examples/todo-app/backend/internal/domain"
+	"github.com/daax-dev/nanofuse/examples/todo-app/backend/internal/domain"
 )
 
 var (

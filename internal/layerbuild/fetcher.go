@@ -233,7 +233,9 @@ func (f *LocalFetcher) createTarball(srcDir, destPath string) error {
 
 		// If it's a file, write contents
 		if !info.IsDir() {
-			srcFile, err := os.Open(path)
+			// path comes from Walk over a controlled local build-context dir;
+			// os.Root would reject the symlinks that rootfs layers legitimately contain.
+			srcFile, err := os.Open(path) //nolint:gosec // controlled build context; symlinks are intentional
 			if err != nil {
 				return err
 			}

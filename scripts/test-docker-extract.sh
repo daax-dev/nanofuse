@@ -27,7 +27,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/builder"
+	"github.com/daax-dev/nanofuse/internal/builder"
 )
 
 func main() {

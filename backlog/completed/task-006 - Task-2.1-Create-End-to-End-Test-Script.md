@@ -149,7 +149,7 @@ echo "Elapsed: ${ELAPSED}s"
 # Expected: exit code 0
 
 # Image flag
-./test/e2e/full-workflow-test.sh --image ghcr.io/peregrinesummit/nanofuse-base:latest --verbose
+./test/e2e/full-workflow-test.sh --image ghcr.io/daax-dev/nanofuse/base:latest --verbose
 # Expected: exit code 0
 ```
 

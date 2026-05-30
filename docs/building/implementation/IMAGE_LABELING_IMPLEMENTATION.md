@@ -87,14 +87,14 @@ The CLI already had excellent support for pulling images by tag:
 
 ```go
 // Image shortcuts
-DefaultImageRegistry = "ghcr.io/jpoley/nanofuse"
+DefaultImageRegistry = "ghcr.io/daax-dev/nanofuse"
 DefaultBaseImage = "base"
 DefaultImageTag = "latest"
 
 // resolveImageRef handles shortcuts:
-// - "default" → "ghcr.io/jpoley/nanofuse/base:latest"
-// - "default:1.0.0" → "ghcr.io/jpoley/nanofuse/base:1.0.0"
-// - "base:v1.0" → "ghcr.io/jpoley/nanofuse/base:v1.0"
+// - "default" → "ghcr.io/daax-dev/nanofuse/base:latest"
+// - "default:1.0.0" → "ghcr.io/daax-dev/nanofuse/base:1.0.0"
+// - "base:v1.0" → "ghcr.io/daax-dev/nanofuse/base:v1.0"
 ```
 
 **CLI Commands**:
@@ -106,7 +106,7 @@ nanofuse image pull --default
 nanofuse image pull --default --tag 1.0.0
 
 # Pull full reference
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:1.0.0
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:1.0.0
 
 # Run VM with shorthand
 nanofuse vm run default my-vm
@@ -195,7 +195,7 @@ sudo ./build.sh  # Build image locally
 
 3. **CLI resolves shorthand**:
    ```
-   "default:1.0.0" → "ghcr.io/jpoley/nanofuse/base:1.0.0"
+   "default:1.0.0" → "ghcr.io/daax-dev/nanofuse/base:1.0.0"
    ```
 
 4. **API daemon downloads** from GHCR with authentication
@@ -205,7 +205,7 @@ sudo ./build.sh  # Build image locally
 6. **User inspects** image metadata:
    ```bash
    nanofuse image inspect default:1.0.0
-   docker inspect ghcr.io/jpoley/nanofuse/base:1.0.0
+   docker inspect ghcr.io/daax-dev/nanofuse/base:1.0.0
    ```
 
 ## Verification
@@ -245,7 +245,7 @@ git push origin main
 
 # Check GitHub Actions:
 # - Build should succeed
-# - Image should be pushed to ghcr.io/jpoley/nanofuse/base:latest
+# - Image should be pushed to ghcr.io/daax-dev/nanofuse/base:latest
 # - Labels should include VERSION=latest, BUILD_DATE, VCS_REF
 ```
 
@@ -260,7 +260,7 @@ git push origin main
 # Check GitHub Actions:
 # - First CI run: Builds latest + creates image-v0.0.X tag
 # - Second CI run: Triggered by new tag, builds versioned image
-# - Image pushed to ghcr.io/jpoley/nanofuse/base:0.0.X
+# - Image pushed to ghcr.io/daax-dev/nanofuse/base:0.0.X
 # - VERSION label should be "0.0.X"
 ```
 
@@ -272,7 +272,7 @@ git tag image-v1.0.0 -m "Release 1.0.0: Initial stable base image"
 git push origin image-v1.0.0
 
 # Check GitHub Actions:
-# - Image pushed to ghcr.io/jpoley/nanofuse/base:1.0.0
+# - Image pushed to ghcr.io/daax-dev/nanofuse/base:1.0.0
 # - VERSION label should be "1.0.0"
 ```
 
@@ -285,7 +285,7 @@ sudo systemctl start nanofused
 # Test various pull methods
 nanofuse image pull --default                    # latest
 nanofuse image pull --default --tag 1.0.0        # versioned
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:sha-abc1234  # commit
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:sha-abc1234  # commit
 
 # Inspect pulled images
 nanofuse image list
@@ -301,7 +301,7 @@ nanofuse image inspect default
 nanofuse image pull --default
 nanofuse vm run default my-dev-vm
 
-# Image automatically pulls ghcr.io/jpoley/nanofuse/base:latest
+# Image automatically pulls ghcr.io/daax-dev/nanofuse/base:latest
 # with VERSION=latest label
 ```
 
@@ -312,7 +312,7 @@ nanofuse vm run default my-dev-vm
 nanofuse image pull --default --tag 1.0.0
 nanofuse vm run default:1.0.0 my-prod-vm
 
-# Image pulls ghcr.io/jpoley/nanofuse/base:1.0.0
+# Image pulls ghcr.io/daax-dev/nanofuse/base:1.0.0
 # with VERSION=1.0.0 label (immutable)
 ```
 
@@ -323,7 +323,7 @@ nanofuse vm run default:1.0.0 my-prod-vm
 nanofuse image pull --default
 
 # Inspect via Docker
-docker inspect ghcr.io/jpoley/nanofuse/base:latest | \
+docker inspect ghcr.io/daax-dev/nanofuse/base:latest | \
   jq '.[0].Config.Labels'
 
 # Shows all OCI and NanoFuse labels with build metadata

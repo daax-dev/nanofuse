@@ -1,7 +1,7 @@
 # Nanofuse
 
-[![CI/CD Pipeline](https://github.com/peregrinesummit/nanofuse/actions/workflows/ci.yaml/badge.svg)](https://github.com/peregrinesummit/nanofuse/actions/workflows/ci.yaml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/peregrinesummit/nanofuse)](https://goreportcard.com/report/github.com/peregrinesummit/nanofuse)
+[![CI/CD Pipeline](https://github.com/daax-dev/nanofuse/actions/workflows/ci.yaml/badge.svg)](https://github.com/daax-dev/nanofuse/actions/workflows/ci.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/daax-dev/nanofuse)](https://goreportcard.com/report/github.com/daax-dev/nanofuse)
 
 A Firecracker-based microVM platform for running untrusted code in secure, isolated sandboxes. Think [E2B](https://e2b.dev) but self-hosted.
 
@@ -25,6 +25,7 @@ Nanofuse provides hardware-level isolation for running untrusted workloads with 
 |----------|-------------|
 | [Quick Start Guide](docs/QUICKSTART.md) | Get Nanofuse running in 5 minutes |
 | [API Quick Start](docs/API_QUICK_START.md) | REST API usage with curl examples |
+| [Mac and Windows Clients](docs/MAC_WINDOWS_CLIENTS.md) | Manage a Linux/KVM daemon from macOS or Windows |
 | [SSH Access Guide](docs/SSH_ACCESS_QUICK_START.md) | SSH into your microVMs |
 
 ### For Developers
@@ -41,6 +42,7 @@ Nanofuse provides hardware-level isolation for running untrusted workloads with 
 | Document | Description |
 |----------|-------------|
 | [Project Goals](docs/GOALS.md) | Mission, design principles, and success criteria |
+| [Sandbox API Comparison](docs/building/sandbox-api-comparison.md) | How Nanofuse differs from other sandbox APIs |
 | [Architecture Design](docs/firecracker-runner-design.md) | Detailed implementation specification |
 | [Networking](docs/firecracker-runner-networking-extension.md) | VM-to-VM communication and overlay networks |
 | [Firewall Capabilities](docs/future-fw.md) | L3-L7 security control reference |
@@ -58,8 +60,8 @@ Nanofuse provides hardware-level isolation for running untrusted workloads with 
 ```bash
 # Download latest release
 VERSION=v0.1.0
-curl -LO https://github.com/peregrinesummit/nanofuse/releases/download/${VERSION}/nanofuse
-curl -LO https://github.com/peregrinesummit/nanofuse/releases/download/${VERSION}/nanofused
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofuse
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofused
 chmod +x nanofuse nanofused
 sudo mv nanofuse nanofused /usr/local/bin/
 ```
@@ -124,8 +126,8 @@ See [Project Goals](docs/GOALS.md) for the complete roadmap.
 
 ## Support
 
-- [Issue Tracker](https://github.com/peregrinesummit/nanofuse/issues)
-- [Discussions](https://github.com/peregrinesummit/nanofuse/discussions)
+- [Issue Tracker](https://github.com/daax-dev/nanofuse/issues)
+- [Discussions](https://github.com/daax-dev/nanofuse/discussions)
 - [FAQ](docs/FAQ.md)
 
 ## Acknowledgments

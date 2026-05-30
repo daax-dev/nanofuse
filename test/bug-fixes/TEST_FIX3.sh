@@ -26,7 +26,7 @@ echo "3. Checking image exists..."
 # Try to create VM (THIS SHOULD NOW WORK!)
 echo ""
 echo "4. Creating VM with tag reference..."
-./bin/nanofuse --api-url http://localhost:8080 vm create ghcr.io/jpoley/nanofuse/base:latest test-vm --vcpus 2 --memory 512
+./bin/nanofuse --api-url http://localhost:8080 vm create ghcr.io/daax-dev/nanofuse/base:latest test-vm --vcpus 2 --memory 512
 
 echo ""
 echo "5. Listing VMs..."

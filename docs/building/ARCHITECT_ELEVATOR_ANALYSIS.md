@@ -306,7 +306,7 @@ NanoFuse System Architecture (As-Built)
 └─────────────────────────────────────────────────────────────────┘
 
 External Dependencies:
-- GHCR (ghcr.io/jpoley/nanofuse/base:*) - Image registry
+- GHCR (ghcr.io/daax-dev/nanofuse/base:*) - Image registry
 - GitHub Actions - CI/CD pipeline
 - Docker - Image building (build-time only)
 ```
@@ -495,7 +495,7 @@ gh run list --workflow=release.yaml
 
 ```
 1. Image Management
-   ✅ Pull base image from GHCR (ghcr.io/jpoley/nanofuse/base:latest)
+   ✅ Pull base image from GHCR (ghcr.io/daax-dev/nanofuse/base:latest)
    ✅ Authenticate with GitHub token
    ✅ Store locally for reuse
 

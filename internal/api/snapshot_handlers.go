@@ -5,9 +5,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/types"
 )
 
 // handleListSnapshots lists snapshots for a VM
@@ -99,7 +100,7 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, vm
 
 	// Create snapshot directory
 	snapshotDir := filepath.Join(s.config.Storage.DataDir, "snapshots", vm.ID, snapshotID)
-	if err := os.MkdirAll(snapshotDir, 0750); err != nil { //nolint:gosec // snapshot dir is private to the daemon
+	if err := os.MkdirAll(snapshotDir, 0755); err != nil {
 		s.logger.Printf("ERROR: Failed to create snapshot directory: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to create snapshot directory", nil)
 		return
@@ -181,9 +182,15 @@ func (s *Server) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request, sn
 		return
 	}
 
-	// Delete snapshot files
-	snapshotDir := filepath.Dir(snapshot.MemoryFilePath)
-	if err := os.RemoveAll(snapshotDir); err != nil {
+	// Delete snapshot files, but only within the managed snapshots tree.
+	// This guards against removing a path outside the snapshots root if the
+	// stored MemoryFilePath is ever malformed (path-traversal defense).
+	snapshotsRoot := filepath.Clean(filepath.Join(s.config.Storage.DataDir, "snapshots"))
+	snapshotDir := filepath.Clean(filepath.Dir(snapshot.MemoryFilePath))
+	if rel, relErr := filepath.Rel(snapshotsRoot, snapshotDir); relErr != nil ||
+		rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		s.logger.Printf("WARN: refusing to delete snapshot dir outside snapshots root: %s", snapshotDir)
+	} else if err := os.RemoveAll(snapshotDir); err != nil {
 		s.logger.Printf("WARN: Failed to delete snapshot files: %v", err)
 	}
 

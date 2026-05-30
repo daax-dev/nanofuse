@@ -15,7 +15,7 @@ FROM ubuntu:24.04
 ARG VERSION=dev
 ARG BUILD_DATE
 ARG VCS_REF
-ARG VCS_URL=https://github.com/jpoley/nanofuse
+ARG VCS_URL=https://github.com/daax-dev/nanofuse
 
 # OCI Image Labels (https://github.com/opencontainers/image-spec/blob/main/annotations.md)
 LABEL org.opencontainers.image.title="NanoFuse Base Image"

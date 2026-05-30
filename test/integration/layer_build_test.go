@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/layerbuild"
+	"github.com/daax-dev/nanofuse/internal/layerbuild"
 )
 
 // TestMain sets up test fixtures before running tests

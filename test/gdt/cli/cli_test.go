@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jpoley/nanofuse/test/gdt/testutil"
+	"github.com/daax-dev/nanofuse/test/gdt/testutil"
 )
 
 // TestGdtCLISuite runs all gdt CLI tests.

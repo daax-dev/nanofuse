@@ -113,13 +113,13 @@ sudo systemctl restart nanofused
 # OR manually: sudo ./bin/nanofused
 
 # Test pull with extraction
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:latest
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:latest
 
 # Check if kernel exists
 ls -la /var/lib/nanofuse/images/*/vmlinux
 
 # Create and start VM
-nanofuse vm create ghcr.io/jpoley/nanofuse/base:latest test-pull
+nanofuse vm create ghcr.io/daax-dev/nanofuse/base:latest test-pull
 nanofuse vm start test-pull
 ```
 

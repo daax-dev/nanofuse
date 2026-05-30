@@ -65,3 +65,38 @@ type HealthResponse struct {
 	Version       string `json:"version"`
 	UptimeSeconds int64  `json:"uptime_seconds"`
 }
+
+// CapabilitiesResponse describes the daemon host and runtime capabilities.
+type CapabilitiesResponse struct {
+	Status  string                   `json:"status"`
+	Version string                   `json:"version"`
+	Host    HostCapabilities         `json:"host"`
+	Runtime RuntimeCapabilities      `json:"runtime"`
+	API     APITransportCapabilities `json:"api"`
+}
+
+// HostCapabilities describes host-level platform support.
+type HostCapabilities struct {
+	OS           string `json:"os"`
+	Arch         string `json:"arch"`
+	KVMDevice    string `json:"kvm_device"`
+	KVMExists    bool   `json:"kvm_exists"`
+	KVMReadWrite bool   `json:"kvm_read_write"`
+	KVMError     string `json:"kvm_error,omitempty"`
+}
+
+// RuntimeCapabilities describes the microVM runtime available to nanofused.
+type RuntimeCapabilities struct {
+	NativeRuntime        bool   `json:"native_runtime"`
+	FirecrackerBinary    string `json:"firecracker_binary"`
+	FirecrackerAvailable bool   `json:"firecracker_available"`
+	RootRequired         bool   `json:"root_required"`
+	NetworkSetupRequired bool   `json:"network_setup_required"`
+	Message              string `json:"message"`
+}
+
+// APITransportCapabilities describes how clients can reach the daemon.
+type APITransportCapabilities struct {
+	UnixSocket string `json:"unix_socket,omitempty"`
+	TCPBind    string `json:"tcp_bind,omitempty"`
+}

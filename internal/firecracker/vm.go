@@ -2,10 +2,14 @@ package firecracker
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/types"
 )
 
 // ProcessExitHandler is called when a VM process exits
@@ -105,6 +109,24 @@ type NetworkInterface struct {
 	IfaceID     string `json:"iface_id"`
 	GuestMAC    string `json:"guest_mac"`
 	HostDevName string `json:"host_dev_name"`
+}
+
+type snapshotCreateRequest struct {
+	SnapshotType string `json:"snapshot_type"`
+	SnapshotPath string `json:"snapshot_path"`
+	MemFilePath  string `json:"mem_file_path"`
+}
+
+type snapshotLoadRequest struct {
+	SnapshotPath       string     `json:"snapshot_path"`
+	MemBackend         memBackend `json:"mem_backend"`
+	EnableDiffSnapshot bool       `json:"enable_diff_snapshots"`
+	ResumeVM           bool       `json:"resume_vm"`
+}
+
+type memBackend struct {
+	BackendPath string `json:"backend_path"`
+	BackendType string `json:"backend_type"`
 }
 
 // addDrivesToConfig adds disk drives to Firecracker config
@@ -450,18 +472,120 @@ func (m *Manager) Resume(vm *types.VM) error {
 	return fmt.Errorf("resume not yet implemented")
 }
 
+func vmAPISocket(vm *types.VM) (string, error) {
+	if vm == nil {
+		return "", fmt.Errorf("VM is required")
+	}
+	if vm.Runtime == nil || vm.Runtime.SocketPath == "" {
+		return "", fmt.Errorf("VM runtime socket path not available")
+	}
+	return vm.Runtime.SocketPath, nil
+}
+
+func firecrackerPUT(socketPath, endpoint string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Firecracker request: %w", err)
+	}
+
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			dialer := net.Dialer{}
+			return dialer.DialContext(ctx, "unix", socketPath)
+		},
+	}
+	defer transport.CloseIdleConnections()
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}
+
+	req, err := http.NewRequest(http.MethodPut, "http://unix"+endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build Firecracker request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("firecracker API request %s failed: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if len(respBody) > 0 {
+			return fmt.Errorf("firecracker API request %s failed with status %d: %s", endpoint, resp.StatusCode, string(respBody))
+		}
+		return fmt.Errorf("firecracker API request %s failed with status %d", endpoint, resp.StatusCode)
+	}
+
+	return nil
+}
+
 // CreateSnapshot creates a snapshot
 func (m *Manager) CreateSnapshot(vm *types.VM, snapshotPath, memPath string) error {
-	// TODO: Implement via Firecracker API
-	// For now, just a stub
-	return fmt.Errorf("snapshot creation not yet implemented")
+	socketPath, err := vmAPISocket(vm)
+	if err != nil {
+		return err
+	}
+	if snapshotPath == "" {
+		return fmt.Errorf("snapshot path is required")
+	}
+	if memPath == "" {
+		return fmt.Errorf("snapshot memory path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(snapshotPath), 0755); err != nil {
+		return fmt.Errorf("failed to create snapshot directory: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(memPath), 0755); err != nil {
+		return fmt.Errorf("failed to create memory snapshot directory: %w", err)
+	}
+
+	req := snapshotCreateRequest{
+		SnapshotType: "Full",
+		SnapshotPath: snapshotPath,
+		MemFilePath:  memPath,
+	}
+	if err := firecrackerPUT(socketPath, "/snapshot/create", req); err != nil {
+		return fmt.Errorf("failed to create Firecracker snapshot for VM %s: %w", vm.ID, err)
+	}
+	return nil
 }
 
 // LoadSnapshot loads a snapshot
 func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error {
-	// TODO: Implement via Firecracker API
-	// For now, just a stub
-	return fmt.Errorf("snapshot loading not yet implemented")
+	return m.LoadSnapshotWithResume(vm, snapshotPath, memPath, true)
+}
+
+// LoadSnapshotWithResume loads a snapshot and controls whether Firecracker resumes the VM.
+func (m *Manager) LoadSnapshotWithResume(vm *types.VM, snapshotPath, memPath string, resumeVM bool) error {
+	socketPath, err := vmAPISocket(vm)
+	if err != nil {
+		return err
+	}
+	if snapshotPath == "" {
+		return fmt.Errorf("snapshot path is required")
+	}
+	if memPath == "" {
+		return fmt.Errorf("snapshot memory path is required")
+	}
+
+	req := snapshotLoadRequest{
+		SnapshotPath: snapshotPath,
+		MemBackend: memBackend{
+			BackendPath: memPath,
+			BackendType: "File",
+		},
+		EnableDiffSnapshot: false,
+		ResumeVM:           resumeVM,
+	}
+	if err := firecrackerPUT(socketPath, "/snapshot/load", req); err != nil {
+		return fmt.Errorf("failed to load Firecracker snapshot for VM %s: %w", vm.ID, err)
+	}
+	return nil
 }
 
 // GetConsoleLogs reads console logs

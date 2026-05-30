@@ -16,10 +16,10 @@ import (
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/jpoley/nanofuse/examples/todo-app/backend/internal/api/rest"
-	"github.com/jpoley/nanofuse/examples/todo-app/backend/internal/domain"
-	"github.com/jpoley/nanofuse/examples/todo-app/backend/internal/observability"
-	"github.com/jpoley/nanofuse/examples/todo-app/backend/internal/storage"
+	"github.com/daax-dev/nanofuse/examples/todo-app/backend/internal/api/rest"
+	"github.com/daax-dev/nanofuse/examples/todo-app/backend/internal/domain"
+	"github.com/daax-dev/nanofuse/examples/todo-app/backend/internal/observability"
+	"github.com/daax-dev/nanofuse/examples/todo-app/backend/internal/storage"
 )
 
 var (

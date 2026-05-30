@@ -189,6 +189,39 @@ Health check endpoint.
 
 ---
 
+#### `GET /capabilities`
+
+Runtime capability endpoint for CLI, SDK, and tray clients.
+
+**Response (200 OK):**
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "host": {
+    "os": "linux",
+    "arch": "amd64",
+    "kvm_device": "/dev/kvm",
+    "kvm_exists": true,
+    "kvm_read_write": true
+  },
+  "runtime": {
+    "native_runtime": true,
+    "firecracker_binary": "/usr/local/bin/firecracker",
+    "firecracker_available": true,
+    "root_required": true,
+    "network_setup_required": true,
+    "message": "Linux KVM and Firecracker are available for local microVM execution"
+  },
+  "api": {
+    "unix_socket": "/var/run/nanofused.sock",
+    "tcp_bind": "0.0.0.0:8080"
+  }
+}
+```
+
+---
+
 ### Virtual Machine Operations
 
 #### `POST /vms`

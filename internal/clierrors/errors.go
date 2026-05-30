@@ -13,8 +13,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/daax-dev/nanofuse/internal/client"
 	"github.com/fatih/color"
-	"github.com/jpoley/nanofuse/internal/client"
 )
 
 // CLIError represents a user-friendly CLI error with actionable suggestions.
@@ -189,7 +189,7 @@ func WrapDaemonNotRunning(socketPath string) *CLIError {
 func WrapInvalidImageRef(imageRef string, reason string) *CLIError {
 	return &CLIError{
 		Message:    fmt.Sprintf("Invalid image reference: %s", imageRef),
-		Suggestion: "Use format: registry/repository:tag (e.g., ghcr.io/jpoley/nanofuse/base:latest)",
+		Suggestion: "Use format: registry/repository:tag (e.g., ghcr.io/daax-dev/nanofuse/base:latest)",
 		Context: &ErrorContext{
 			Operation: "parse image reference",
 			Resource:  imageRef,

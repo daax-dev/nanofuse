@@ -24,8 +24,8 @@ ls -l /dev/kvm
 ```bash
 # Download latest release
 VERSION=v0.1.0
-curl -LO https://github.com/peregrinesummit/nanofuse/releases/download/${VERSION}/nanofuse
-curl -LO https://github.com/peregrinesummit/nanofuse/releases/download/${VERSION}/nanofused
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofuse
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofused
 
 # Make executable and install
 chmod +x nanofuse nanofused
@@ -39,7 +39,7 @@ nanofuse --version
 
 ```bash
 # Clone repository
-git clone https://github.com/peregrinesummit/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 
 # Install build tool (Mage)
@@ -331,9 +331,9 @@ Nanofuse supports convenient image shortcuts:
 
 | Shortcut | Full Reference |
 |----------|----------------|
-| `default` | `ghcr.io/peregrinesummit/nanofuse/base:latest` |
-| `default:v1.0.0` | `ghcr.io/peregrinesummit/nanofuse/base:v1.0.0` |
-| `base` | `ghcr.io/peregrinesummit/nanofuse/base:latest` |
+| `default` | `ghcr.io/daax-dev/nanofuse/base:latest` |
+| `default:v1.0.0` | `ghcr.io/daax-dev/nanofuse/base:v1.0.0` |
+| `base` | `ghcr.io/daax-dev/nanofuse/base:latest` |
 
 ## Troubleshooting
 

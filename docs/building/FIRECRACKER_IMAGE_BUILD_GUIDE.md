@@ -1050,7 +1050,7 @@ Create `images/myapp/Dockerfile`:
 
 ```dockerfile
 # Start from NanoFuse base (once published)
-FROM ghcr.io/jpoley/nanofuse/base:latest
+FROM ghcr.io/daax-dev/nanofuse/base:latest
 
 # Set environment
 ENV DEBIAN_FRONTEND=noninteractive
@@ -1153,7 +1153,7 @@ cat > build/manifest.json << EOF
   "name": "${IMAGE_NAME}",
   "tag": "${IMAGE_TAG}",
   "architecture": "x86_64",
-  "base_image": "ghcr.io/jpoley/nanofuse/base:latest",
+  "base_image": "ghcr.io/daax-dev/nanofuse/base:latest",
   "services": {
     "ssh": {"enabled": true},
     "myapp": {"enabled": true}
@@ -1188,7 +1188,7 @@ COPY . .
 RUN go build -o myapp .
 
 # Stage 2: Runtime (includes NanoFuse base)
-FROM ghcr.io/jpoley/nanofuse/base:latest
+FROM ghcr.io/daax-dev/nanofuse/base:latest
 
 # Copy binary from build stage
 COPY --from=builder /build/myapp /usr/local/bin/myapp

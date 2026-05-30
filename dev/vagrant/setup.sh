@@ -24,7 +24,21 @@ GO_VERSION="1.24.3"
 FIRECRACKER_VERSION="1.7.0"
 
 ARCH=$(uname -m)
-[[ "$ARCH" == "x86_64" ]] || error "Only x86_64 supported. Got: $ARCH"
+case "$ARCH" in
+    x86_64)
+        GO_ARCH="amd64"
+        FIRECRACKER_ARCH="x86_64"
+        NANOFUSE_IMAGE_ARCH="x86_64"
+        ;;
+    aarch64|arm64)
+        GO_ARCH="arm64"
+        FIRECRACKER_ARCH="aarch64"
+        NANOFUSE_IMAGE_ARCH="aarch64"
+        ;;
+    *)
+        error "Unsupported guest architecture: $ARCH"
+        ;;
+esac
 
 # ─── Preflight ───────────────────────────────────────────────────────────────
 info "Checking prerequisites..."
@@ -38,7 +52,7 @@ if [[ ! -d /nanofuse ]]; then
     error "/nanofuse not found — Vagrant synced_folder failed"
 fi
 
-info "Prerequisites OK: KVM available, root, x86_64, /nanofuse present"
+info "Prerequisites OK: KVM available, root, ${ARCH}, /nanofuse present"
 
 # ─── 1. System packages ────────────────────────────────────────────────────
 install_system_deps() {
@@ -113,7 +127,7 @@ install_go() {
     fi
 
     info "Installing Go v${GO_VERSION}..."
-    local go_tarball="go${GO_VERSION}.linux-amd64.tar.gz"
+    local go_tarball="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
     local go_base_url="https://go.dev/dl"
     local tmpdir
     tmpdir="$(mktemp -d)"
@@ -166,18 +180,18 @@ install_firecracker() {
     tmpdir=$(mktemp -d)
 
     local fc_base_url="https://github.com/firecracker-microvm/firecracker/releases/download/v${FIRECRACKER_VERSION}"
-    curl -fsSL "${fc_base_url}/firecracker-v${FIRECRACKER_VERSION}-x86_64.tgz" \
+    curl -fsSL "${fc_base_url}/firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}.tgz" \
         -o "$tmpdir/firecracker.tgz"
     curl -fsSL "${fc_base_url}/SHA256SUMS" -o "$tmpdir/SHA256SUMS"
 
     info "Verifying Firecracker tarball checksum..."
-    (cd "$tmpdir" && grep "firecracker-v${FIRECRACKER_VERSION}-x86_64.tgz" SHA256SUMS | sha256sum -c -)
+    (cd "$tmpdir" && grep "firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}.tgz" SHA256SUMS | sha256sum -c -)
 
     tar -C "$tmpdir" -xzf "$tmpdir/firecracker.tgz"
 
-    local release_dir="$tmpdir/release-v${FIRECRACKER_VERSION}-x86_64"
-    cp "$release_dir/firecracker-v${FIRECRACKER_VERSION}-x86_64" /usr/local/bin/firecracker
-    cp "$release_dir/jailer-v${FIRECRACKER_VERSION}-x86_64" /usr/local/bin/jailer
+    local release_dir="$tmpdir/release-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}"
+    cp "$release_dir/firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}" /usr/local/bin/firecracker
+    cp "$release_dir/jailer-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}" /usr/local/bin/jailer
     chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer
 
     rm -rf "$tmpdir"
@@ -220,6 +234,13 @@ build_base_image() {
     local build_dir="/nanofuse/images/base/build"
     local img_dir="/var/lib/nanofuse/images"
     mkdir -p "$build_dir" "$img_dir"
+
+    if [[ "$NANOFUSE_IMAGE_ARCH" != "x86_64" ]]; then
+        warn "Base image build is currently x86_64-only; guest architecture is $ARCH."
+        warn "Closed-loop VM boot requires a matching ${NANOFUSE_IMAGE_ARCH} kernel and rootfs."
+        warn "Skipping base image build on this guest architecture."
+        return 0
+    fi
 
     # ── Use pre-built kernel from vagrant-scripts/ if available (cache across rebuilds) ──
     if [[ -f "$build_dir/vmlinux" ]]; then
@@ -292,7 +313,7 @@ setup_nanofuse_service() {
 api:
   socket: /var/run/nanofused.sock
   socket_mode: "0660"
-  tcp_bind: "127.0.0.1:8080"
+  tcp_bind: "0.0.0.0:8080"
 
 storage:
   data_dir: /var/lib/nanofuse
@@ -373,9 +394,12 @@ info "  binaries:         /usr/local/bin/nanofuse, nanofused"
 info "  config:           /etc/nanofuse/nanofused.yaml"
 info "  base image:       /var/lib/nanofuse/images/"
 info "  data:             /var/lib/nanofuse/"
+info "  guest API:        http://0.0.0.0:8080"
+info "  host API:         http://127.0.0.1:18080 (Vagrant forwarded port; override with NANOFUSE_API_HOST_PORT)"
 info ""
 info "Quick start:"
 info "  sudo systemctl start nanofused"
 info "  nanofuse health"
+info "  curl http://127.0.0.1:18080/health   # from host when Vagrant port forwarding is active"
 info "  nanofuse vm list"
 info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

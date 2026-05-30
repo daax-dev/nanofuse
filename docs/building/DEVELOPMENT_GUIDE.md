@@ -30,7 +30,7 @@ Complete guide to building NanoFuse, debugging with VS Code, and working with Fi
 
 ```bash
 # Clone repository
-git clone https://github.com/jpoley/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 
 # Install build tool (mage)
@@ -482,7 +482,7 @@ export NANOFUSED_SOCKET=/tmp/nanofused.sock
 ./bin/nanofuse image pull --default
 
 # Or pull from a specific registry
-./bin/nanofuse image pull ghcr.io/jpoley/nanofuse/base:latest
+./bin/nanofuse image pull ghcr.io/daax-dev/nanofuse/base:latest
 
 # View pulled images
 ./bin/nanofuse image list
@@ -800,7 +800,7 @@ Create `images/myapp/Dockerfile`:
 
 ```dockerfile
 # Start from NanoFuse base image (once published to GHCR)
-FROM ghcr.io/jpoley/nanofuse/base:latest
+FROM ghcr.io/daax-dev/nanofuse/base:latest
 
 # Install your application dependencies
 RUN apt-get update && \
@@ -893,7 +893,7 @@ cat > "${BUILD_DIR}/manifest.json" << EOF
   "name": "${IMAGE_NAME}",
   "tag": "${IMAGE_TAG}",
   "architecture": "x86_64",
-  "base_image": "ghcr.io/jpoley/nanofuse/base:latest",
+  "base_image": "ghcr.io/daax-dev/nanofuse/base:latest",
   "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
@@ -938,7 +938,7 @@ COPY . .
 RUN go build -o myapp .
 
 # Stage 2: Runtime
-FROM ghcr.io/jpoley/nanofuse/base:latest
+FROM ghcr.io/daax-dev/nanofuse/base:latest
 COPY --from=builder /build/myapp /usr/local/bin/myapp
 
 RUN systemctl enable myapp.service

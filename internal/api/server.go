@@ -11,14 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/config"
-	"github.com/jpoley/nanofuse/internal/firecracker"
-	"github.com/jpoley/nanofuse/internal/logging"
-	"github.com/jpoley/nanofuse/internal/network"
-	"github.com/jpoley/nanofuse/internal/recording"
-	"github.com/jpoley/nanofuse/internal/registry"
-	"github.com/jpoley/nanofuse/internal/spire"
-	"github.com/jpoley/nanofuse/internal/storage"
+	"github.com/daax-dev/nanofuse/internal/config"
+	"github.com/daax-dev/nanofuse/internal/firecracker"
+	"github.com/daax-dev/nanofuse/internal/logging"
+	"github.com/daax-dev/nanofuse/internal/network"
+	"github.com/daax-dev/nanofuse/internal/recording"
+	"github.com/daax-dev/nanofuse/internal/registry"
+	"github.com/daax-dev/nanofuse/internal/spire"
+	"github.com/daax-dev/nanofuse/internal/storage"
 )
 
 // Server represents the API server
@@ -68,7 +68,7 @@ func loadExistingAllocations(db *storage.DB, ipam *network.IPAM, logger *logging
 // initializeInfrastructure initializes database and managers
 func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*storage.DB, *firecracker.Manager, *registry.Client, error) {
 	// Create data directory
-	if err := os.MkdirAll(cfg.Storage.DataDir, 0750); err != nil { //nolint:gosec // data dir is private to the daemon
+	if err := os.MkdirAll(cfg.Storage.DataDir, 0755); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -141,6 +141,7 @@ func setupHTTPRouter(server *Server) *http.ServeMux {
 
 	// Health endpoint
 	mux.HandleFunc("GET /health", server.handleHealth)
+	mux.HandleFunc("GET /capabilities", server.handleCapabilities)
 
 	// VM collection endpoints
 	mux.HandleFunc("GET /vms", server.handleListVMs)
@@ -220,7 +221,7 @@ func setupListeners(cfg *config.Config, logger *logging.Logger) ([]net.Listener,
 		}
 
 		// Set socket permissions to allow group access
-		if err := os.Chmod(socketPath, 0660); err != nil { //nolint:gosec // Unix socket needs group-readable perms for client access
+		if err := os.Chmod(socketPath, 0666); err != nil {
 			logger.Warn("Failed to set socket permissions: %v", err)
 		}
 

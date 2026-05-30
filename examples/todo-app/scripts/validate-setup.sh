@@ -22,7 +22,7 @@ if command -v nanofuse &> /dev/null && command -v nanofused &> /dev/null; then
     nanofuse version 2>/dev/null || echo "  Version: $(nanofuse --version 2>&1 | head -1)"
 else
     echo -e "${RED}✗ nanofuse or nanofused not found${NC}"
-    echo "  Install from: https://github.com/peregrinesummit/nanofuse"
+    echo "  Install from: https://github.com/daax-dev/nanofuse"
     ((ERRORS++))
 fi
 

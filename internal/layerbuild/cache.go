@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/storage"
+	"github.com/daax-dev/nanofuse/internal/storage"
 )
 
 // DefaultCacheDir is the default location for the layer cache

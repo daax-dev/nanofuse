@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/config"
+	"github.com/daax-dev/nanofuse/internal/config"
 )
 
 // Service provides SPIRE workload registration operations.
@@ -123,7 +123,7 @@ func (s *Service) RegisterWorkload(ctx context.Context, entry *WorkloadEntry) er
 	}
 
 	// Execute docker command
-	cmd := exec.CommandContext(ctx, "docker", cmdArgs...) //nolint:gosec // docker args are constructed from internal config, not user input
+	cmd := exec.CommandContext(ctx, "docker", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Check if entry already exists (idempotent)
@@ -159,7 +159,7 @@ func (s *Service) UnregisterWorkload(ctx context.Context, spiffeID string) error
 		"-spiffeID", spiffeID,
 	}
 
-	findCmd := exec.CommandContext(ctx, "docker", findArgs...) //nolint:gosec // docker args are constructed from internal config, not user input
+	findCmd := exec.CommandContext(ctx, "docker", findArgs...)
 	output, err := findCmd.CombinedOutput()
 	if err != nil {
 		// Entry might not exist, which is fine
@@ -183,7 +183,7 @@ func (s *Service) UnregisterWorkload(ctx context.Context, spiffeID string) error
 		"-entryID", entryID,
 	}
 
-	deleteCmd := exec.CommandContext(ctx, "docker", deleteArgs...) //nolint:gosec // docker args are constructed from internal config, not user input
+	deleteCmd := exec.CommandContext(ctx, "docker", deleteArgs...)
 	if _, err := deleteCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to delete SPIRE entry: %w", err)
 	}

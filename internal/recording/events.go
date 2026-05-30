@@ -185,6 +185,11 @@ func WriteEvent(w io.Writer, e *Event) error {
 	// Calculate total length
 	payloadLen := len(e.Payload)
 	metadataLen := calculateMetadataSize(e.Metadata)
+	// Reject oversized payloads (symmetric with ReadEvent) so the uint32
+	// length conversions below cannot overflow.
+	if payloadLen > MaxPayloadSize {
+		return fmt.Errorf("payload too large: %d bytes (max %d)", payloadLen, MaxPayloadSize)
+	}
 	// Bounds check: max message size is well under uint32 max (header + payload + metadata)
 	totalLen := uint32(UUIDFieldSize + UUIDFieldSize + 8 + 1 + 4 + payloadLen + 4 + metadataLen) //nolint:gosec // size bounded by max payload/metadata constants
 
@@ -218,7 +223,7 @@ func WriteEvent(w io.Writer, e *Event) error {
 	}
 
 	// Write payload length and payload
-	if err := binary.Write(w, binary.LittleEndian, uint32(payloadLen)); err != nil {
+	if err := binary.Write(w, binary.LittleEndian, uint32(payloadLen)); err != nil { //nolint:gosec // bounded by MaxPayloadSize check above
 		return fmt.Errorf("failed to write payload length: %w", err)
 	}
 	if payloadLen > 0 {

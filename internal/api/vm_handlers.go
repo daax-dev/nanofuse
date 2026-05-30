@@ -860,9 +860,13 @@ func (s *Server) handleVMLogsByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// Prevent the browser from MIME-sniffing console output into active content (XSS).
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(logs); err != nil {
+	// XSS is mitigated by Content-Type text/plain + X-Content-Type-Options: nosniff
+	// set above; gosec's taint tracker does not model response headers.
+	if _, err := w.Write(logs); err != nil { //nolint:gosec // text/plain + nosniff prevents content sniffing
 		s.logger.Printf("WARN: Failed to write logs response: %v", err)
 	}
 }

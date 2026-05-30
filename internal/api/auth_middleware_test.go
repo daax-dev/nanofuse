@@ -57,6 +57,18 @@ func TestMTLSIdentityMiddlewareRejectsNoTLS(t *testing.T) {
 	}
 }
 
+func TestMTLSIdentityMiddlewareRejectsSpoofedHeaderWithoutTLS(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/vms", nil)
+	req.Header.Set("X-SPIFFE-ID", "spiffe://example.com/workload/spoofed")
+	w := httptest.NewRecorder()
+
+	MTLSIdentityMiddleware(okHandler()).ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with spoofed SPIFFE header and no TLS state, got %d", w.Code)
+	}
+}
+
 func TestMTLSIdentityMiddlewareRejectsNoClientCert(t *testing.T) {
 	req := requestWithTLSState(&tls.ConnectionState{})
 	w := httptest.NewRecorder()
@@ -95,6 +107,33 @@ func TestMTLSIdentityMiddlewareRejectsNoSPIFFEURI(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401 with no SPIFFE URI SAN, got %d", w.Code)
+	}
+}
+
+func TestMTLSIdentityMiddlewareIgnoresSpoofedHeaderWhenTLSIsVerified(t *testing.T) {
+	var gotCred *Credential
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCred = CredentialFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+	cert := certWithURI(t, "spiffe://example.com/workload/real")
+	req := requestWithTLSState(&tls.ConnectionState{
+		PeerCertificates: []*x509.Certificate{cert},
+		VerifiedChains:   [][]*x509.Certificate{{cert}},
+	})
+	req.Header.Set("X-SPIFFE-ID", "spiffe://example.com/workload/spoofed")
+	w := httptest.NewRecorder()
+
+	MTLSIdentityMiddleware(handler).ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 with verified SPIFFE URI SAN, got %d", w.Code)
+	}
+	if gotCred == nil {
+		t.Fatal("expected credential in context, got nil")
+	}
+	if gotCred.SpiffeID != "spiffe://example.com/workload/real" {
+		t.Fatalf("credential SpiffeID = %q, want verified certificate URI", gotCred.SpiffeID)
 	}
 }
 

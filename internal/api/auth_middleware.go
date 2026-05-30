@@ -45,7 +45,7 @@ func BuildAuthTLSConfig(cfg *config.AuthConfig) (*tls.Config, error) {
 		return nil, fmt.Errorf("failed to load API TLS key pair: %w", err)
 	}
 
-	caPEM, err := os.ReadFile(cfg.ClientCAFile) //nolint:gosec // path is daemon operator config
+	caPEM, err := os.ReadFile(cfg.ClientCAFile) //nolint:gosec // operator-supplied daemon config path
 	if err != nil {
 		return nil, fmt.Errorf("failed to read API client CA file: %w", err)
 	}

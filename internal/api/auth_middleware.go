@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/daax-dev/nanofuse/internal/config"
+	"github.com/daax-dev/nanofuse/internal/logging"
+	"github.com/daax-dev/nanofuse/internal/types"
 )
 
 // ctxKeyCredential is the context key for the authenticated credential.
@@ -51,7 +52,7 @@ func BuildAuthTLSConfig(cfg *config.AuthConfig) (*tls.Config, error) {
 	}
 	clientCAs := x509.NewCertPool()
 	if !clientCAs.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("failed to parse API client CA file")
+		return nil, fmt.Errorf("failed to parse API client CA file %q", cfg.ClientCAFile)
 	}
 
 	return &tls.Config{
@@ -67,16 +68,17 @@ func BuildAuthTLSConfig(cfg *config.AuthConfig) (*tls.Config, error) {
 // tls.RequireAndVerifyClientCert and defensively requires VerifiedChains to be
 // populated before trusting PeerCertificates. It does not trust
 // caller-controlled identity headers.
-func MTLSIdentityMiddleware(next http.Handler) http.Handler {
+func MTLSIdentityMiddleware(logger *logging.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cred, err := credentialFromTLS(r)
 		if err != nil {
-			auditCredential(r, nil, false, err.Error())
-			http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+			auditCredential(logger, r, nil, false, err.Error())
+			types.WriteError(w, http.StatusUnauthorized, types.ErrUnauthorized,
+				"mTLS client certificate with SPIFFE identity is required", nil)
 			return
 		}
 
-		auditCredential(r, cred, true, "")
+		auditCredential(logger, r, cred, true, "")
 		ctx := context.WithValue(r.Context(), ctxKeyCredential{}, cred)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -136,28 +138,18 @@ func validateSPIFFEID(raw string) error {
 	return nil
 }
 
-func auditCredential(r *http.Request, cred *Credential, allowed bool, reason string) {
-	attrs := []any{
-		slog.String("event", "credential_use"),
-		slog.String("method", r.Method),
-		slog.String("path", r.URL.Path),
-		slog.String("remote_addr", r.RemoteAddr),
-		slog.Bool("allowed", allowed),
+func auditCredential(logger *logging.Logger, r *http.Request, cred *Credential, allowed bool, reason string) {
+	if logger == nil {
+		return
 	}
+
 	if cred != nil {
-		attrs = append(attrs,
-			slog.String("cred_kind", cred.Kind),
-			slog.String("spiffe_id", cred.SpiffeID),
-		)
+		logger.Info("auth audit event=credential_use method=%s path=%s remote_addr=%s allowed=%t cred_kind=%s spiffe_id=%s",
+			r.Method, r.URL.Path, r.RemoteAddr, allowed, cred.Kind, cred.SpiffeID)
+		return
 	}
-	if reason != "" {
-		attrs = append(attrs, slog.String("deny_reason", reason))
-	}
-	if allowed {
-		slog.Info("auth audit", attrs...)
-	} else {
-		slog.Warn("auth audit", attrs...)
-	}
+	logger.Warn("auth audit event=credential_use method=%s path=%s remote_addr=%s allowed=%t deny_reason=%q",
+		r.Method, r.URL.Path, r.RemoteAddr, allowed, reason)
 }
 
 func errorf(format string, args ...any) error {

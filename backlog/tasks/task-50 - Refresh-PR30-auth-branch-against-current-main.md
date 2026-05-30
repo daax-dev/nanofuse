@@ -4,7 +4,7 @@ title: Refresh PR30 auth branch against current main
 status: Done
 assignee: []
 created_date: '2026-05-30 23:18'
-updated_date: '2026-05-30 23:28'
+updated_date: '2026-05-30 23:41'
 labels:
   - pr30
   - auth
@@ -60,10 +60,12 @@ Completed. Effective branch-specific diff against origin/main is limited to TCP 
 Reopened on 2026-05-30 for replacement PR hardening after closed PR #30 retained outdated Copilot threads but no open current-head review threads.
 
 Replacement hardening completed: closed PR #30 Copilot threads were stale/outdated against old commit f21a353; current-head fixes add spoofed X-SPIFFE-ID rejection/ignore coverage and TCP mTLS config validation tests. Validation: go test ./internal/api; go test ./internal/config; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci.
+
+Fresh Copilot review on replacement PR #48 identified plaintext auth errors, global slog audit logging, and missing CA path context. Scope revised to return standard JSON errors, route audit events through internal/logging.Logger, and include the CA path in parse errors.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Replacement PR opened: https://github.com/daax-dev/nanofuse/pull/48. Closed PR #30 Copilot threads were audited and found stale/outdated against old commit f21a353. Current-head hardening adds explicit spoofed X-SPIFFE-ID rejection/ignore coverage, TCP mTLS config validation tests, API docs, audit docs, and JSONL decision auth-002. Validation passed: go test ./internal/api; go test ./internal/config; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci. mage ci printed existing non-fatal gosec-not-found and macOS linker warnings.
+Replacement PR open: https://github.com/daax-dev/nanofuse/pull/48. Closed PR #30 Copilot threads were audited and found stale/outdated against old commit f21a353. Fresh PR #48 Copilot feedback was addressed by returning standard JSON 401 errors, routing auth audit events through internal/logging.Logger instead of global slog, and including the client CA path in parse errors. Current branch hardening adds explicit spoofed X-SPIFFE-ID rejection/ignore coverage, TCP mTLS config validation tests, API docs, audit docs, and JSONL decisions auth-002/auth-003. Validation passed after the fresh fix: go test ./internal/api ./internal/config ./internal/types; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci. mage ci printed existing non-fatal gosec-not-found and macOS linker warnings.
 <!-- SECTION:FINAL_SUMMARY:END -->

@@ -10,6 +10,7 @@ type ErrorCode string
 
 const (
 	ErrInvalidRequest         ErrorCode = "INVALID_REQUEST"
+	ErrUnauthorized           ErrorCode = "UNAUTHORIZED"
 	ErrInvalidConfig          ErrorCode = "INVALID_CONFIG"
 	ErrRegistryAuthFailed     ErrorCode = "REGISTRY_AUTH_FAILED"
 	ErrVMNotFound             ErrorCode = "VM_NOT_FOUND"

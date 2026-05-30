@@ -408,7 +408,7 @@ func startServer(cfg *config.Config) error {
 		serveListener := listener
 		if cfg.Auth.Enabled && listener.Addr().Network() == "tcp" {
 			serveListener = tls.NewListener(listener, authTLSConfig)
-			listenerHandler = loggingMiddleware(logger)(MTLSIdentityMiddleware(mux))
+			listenerHandler = loggingMiddleware(logger)(MTLSIdentityMiddleware(logger, mux))
 		}
 		httpServer := &http.Server{
 			Handler:           listenerHandler,

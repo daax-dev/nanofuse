@@ -17,3 +17,5 @@ The replacement branch keeps the narrowed TCP mTLS scope:
 ## Replacement Hardening
 
 This pass adds explicit tests that reject a spoofed `X-SPIFFE-ID` header without TLS and prove a spoofed header does not override a verified certificate identity. It also adds config validation tests proving TCP auth fails closed when server cert, server key, or client CA paths are missing.
+
+Fresh Copilot review on replacement PR #48 identified three current-head hardening gaps. The middleware now returns the standard JSON API error schema for authentication denial, audit events are routed through the daemon `internal/logging.Logger` instead of global `slog`, and client CA parse errors include the configured CA path for operator troubleshooting.

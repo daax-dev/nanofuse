@@ -1,7 +1,7 @@
+version: "2"
 run:
   modules-download-mode: readonly
   tests: true
-
 linters:
   enable:
     - bodyclose
@@ -10,39 +10,53 @@ linters:
     - misspell
     - prealloc
     - revive
-
-linters-settings:
-  gocyclo:
-    min-complexity: 20
-  gosec:
-    excludes:
-      - G104
-  staticcheck:
-    checks:
-      - "all"
-      - "-QF*"
-  revive:
+  settings:
+    gocyclo:
+      min-complexity: 20
+    gosec:
+      excludes:
+        - G104
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    staticcheck:
+      checks:
+        - all
+        - -QF*
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
     rules:
-      - name: exported
-        disabled: true
-
+      - linters:
+          - errcheck
+          - gosec
+        path: _test\.go
+      - linters:
+          - revive
+        path: cmd/
+      - linters:
+          - unused
+        path: internal/api/
+        text: handle(VMs?|VM[A-Z]|VMBackups|Backup|VMSnapshots|Snapshot|Image|ImageJob)|extractIDFromPath
+    paths:
+      - third_party
+      - builtin
+      - examples
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-generated: lax
-  exclude-rules:
-    - linters:
-        - errcheck
-        - gosec
-      path: _test\.go
-    - linters:
-        - revive
-      path: cmd/
-    - linters:
-        - unused
-      path: internal/api/
-      text: "handle(VMs?|VM[A-Z]|VMBackups|Backup|VMSnapshots|Snapshot|Image|ImageJob)|extractIDFromPath"
-  exclude-dirs:
-    - third_party
-    - builtin
-    - examples
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

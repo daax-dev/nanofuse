@@ -3,14 +3,17 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/network"
+	"github.com/daax-dev/nanofuse/internal/types"
 	"github.com/google/uuid"
-	"github.com/jpoley/nanofuse/internal/network"
-	"github.com/jpoley/nanofuse/internal/types"
 )
 
 // handleListVMs lists all VMs
@@ -126,10 +129,165 @@ func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfi
 			if req.Config.Network.PortForwards != nil {
 				config.Network.PortForwards = *req.Config.Network.PortForwards
 			}
+			if req.Config.Network.EgressPolicy != nil {
+				config.Network.EgressPolicy = req.Config.Network.EgressPolicy
+			}
 		}
 	}
 
 	return config
+}
+
+func vmStorageDir(dataDir, vmID string) string {
+	return filepath.Join(dataDir, "vms", vmID)
+}
+
+func vmRootfsPath(dataDir, vmID string) string {
+	return filepath.Join(vmStorageDir(dataDir, vmID), "rootfs.ext4")
+}
+
+func copyFileAtomic(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source rootfs: %w", err)
+	}
+	defer in.Close()
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+		return fmt.Errorf("failed to create VM storage directory: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".rootfs-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary rootfs: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanupTmp := true
+	defer func() {
+		if cleanupTmp {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("failed to copy rootfs: %w", err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("failed to chmod temporary rootfs: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("failed to sync temporary rootfs: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary rootfs: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, dst); err != nil {
+		return fmt.Errorf("failed to install VM rootfs: %w", err)
+	}
+	cleanupTmp = false
+	return nil
+}
+
+// materializeWritableRootDisks gives each VM its own writable root disk.
+// Registered image rootfs files remain immutable sources; VM state persists in
+// storage.data_dir/vms/<vm-id>/rootfs.ext4 until the VM is deleted.
+func materializeWritableRootDisks(dataDir, vmID string, config *types.VMConfig) error {
+	for i := range config.Disks {
+		disk := &config.Disks[i]
+		if !disk.IsRootDevice || disk.IsReadOnly {
+			continue
+		}
+
+		dest := vmRootfsPath(dataDir, vmID)
+		srcAbs, err := filepath.Abs(disk.PathOnHost)
+		if err != nil {
+			return fmt.Errorf("failed to resolve source rootfs path: %w", err)
+		}
+		destAbs, err := filepath.Abs(dest)
+		if err != nil {
+			return fmt.Errorf("failed to resolve VM rootfs path: %w", err)
+		}
+
+		if srcAbs == destAbs {
+			continue
+		}
+
+		if _, err := os.Stat(dest); err == nil {
+			disk.PathOnHost = dest
+			continue
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to inspect VM rootfs: %w", err)
+		}
+
+		if err := copyFileAtomic(disk.PathOnHost, dest, 0600); err != nil {
+			return err
+		}
+		disk.PathOnHost = dest
+	}
+
+	return nil
+}
+
+func cleanupVMStorage(dataDir, vmID string) error {
+	if err := os.RemoveAll(vmStorageDir(dataDir, vmID)); err != nil {
+		return fmt.Errorf("failed to remove VM storage: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) cleanupCreatedVMResources(vmID string, config types.VMConfig) {
+	if cleanupErr := cleanupVMStorage(s.config.Storage.DataDir, vmID); cleanupErr != nil {
+		s.logger.Printf("WARN: Failed to cleanup VM storage after create failure: %v", cleanupErr)
+	}
+	if config.Network.EgressPolicy != nil && config.Network.EgressPolicy.Enabled {
+		if cleanupErr := network.CleanupEgressPolicy(vmID, config.Network.TapDevice, config.Network.IPAddress); cleanupErr != nil {
+			s.logger.Printf("WARN: Failed to cleanup egress policy after create failure: %v", cleanupErr)
+		}
+	}
+	if config.Network.TapDevice != "" {
+		if cleanupErr := network.DeleteTAPDevice(config.Network.TapDevice); cleanupErr != nil {
+			s.logger.Printf("WARN: Failed to cleanup TAP device after create failure: %v", cleanupErr)
+		}
+	}
+	if config.Network.IPAddress != "" {
+		s.ipam.ReleaseIP(vmID)
+	}
+}
+
+func (s *Server) cleanupDeletedVMResources(vm *types.VM) {
+	if len(vm.Config.Network.PortForwards) > 0 && vm.Config.Network.IPAddress != "" {
+		s.logger.Printf("INFO: Cleaning up %d port forward(s) for deleted VM %s", len(vm.Config.Network.PortForwards), vm.Name)
+		if err := network.CleanupPortForwards(vm.Config.Network.IPAddress, vm.Config.Network.PortForwards); err != nil {
+			s.logger.Printf("WARN: Failed to cleanup port forwards: %v", err)
+		}
+	}
+
+	if vm.Config.Network.EgressPolicy != nil && vm.Config.Network.EgressPolicy.Enabled {
+		if err := network.CleanupEgressPolicy(vm.ID, vm.Config.Network.TapDevice, vm.Config.Network.IPAddress); err != nil {
+			s.logger.Printf("WARN: Failed to cleanup egress policy: %v", err)
+		}
+	}
+
+	if vm.Config.Network.TapDevice != "" {
+		if err := network.DeleteTAPDevice(vm.Config.Network.TapDevice); err != nil {
+			s.logger.Printf("WARN: Failed to delete TAP device %s: %v", vm.Config.Network.TapDevice, err)
+		} else {
+			s.logger.Printf("INFO: Deleted TAP device: %s", vm.Config.Network.TapDevice)
+		}
+	}
+
+	if vm.Config.Network.IPAddress != "" {
+		s.ipam.ReleaseIP(vm.ID)
+		s.logger.Printf("INFO: Released IP address: %s", vm.Config.Network.IPAddress)
+	}
+
+	if err := cleanupVMStorage(s.config.Storage.DataDir, vm.ID); err != nil {
+		s.logger.Printf("WARN: Failed to cleanup VM storage for deleted VM %s: %v", vm.ID, err)
+	}
 }
 
 // validateVMResourceLimits checks if VM config exceeds limits
@@ -212,6 +370,14 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 
 	s.logger.Printf("INFO: Configured network for VM %s: IP=%s TAP=%s MAC=%s",
 		vmID[:8], ip, tapName, config.Network.MACAddress)
+
+	if err := network.SetupEgressPolicy(vmID, tapName, ip, network.BridgeGateway, config.Network.EgressPolicy); err != nil {
+		if err := network.DeleteTAPDevice(tapName); err != nil {
+			s.logger.Printf("WARN: Failed to cleanup TAP device after egress setup failure: %v", err)
+		}
+		s.ipam.ReleaseIP(vmID)
+		return fmt.Errorf("failed to setup egress policy: %w", err)
+	}
 
 	return nil
 }
@@ -298,8 +464,18 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Create VM-specific writable root disk before any privileged network setup.
+	if err := materializeWritableRootDisks(s.config.Storage.DataDir, vmID, &config); err != nil {
+		s.logger.Printf("ERROR: Rootfs materialization failed: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, err.Error(), nil)
+		return
+	}
+
 	// Setup networking
 	if err := s.setupVMNetworking(vmID, &config); err != nil {
+		if cleanupErr := cleanupVMStorage(s.config.Storage.DataDir, vmID); cleanupErr != nil {
+			s.logger.Printf("WARN: Failed to cleanup VM storage after network setup failure: %v", cleanupErr)
+		}
 		s.logger.Printf("ERROR: Network setup failed: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, err.Error(), nil)
 		return
@@ -331,6 +507,7 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.db.CreateVM(vm); err != nil {
 		s.logger.Printf("ERROR: Failed to create VM: %v", err)
+		s.cleanupCreatedVMResources(vmID, config)
 		// Cleanup SPIRE entry on failure (best-effort)
 		if vm.SpiffeID != "" && s.spireService != nil {
 			if delErr := s.spireService.DeleteVMWorkloadEntry(r.Context(), vm.SpiffeID); delErr != nil {
@@ -408,28 +585,7 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request, vmID str
 		}
 	}
 
-	// Cleanup network resources
-
-	// Cleanup port forwards if configured
-	if len(vm.Config.Network.PortForwards) > 0 && vm.Config.Network.IPAddress != "" {
-		s.logger.Printf("INFO: Cleaning up %d port forward(s) for deleted VM %s", len(vm.Config.Network.PortForwards), vm.Name)
-		if err := network.CleanupPortForwards(vm.Config.Network.IPAddress, vm.Config.Network.PortForwards); err != nil {
-			s.logger.Printf("WARN: Failed to cleanup port forwards: %v", err)
-		}
-	}
-
-	if vm.Config.Network.TapDevice != "" {
-		if err := network.DeleteTAPDevice(vm.Config.Network.TapDevice); err != nil {
-			s.logger.Printf("WARN: Failed to delete TAP device %s: %v", vm.Config.Network.TapDevice, err)
-		} else {
-			s.logger.Printf("INFO: Deleted TAP device: %s", vm.Config.Network.TapDevice)
-		}
-	}
-
-	if vm.Config.Network.IPAddress != "" {
-		s.ipam.ReleaseIP(vm.ID)
-		s.logger.Printf("INFO: Released IP address: %s", vm.Config.Network.IPAddress)
-	}
+	s.cleanupDeletedVMResources(vm)
 
 	// Delete from database
 	if err := s.db.DeleteVM(vm.ID); err != nil {
@@ -860,9 +1016,13 @@ func (s *Server) handleVMLogsByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// Prevent the browser from MIME-sniffing console output into active content (XSS).
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write(logs); err != nil {
+	// XSS is mitigated by Content-Type text/plain + X-Content-Type-Options: nosniff
+	// set above; gosec's taint tracker does not model response headers.
+	if _, err := w.Write(logs); err != nil { //nolint:gosec // text/plain + nosniff prevents content sniffing
 		s.logger.Printf("WARN: Failed to write logs response: %v", err)
 	}
 }
@@ -937,6 +1097,12 @@ func (s *Server) cleanupVMNetwork(vm *types.VM) {
 	if len(vm.Config.Network.PortForwards) > 0 {
 		if err := network.CleanupPortForwards(vm.Config.Network.IPAddress, vm.Config.Network.PortForwards); err != nil {
 			s.logger.Printf("WARN: Failed to cleanup port forwards for VM %s: %v", vm.ID, err)
+		}
+	}
+
+	if vm.Config.Network.EgressPolicy != nil && vm.Config.Network.EgressPolicy.Enabled {
+		if err := network.CleanupEgressPolicy(vm.ID, vm.Config.Network.TapDevice, vm.Config.Network.IPAddress); err != nil {
+			s.logger.Printf("WARN: Failed to cleanup egress policy for VM %s: %v", vm.ID, err)
 		}
 	}
 }

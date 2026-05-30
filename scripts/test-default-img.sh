@@ -36,7 +36,7 @@ echo "   OK"
 # Pull default image if needed
 echo
 echo "2. Checking default image..."
-if ! $NANOFUSE image list --json | grep -q "ghcr.io/jpoley/nanofuse/base"; then
+if ! $NANOFUSE image list --json | grep -q "ghcr.io/daax-dev/nanofuse/base"; then
     echo "   Pulling default image..."
     $NANOFUSE image pull --default
 fi
@@ -45,7 +45,7 @@ echo "   OK"
 # Create VM
 echo
 echo "3. Creating VM: $VM_NAME"
-$NANOFUSE vm create ghcr.io/jpoley/nanofuse/base:latest "$VM_NAME"
+$NANOFUSE vm create ghcr.io/daax-dev/nanofuse/base:latest "$VM_NAME"
 echo "   OK"
 
 # Start VM

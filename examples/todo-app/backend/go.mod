@@ -1,4 +1,4 @@
-module github.com/jpoley/nanofuse/examples/todo-app/backend
+module github.com/daax-dev/nanofuse/examples/todo-app/backend
 
 go 1.23
 

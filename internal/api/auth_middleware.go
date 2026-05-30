@@ -2,146 +2,140 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/jpoley/nanofuse/internal/config"
-	"github.com/jpoley/nanofuse/internal/policy"
+	"github.com/daax-dev/nanofuse/internal/config"
 )
 
-// ctxKeyCredential is the context key for the validated credential.
+// ctxKeyCredential is the context key for the authenticated credential.
 type ctxKeyCredential struct{}
 
-// Credential holds the validated identity extracted from a request.
+// Credential holds the mTLS identity extracted from a verified client
+// certificate.
 type Credential struct {
-	// SpiffeID is the SPIFFE URI from the SVID (empty for static-key auth).
 	SpiffeID string
-
-	// Kind is "svid" or "static_key".
-	Kind string
-
-	// IssuedAt is when the SVID was issued (zero for static-key auth).
-	IssuedAt time.Time
+	Kind     string
 }
 
-// CredentialFromContext retrieves the Credential stored by AuthMiddleware.
-// Returns nil if the request was not authenticated (only possible when auth
-// is disabled).
+// CredentialFromContext retrieves the Credential stored by MTLSIdentityMiddleware.
+// It returns nil when no mTLS identity middleware ran for the request.
 func CredentialFromContext(ctx context.Context) *Credential {
 	v, _ := ctx.Value(ctxKeyCredential{}).(*Credential)
 	return v
 }
 
-// AuthMiddleware returns an HTTP middleware that enforces credential validation
-// and optional policy evaluation.
-//
-// Behaviour:
-//   - When auth is disabled (cfg.Auth.Enabled == false) the middleware is a
-//     transparent pass-through — useful for local dev without any credentials.
-//   - When DEV_STATIC_KEYS=true is set in the environment AND
-//     cfg.Auth.StaticAPIKeys is non-empty, requests bearing a matching
-//     "Authorization: Bearer <key>" header are accepted (dev mode only).
-//   - All other requests must carry a valid SPIFFE SVID header:
-//     "X-SPIFFE-ID: spiffe://..." — the middleware validates the header and
-//     then hands off to the policy engine if one is supplied.
-//   - Every credential use (accept or deny) writes a structured audit log
-//     entry with key "event"="credential_use" so it can be piped to a SIEM.
-//
-// NOTE: Full mTLS SVID verification (parsing the X.509 certificate from the
-// TLS connection and verifying it against the SPIRE trust bundle) is wired in
-// by the TLS layer.  This middleware validates the X-SPIFFE-ID assertion that
-// the TLS terminator inserts after verifying the peer certificate.  In a
-// production deployment the TLS terminator MUST be trusted to set this header.
-func AuthMiddleware(cfg *config.AuthConfig, engine *policy.Engine) func(http.Handler) http.Handler {
-	devStaticKeys := os.Getenv("DEV_STATIC_KEYS") == "true"
-
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !cfg.Enabled {
-				// Auth disabled — pass through without any checks.
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			cred, err := extractCredential(r, cfg, devStaticKeys)
-			if err != nil {
-				auditCredential(r, nil, false, err.Error())
-				http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
-				return
-			}
-
-			// If a policy engine is wired in, evaluate the request.
-			if engine != nil && cred.Kind == "svid" {
-				geoRegion := r.Header.Get("X-Geo-Region")
-				approvalToken := r.Header.Get("X-Approval-Token")
-				serviceSPIFFE := r.Header.Get("X-Service-SPIFFE")
-
-				result := engine.Evaluate(r.Context(), policy.EvalRequest{
-					WorkloadSPIFFE: cred.SpiffeID,
-					ServiceSPIFFE:  serviceSPIFFE,
-					GeoRegion:      geoRegion,
-					ApprovalToken:  approvalToken,
-				})
-
-				if !result.Allowed {
-					auditCredential(r, cred, false, result.Reason)
-					http.Error(w, "Forbidden: "+result.Reason, http.StatusForbidden)
-					return
-				}
-			}
-
-			auditCredential(r, cred, true, "")
-
-			ctx := context.WithValue(r.Context(), ctxKeyCredential{}, cred)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
+// BuildAuthTLSConfig builds the TCP listener TLS config used when auth.enabled
+// is true. Client certificates are verified by the TLS stack before requests
+// reach handlers.
+func BuildAuthTLSConfig(cfg *config.AuthConfig) (*tls.Config, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("auth config is required")
 	}
+
+	cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load API TLS key pair: %w", err)
+	}
+
+	caPEM, err := os.ReadFile(cfg.ClientCAFile) //nolint:gosec // path is daemon operator config
+	if err != nil {
+		return nil, fmt.Errorf("failed to read API client CA file: %w", err)
+	}
+	clientCAs := x509.NewCertPool()
+	if !clientCAs.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to parse API client CA file")
+	}
+
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    clientCAs,
+	}, nil
 }
 
-// extractCredential attempts to derive a Credential from the request.
-// Order of precedence:
-//  1. SVID header (X-SPIFFE-ID) — always tried first.
-//  2. Static API key (Authorization: Bearer <key>) — only in dev mode.
-func extractCredential(r *http.Request, cfg *config.AuthConfig, devStaticKeys bool) (*Credential, error) {
-	// 1. SVID via X-SPIFFE-ID header (set by the mTLS terminator).
-	if spiffeID := r.Header.Get("X-SPIFFE-ID"); spiffeID != "" {
-		if !strings.HasPrefix(spiffeID, "spiffe://") {
-			return nil, errorf("X-SPIFFE-ID header does not look like a valid SPIFFE URI: %s", spiffeID)
+// MTLSIdentityMiddleware requires a verified client certificate containing a
+// SPIFFE URI SAN. It assumes the TCP listener was configured with
+// tls.RequireAndVerifyClientCert and defensively requires VerifiedChains to be
+// populated before trusting PeerCertificates. It does not trust
+// caller-controlled identity headers.
+func MTLSIdentityMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cred, err := credentialFromTLS(r)
+		if err != nil {
+			auditCredential(r, nil, false, err.Error())
+			http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		auditCredential(r, cred, true, "")
+		ctx := context.WithValue(r.Context(), ctxKeyCredential{}, cred)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func credentialFromTLS(r *http.Request) (*Credential, error) {
+	if r.TLS == nil {
+		return nil, errorf("mTLS is required")
+	}
+	if len(r.TLS.PeerCertificates) == 0 {
+		return nil, errorf("client certificate is required")
+	}
+	if len(r.TLS.VerifiedChains) == 0 {
+		return nil, errorf("verified client certificate chain is required")
+	}
+
+	for _, uri := range r.TLS.PeerCertificates[0].URIs {
+		if uri == nil || uri.Scheme != "spiffe" {
+			continue
+		}
+		spiffeID := uri.String()
+		if err := validateSPIFFEID(spiffeID); err != nil {
+			return nil, err
 		}
 		return &Credential{
 			SpiffeID: spiffeID,
-			Kind:     "svid",
-			IssuedAt: time.Now(), // actual issuance time would come from the cert
+			Kind:     "mtls_spiffe",
 		}, nil
 	}
 
-	// 2. Static API key — dev mode only.
-	if devStaticKeys && len(cfg.StaticAPIKeys) > 0 {
-		bearer := r.Header.Get("Authorization")
-		if strings.HasPrefix(bearer, "Bearer ") {
-			provided := strings.TrimPrefix(bearer, "Bearer ")
-			for _, key := range cfg.StaticAPIKeys {
-				if provided == key {
-					slog.Warn("static API key auth used (DEV mode)",
-						slog.String("event", "dev_static_key_auth"),
-						slog.String("remote_addr", r.RemoteAddr),
-						slog.String("path", r.URL.Path),
-					)
-					return &Credential{Kind: "static_key"}, nil
-				}
-			}
-		}
-		return nil, errorf("invalid static API key")
-	}
-
-	return nil, errorf("no valid credential provided (expected X-SPIFFE-ID header or, in dev mode, Authorization: Bearer <key>)")
+	return nil, errorf("client certificate does not contain a SPIFFE URI SAN")
 }
 
-// auditCredential writes a structured audit log entry for every credential use.
+func validateSPIFFEID(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return errorf("invalid SPIFFE URI: %w", err)
+	}
+	if parsed.Scheme != "spiffe" {
+		return errorf("SPIFFE URI must use spiffe scheme")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errorf("SPIFFE URI must not include userinfo, query, or fragment")
+	}
+	if parsed.Host == "" {
+		return errorf("SPIFFE URI must include a trust domain")
+	}
+	if strings.Contains(parsed.Host, ":") {
+		return errorf("SPIFFE URI trust domain must not include a port")
+	}
+	if net.ParseIP(parsed.Host) != nil {
+		return errorf("SPIFFE URI trust domain must be a DNS name, not an IP address")
+	}
+	if parsed.EscapedPath() == "" || parsed.EscapedPath() == "/" {
+		return errorf("SPIFFE URI must include a workload path")
+	}
+	return nil
+}
+
 func auditCredential(r *http.Request, cred *Credential, allowed bool, reason string) {
 	attrs := []any{
 		slog.String("event", "credential_use"),
@@ -166,12 +160,6 @@ func auditCredential(r *http.Request, cred *Credential, allowed bool, reason str
 	}
 }
 
-// errorf is a thin wrapper to create an error with a formatted message.
 func errorf(format string, args ...any) error {
-	return &authError{msg: fmt.Sprintf(format, args...)}
+	return fmt.Errorf(format, args...)
 }
-
-// authError is a simple error type for auth failures.
-type authError struct{ msg string }
-
-func (e *authError) Error() string { return e.msg }

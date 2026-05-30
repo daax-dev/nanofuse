@@ -79,8 +79,8 @@ Download pre-built binaries or build from source:
 ```bash
 # Download binaries
 VERSION=v0.1.0
-curl -LO https://github.com/peregrinesummit/nanofuse/releases/download/${VERSION}/nanofuse
-curl -LO https://github.com/peregrinesummit/nanofuse/releases/download/${VERSION}/nanofused
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofuse
+curl -LO https://github.com/daax-dev/nanofuse/releases/download/${VERSION}/nanofused
 chmod +x nanofuse nanofused
 sudo mv nanofuse nanofused /usr/local/bin/
 ```
@@ -130,7 +130,7 @@ The base overhead is approximately 5-10 MiB per VM, plus whatever your workload 
 Yes. Create a Dockerfile extending the base image:
 
 ```dockerfile
-FROM ghcr.io/peregrinesummit/nanofuse/base:latest
+FROM ghcr.io/daax-dev/nanofuse/base:latest
 RUN apt-get update && apt-get install -y python3
 ```
 
@@ -217,7 +217,7 @@ Nanofuse prioritizes simplicity and performance for the AI sandbox use case.
 ### How do I build Nanofuse from source?
 
 ```bash
-git clone https://github.com/peregrinesummit/nanofuse.git
+git clone https://github.com/daax-dev/nanofuse.git
 cd nanofuse
 ./scripts/ensure-mage.sh
 mage all
@@ -282,8 +282,8 @@ See [Project Goals](GOALS.md) for detailed roadmap.
 ### Where can I get help?
 
 1. Check the [Troubleshooting Guide](TROUBLESHOOTING.md)
-2. Search [GitHub Issues](https://github.com/peregrinesummit/nanofuse/issues)
-3. Start a [Discussion](https://github.com/peregrinesummit/nanofuse/discussions)
+2. Search [GitHub Issues](https://github.com/daax-dev/nanofuse/issues)
+3. Start a [Discussion](https://github.com/daax-dev/nanofuse/discussions)
 4. Open a new issue with reproduction steps
 
 ---

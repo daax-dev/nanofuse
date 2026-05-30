@@ -41,7 +41,7 @@ NanoFuse has **two independent release tracks**:
 
 **What gets released**:
 - Docker image built from `images/base/Dockerfile`
-- Published to GHCR at `ghcr.io/jpoley/nanofuse/base:0.0.2`
+- Published to GHCR at `ghcr.io/daax-dev/nanofuse/base:0.0.2`
 - Tagged as `latest` on main
 - Versioned tag for production use
 
@@ -90,7 +90,7 @@ git push origin main
 3. Creates git tag `image-v0.0.2` (auto-incremented)
 4. This triggers CI again (on the new image-v* tag)
 5. Docker image built and pushed to GHCR ✅
-6. Pushed as `ghcr.io/jpoley/nanofuse/base:0.0.2`
+6. Pushed as `ghcr.io/daax-dev/nanofuse/base:0.0.2`
 7. Also tagged as `latest` ✅
 
 **Result**:
@@ -249,23 +249,23 @@ After `[release]`:
 ### Base Image
 
 After `[release]`:
-1. Published to GHCR: `ghcr.io/jpoley/nanofuse/base:0.0.2`
-2. Also tagged as `latest`: `ghcr.io/jpoley/nanofuse/base:latest`
-3. Pull with: `docker pull ghcr.io/jpoley/nanofuse/base:0.0.2`
+1. Published to GHCR: `ghcr.io/daax-dev/nanofuse/base:0.0.2`
+2. Also tagged as `latest`: `ghcr.io/daax-dev/nanofuse/base:latest`
+3. Pull with: `docker pull ghcr.io/daax-dev/nanofuse/base:0.0.2`
 4. Available in ~5-10 minutes (build time)
 
 ### Usage After Release
 
 **CLI/API**:
 ```bash
-gh release download v0.0.2 -R jpoley/nanofuse
+gh release download v0.0.2 -R daax-dev/nanofuse
 chmod +x nanofuse nanofused
 sudo mv nanofuse nanofused /usr/local/bin/
 ```
 
 **Base Image**:
 ```bash
-nanofuse image pull ghcr.io/jpoley/nanofuse/base:0.0.2
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:0.0.2
 # or
 nanofuse image pull --default  # Gets latest
 ```

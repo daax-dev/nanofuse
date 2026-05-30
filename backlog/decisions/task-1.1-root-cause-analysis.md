@@ -185,7 +185,7 @@ debugfs -R 'stat /usr/lib/systemd/systemd' \
 
 # Create fresh VM
 nanofuse vm delete test-6190
-nanofuse vm create ghcr.io/peregrinesummit/nanofuse/todo-app:latest test-new
+nanofuse vm create ghcr.io/daax-dev/nanofuse/todo-app:latest test-new
 
 # Check VM boots successfully
 nanofuse vm logs test-new --tail 100 | grep -i systemd

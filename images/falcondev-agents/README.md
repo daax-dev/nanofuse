@@ -104,7 +104,7 @@ This image can be used as a dev container base:
 ```json
 {
   "name": "FalconDev Agents Dev Environment",
-  "image": "ghcr.io/jpoley/nanofuse/falcondev-agents:latest"
+  "image": "ghcr.io/daax-dev/nanofuse/falcondev-agents:latest"
 }
 ```
 

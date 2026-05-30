@@ -40,7 +40,7 @@ Successfully implemented a comprehensive CI/CD pipeline for NanoFuse using GitHu
 **Build Outputs**:
 - `nanofuse-linux-amd64` (CLI binary)
 - `nanofused-linux-amd64` (daemon binary)
-- Docker image: `ghcr.io/jpoley/nanofuse/base`
+- Docker image: `ghcr.io/daax-dev/nanofuse/base`
 
 **Tagging Strategy**:
 - `latest` - Latest main branch build
@@ -307,8 +307,8 @@ Building nanofused daemon...
 ```bash
 $ make test
 Running unit tests...
-ok      github.com/jpoley/nanofuse/cmd/nanofuse 0.003s
-ok      github.com/jpoley/nanofuse/internal/api 0.002s
+ok      github.com/daax-dev/nanofuse/cmd/nanofuse 0.003s
+ok      github.com/daax-dev/nanofuse/internal/api 0.002s
 ```
 
 **Configuration Validation**:
@@ -357,8 +357,8 @@ gh pr merge <PR-NUMBER> --squash
 gh run watch
 
 # Verify Docker image published
-docker pull ghcr.io/jpoley/nanofuse/base:latest
-docker pull ghcr.io/jpoley/nanofuse/base:sha-$(git rev-parse --short HEAD)
+docker pull ghcr.io/daax-dev/nanofuse/base:latest
+docker pull ghcr.io/daax-dev/nanofuse/base:sha-$(git rev-parse --short HEAD)
 ```
 
 **Expected Results**:

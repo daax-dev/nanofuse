@@ -47,7 +47,7 @@ validate_repo() {
         exit 1
     fi
 
-    if ! grep -q "github.com/jpoley/nanofuse" "$REPO_ROOT/go.mod"; then
+    if ! grep -q "github.com/daax-dev/nanofuse" "$REPO_ROOT/go.mod"; then
         echo -e "${RED}ERROR: This doesn't appear to be the nanofuse repository.${NC}" >&2
         exit 1
     fi

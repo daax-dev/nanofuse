@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 )
 
 // Basic smoke test to ensure package builds
@@ -48,4 +49,100 @@ func TestVMLogsCommandFlags(t *testing.T) {
 	if followFlag.Shorthand != "f" {
 		t.Errorf("Expected shorthand 'f' for --follow, got '%s'", followFlag.Shorthand)
 	}
+}
+
+func TestApplyClientEnvironment(t *testing.T) {
+	resetCLIStateForTest(t)
+	t.Setenv("NANOFUSE_API_URL", "http://127.0.0.1:18080")
+	t.Setenv("NANOFUSE_API_SOCKET", "/tmp/nanofused.sock")
+	t.Setenv("NANOFUSE_TIMEOUT", "5s")
+	t.Setenv("NANOFUSE_DEBUG", "true")
+	t.Setenv("NANOFUSE_OUTPUT", "json")
+	t.Setenv("NANOFUSE_NO_COLOR", "1")
+
+	if err := applyClientEnvironment(); err != nil {
+		t.Fatalf("applyClientEnvironment() error = %v", err)
+	}
+
+	if apiURL != "http://127.0.0.1:18080" {
+		t.Errorf("expected API URL from env, got %q", apiURL)
+	}
+	if apiSocket != "/tmp/nanofused.sock" {
+		t.Errorf("expected API socket from env, got %q", apiSocket)
+	}
+	if timeout != 5*time.Second {
+		t.Errorf("expected timeout 5s, got %s", timeout)
+	}
+	if !debug {
+		t.Error("expected debug from env")
+	}
+	if !jsonOutput {
+		t.Error("expected json output from env")
+	}
+	if !noColor {
+		t.Error("expected no-color from env")
+	}
+}
+
+func TestApplyClientEnvironmentDoesNotOverrideExplicitValues(t *testing.T) {
+	resetCLIStateForTest(t)
+	apiURL = "http://explicit:8080"
+	apiSocket = "/explicit.sock"
+	timeout = 2 * time.Second
+	t.Setenv("NANOFUSE_API_URL", "http://env:8080")
+	t.Setenv("NANOFUSE_API_SOCKET", "/env.sock")
+	t.Setenv("NANOFUSE_TIMEOUT", "5s")
+
+	if err := applyClientEnvironment(); err != nil {
+		t.Fatalf("applyClientEnvironment() error = %v", err)
+	}
+
+	if apiURL != "http://explicit:8080" {
+		t.Errorf("expected explicit API URL to remain, got %q", apiURL)
+	}
+	if apiSocket != "/explicit.sock" {
+		t.Errorf("expected explicit API socket to remain, got %q", apiSocket)
+	}
+	if timeout != 2*time.Second {
+		t.Errorf("expected explicit timeout to remain, got %s", timeout)
+	}
+}
+
+func TestApplyClientEnvironmentRejectsInvalidTimeout(t *testing.T) {
+	resetCLIStateForTest(t)
+	t.Setenv("NANOFUSE_TIMEOUT", "not-a-duration")
+
+	if err := applyClientEnvironment(); err == nil {
+		t.Fatal("expected invalid timeout error")
+	}
+}
+
+func resetCLIStateForTest(t *testing.T) {
+	t.Helper()
+
+	oldCfgFile := cfgFile
+	oldAPISocket := apiSocket
+	oldAPIURL := apiURL
+	oldDebug := debug
+	oldJSONOutput := jsonOutput
+	oldNoColor := noColor
+	oldTimeout := timeout
+
+	cfgFile = ""
+	apiSocket = ""
+	apiURL = ""
+	debug = false
+	jsonOutput = false
+	noColor = false
+	timeout = 30 * time.Second
+
+	t.Cleanup(func() {
+		cfgFile = oldCfgFile
+		apiSocket = oldAPISocket
+		apiURL = oldAPIURL
+		debug = oldDebug
+		jsonOutput = oldJSONOutput
+		noColor = oldNoColor
+		timeout = oldTimeout
+	})
 }

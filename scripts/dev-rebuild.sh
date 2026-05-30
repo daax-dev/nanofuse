@@ -119,7 +119,7 @@ if [[ "$TEST_SSH" == "true" ]]; then
 
     # Create and start VM with SSH key
     echo "   Creating test VM..."
-    nanofuse vm run ghcr.io/peregrinesummit/nanofuse/todo-app:latest ssh-test --ssh-key "$SSH_KEY"
+    nanofuse vm run ghcr.io/daax-dev/nanofuse/todo-app:latest ssh-test --ssh-key "$SSH_KEY"
 
     # Get VM IP
     sleep 3
@@ -192,7 +192,7 @@ echo "Rebuild Complete!"
 echo "=============================================="
 echo ""
 echo "To test manually:"
-echo "  sudo nanofuse vm run ghcr.io/peregrinesummit/nanofuse/todo-app:latest test-vm --ssh-key ~/.ssh/id_ed25519.pub"
+echo "  sudo nanofuse vm run ghcr.io/daax-dev/nanofuse/todo-app:latest test-vm --ssh-key ~/.ssh/id_ed25519.pub"
 echo ""
 echo "Or run with --test-ssh to auto-test:"
 echo "  sudo $0 --test-ssh"

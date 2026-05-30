@@ -20,36 +20,19 @@ type Config struct {
 }
 
 // AuthConfig holds authentication configuration for the daemon.
-// When DevStaticKeys is false (production), only SPIFFE SVIDs are accepted.
-// Set DEV_STATIC_KEYS=true in the environment to also allow static API key auth.
 type AuthConfig struct {
-	// Enabled turns the auth middleware on. When false all requests pass through.
+	// Enabled requires mTLS client identity on TCP API listeners. Unix socket
+	// listeners continue to rely on filesystem permissions.
 	Enabled bool `yaml:"enabled"`
 
-	// StaticAPIKeys lists API keys permitted when running in dev mode only.
-	// Production MUST leave this empty; the middleware enforces the restriction.
-	StaticAPIKeys []string `yaml:"static_api_keys,omitempty"`
+	// TLSCertFile is the daemon certificate presented on TCP listeners.
+	TLSCertFile string `yaml:"tls_cert_file,omitempty"`
 
-	// SVIDRotation controls the automatic rotation of SPIFFE SVIDs.
-	SVIDRotation SVIDRotationConfig `yaml:"svid_rotation"`
-}
+	// TLSKeyFile is the daemon private key presented on TCP listeners.
+	TLSKeyFile string `yaml:"tls_key_file,omitempty"`
 
-// SVIDRotationConfig controls SVID rotation behaviour (issue #4).
-type SVIDRotationConfig struct {
-	// MaxTTLSeconds is the maximum SVID lifetime (default 3600 = 60 min).
-	MaxTTLSeconds int `yaml:"max_ttl_seconds"`
-
-	// PreRefreshSeconds is how many seconds before expiry to trigger rotation
-	// (default 900 = 15 min).
-	PreRefreshSeconds int `yaml:"pre_refresh_seconds"`
-
-	// GracePeriodSeconds is how long the old SVID remains valid after the new
-	// one has been issued (default 300 = 5 min).
-	GracePeriodSeconds int `yaml:"grace_period_seconds"`
-
-	// StaleAlertSeconds is how long to wait for the agent to pick up the new
-	// SVID before emitting a warning alert (default 300 = 5 min).
-	StaleAlertSeconds int `yaml:"stale_alert_seconds"`
+	// ClientCAFile is the CA bundle used to verify client certificates.
+	ClientCAFile string `yaml:"client_ca_file,omitempty"`
 }
 
 // SPIREConfig represents SPIRE integration configuration
@@ -165,13 +148,7 @@ func DefaultConfig() *Config {
 			ContainerName: "spire-server",                       // Default Docker container name
 		},
 		Auth: AuthConfig{
-			Enabled: false, // Disabled by default; enable in production
-			SVIDRotation: SVIDRotationConfig{
-				MaxTTLSeconds:      3600, // 60 minutes
-				PreRefreshSeconds:  900,  // 15 minutes before expiry
-				GracePeriodSeconds: 300,  // 5-minute grace window
-				StaleAlertSeconds:  300,  // alert if agent hasn't picked up within 5 min
-			},
+			Enabled: false,
 		},
 	}
 }
@@ -185,7 +162,7 @@ func Load(path string) (*Config, error) {
 		return cfg, nil
 	}
 
-	data, err := os.ReadFile(path) //nolint:gosec // path is from daemon config, not user input
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return cfg, nil // Return defaults if file doesn't exist
@@ -216,6 +193,17 @@ func (c *Config) Validate() error {
 	}
 	if c.Limits.MaxTotalMemoryMiB <= 0 {
 		return fmt.Errorf("limits.max_total_memory_mib must be positive")
+	}
+	if c.Auth.Enabled && c.API.TCPBind != "" {
+		if c.Auth.TLSCertFile == "" {
+			return fmt.Errorf("auth.tls_cert_file is required when auth.enabled is true for TCP listeners")
+		}
+		if c.Auth.TLSKeyFile == "" {
+			return fmt.Errorf("auth.tls_key_file is required when auth.enabled is true for TCP listeners")
+		}
+		if c.Auth.ClientCAFile == "" {
+			return fmt.Errorf("auth.client_ca_file is required when auth.enabled is true for TCP listeners")
+		}
 	}
 	return nil
 }

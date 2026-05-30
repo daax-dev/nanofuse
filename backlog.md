@@ -1,6 +1,6 @@
 
 Backlog - CI failures (PR #15)
-This file was created by the GitHub Copilot Chat Assistant to collect one task per failing CI job from PR #15 (https://github.com/peregrinesummit/nanofuse/pull/15). Each task includes a clear description, suggested fix, and acceptance criteria required for the task to be considered done.
+This file was created by the GitHub Copilot Chat Assistant to collect one task per failing CI job from PR #15 (https://github.com/daax-dev/nanofuse/pull/15). Each task includes a clear description, suggested fix, and acceptance criteria required for the task to be considered done.
 
 Context: workflow run for PR #15 failed. Known failing job log extracted from job ID 56498005151. The commit ref used for file links is f9c66d54406e3be4b7ec06ab71f5cd83c714ad4c.
 
@@ -13,16 +13,16 @@ The golangci-lint step fails to load the configuration with: "unsupported versio
 Failure details:
 
 Job ID: 56498005151
-Repo: peregrinesummit/nanofuse
+Repo: daax-dev/nanofuse
 Ref (commit): f9c66d54406e3be4b7ec06ab71f5cd83c714ad4c
-Workflow / PR: https://github.com/peregrinesummit/nanofuse/pull/15
+Workflow / PR: https://github.com/daax-dev/nanofuse/pull/15
 Log excerpt:
 Error: can't load config: unsupported version of the configuration: "" See https://golangci-lint.run/docs/product/migration-guide for migration instructions
 
 File to change (link uses the workflow ref):
 
 .golangci.yml at ref f9c66d54406e3be4b7ec06ab71f5cd83c714ad4c:
-https://github.com/peregrinesummit/nanofuse/blob/f9c66d54406e3be4b7ec06ab71f5cd83c714ad4c/.golangci.yml
+https://github.com/daax-dev/nanofuse/blob/f9c66d54406e3be4b7ec06ab71f5cd83c714ad4c/.golangci.yml
 Suggested fix (exact change):
 Prepend the following line to the top of .golangci.yml:
 

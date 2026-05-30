@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/jpoley/nanofuse/internal/recording"
-	"github.com/jpoley/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/recording"
+	"github.com/daax-dev/nanofuse/internal/types"
 )
 
 // RecordingSessionResponse represents a recording session in API responses

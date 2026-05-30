@@ -54,7 +54,7 @@ INFO: Listening on TCP: 127.0.0.1:8080
 
 **For Fix #1 (CLI Pull)**:
 Either:
-- `Pulling ghcr.io/jpoley/nanofuse/base:latest...` (it works!)
+- `Pulling ghcr.io/daax-dev/nanofuse/base:latest...` (it works!)
 - `authentication required` (it works, just needs auth)
 
 Should **NOT** show:

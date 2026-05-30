@@ -34,7 +34,7 @@ echo "   Images: $IMAGE_COUNT"
 echo ""
 echo "4. Creating VM..."
 ./bin/nanofuse --api-url http://localhost:8080 vm create \
-    ghcr.io/jpoley/nanofuse/base:latest \
+    ghcr.io/daax-dev/nanofuse/base:latest \
     test-http-vm \
     --vcpus 2 \
     --memory 512

@@ -212,7 +212,7 @@ Only `release` job has dependencies (waits for all others).
 
 **Image Naming:**
 ```
-ghcr.io/jpoley/nanofuse/base:<tag>
+ghcr.io/daax-dev/nanofuse/base:<tag>
 ```
 
 **Publishing Rules:**
@@ -404,12 +404,12 @@ make test
 5. **Verify Artifacts**
    ```bash
    # Test downloading released binary
-   curl -LO https://github.com/jpoley/nanofuse/releases/download/v1.0.0/nanofuse
+   curl -LO https://github.com/daax-dev/nanofuse/releases/download/v1.0.0/nanofuse
    chmod +x nanofuse
    ./nanofuse --version
 
    # Test pulling Docker image
-   docker pull ghcr.io/jpoley/nanofuse/base:v1.0.0
+   docker pull ghcr.io/daax-dev/nanofuse/base:v1.0.0
    ```
 
 ### Release Checklist

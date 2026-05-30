@@ -39,6 +39,7 @@ type NetworkConfig struct {
 	Gateway      string        `json:"gateway,omitempty"`
 	Netmask      string        `json:"netmask,omitempty"`
 	PortForwards []PortForward `json:"port_forwards,omitempty"`
+	EgressPolicy *EgressPolicy `json:"egress_policy,omitempty"`
 }
 
 // PortForward represents a port forwarding rule from host to VM
@@ -46,6 +47,31 @@ type PortForward struct {
 	HostPort int    `json:"host_port"`
 	VMPort   int    `json:"vm_port"`
 	Protocol string `json:"protocol"` // "tcp" or "udp"
+}
+
+// EgressPolicy controls outbound VM network access.
+type EgressPolicy struct {
+	Enabled       bool         `json:"enabled"`
+	DefaultAction string       `json:"default_action,omitempty"`
+	AllowDNS      bool         `json:"allow_dns,omitempty"`
+	ProxyOnly     bool         `json:"proxy_only,omitempty"`
+	Proxy         *EgressProxy `json:"proxy,omitempty"`
+	AllowRules    []EgressRule `json:"allow_rules,omitempty"`
+}
+
+// EgressProxy is the host-controlled proxy endpoint a VM may reach.
+type EgressProxy struct {
+	IP       string `json:"ip"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol,omitempty"`
+}
+
+// EgressRule allows one outbound L3/L4 destination.
+type EgressRule struct {
+	CIDR        string `json:"cidr"`
+	Protocol    string `json:"protocol"`
+	Port        int    `json:"port"`
+	Description string `json:"description,omitempty"`
 }
 
 // DiskConfig represents disk configuration
@@ -120,6 +146,41 @@ type HealthResponse struct {
 	Status        string `json:"status"`
 	Version       string `json:"version"`
 	UptimeSeconds int    `json:"uptime_seconds"`
+}
+
+// CapabilitiesResponse describes daemon runtime capabilities.
+type CapabilitiesResponse struct {
+	Status  string                   `json:"status"`
+	Version string                   `json:"version"`
+	Host    HostCapabilities         `json:"host"`
+	Runtime RuntimeCapabilities      `json:"runtime"`
+	API     APITransportCapabilities `json:"api"`
+}
+
+// HostCapabilities describes host-level platform support.
+type HostCapabilities struct {
+	OS           string `json:"os"`
+	Arch         string `json:"arch"`
+	KVMDevice    string `json:"kvm_device"`
+	KVMExists    bool   `json:"kvm_exists"`
+	KVMReadWrite bool   `json:"kvm_read_write"`
+	KVMError     string `json:"kvm_error,omitempty"`
+}
+
+// RuntimeCapabilities describes the microVM runtime available to nanofused.
+type RuntimeCapabilities struct {
+	NativeRuntime        bool   `json:"native_runtime"`
+	FirecrackerBinary    string `json:"firecracker_binary"`
+	FirecrackerAvailable bool   `json:"firecracker_available"`
+	RootRequired         bool   `json:"root_required"`
+	NetworkSetupRequired bool   `json:"network_setup_required"`
+	Message              string `json:"message"`
+}
+
+// APITransportCapabilities describes how clients can reach the daemon.
+type APITransportCapabilities struct {
+	UnixSocket string `json:"unix_socket,omitempty"`
+	TCPBind    string `json:"tcp_bind,omitempty"`
 }
 
 // APIError represents an API error response

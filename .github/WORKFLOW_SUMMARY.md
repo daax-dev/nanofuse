@@ -116,8 +116,8 @@ Push to main
    lint ─────────┘
        ↓
    Docker image published:
-   - ghcr.io/jpoley/nanofuse/base:latest
-   - ghcr.io/jpoley/nanofuse/base:sha-abc123
+   - ghcr.io/daax-dev/nanofuse/base:latest
+   - ghcr.io/daax-dev/nanofuse/base:sha-abc123
 ```
 
 ### Tag Release Flow
@@ -148,7 +148,7 @@ Tag v1.0.0 pushed
 Add to README.md:
 
 ```markdown
-[![CI/CD Pipeline](https://github.com/jpoley/nanofuse/actions/workflows/ci.yaml/badge.svg)](https://github.com/jpoley/nanofuse/actions/workflows/ci.yaml)
+[![CI/CD Pipeline](https://github.com/daax-dev/nanofuse/actions/workflows/ci.yaml/badge.svg)](https://github.com/daax-dev/nanofuse/actions/workflows/ci.yaml)
 ```
 
 ---
@@ -177,8 +177,8 @@ GitHub Actions workflows can be manually triggered from:
 
 ### View Workflow Runs
 
-- **All workflows**: `https://github.com/jpoley/nanofuse/actions`
-- **Specific workflow**: `https://github.com/jpoley/nanofuse/actions/workflows/ci.yaml`
+- **All workflows**: `https://github.com/daax-dev/nanofuse/actions`
+- **Specific workflow**: `https://github.com/daax-dev/nanofuse/actions/workflows/ci.yaml`
 - **Specific run**: Click on run from actions page
 
 ### Download Artifacts

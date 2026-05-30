@@ -1,6 +1,6 @@
 [Unit]
 Description=NanoFuse First Boot Initialization
-Documentation=https://github.com/jpoley/nanofuse
+Documentation=https://github.com/daax-dev/nanofuse
 # Run early, before SSH
 Before=ssh.service sshd.service
 After=local-fs.target

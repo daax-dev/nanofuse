@@ -42,7 +42,7 @@ Use Docker/Podman to extract OCI layers (works in devcontainers):
 
 ```go
 // 1. Pull container image
-docker pull ghcr.io/jpoley/nanofuse/base:latest
+docker pull ghcr.io/daax-dev/nanofuse/base:latest
 
 // 2. Export filesystem
 docker create --name temp-extract <image>

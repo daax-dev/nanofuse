@@ -342,7 +342,7 @@ Build an **automated GitHub Actions pipeline** that extracts Docker images (flow
 
 **Functionality**:
 - Pull `jpoley/flowspec-agents:latest` from Docker Hub
-- Pull `jpoley/nanofuse-gateway:latest` from Docker Hub (when available)
+- Pull `daax-dev/nanofuse-gateway:latest` from Docker Hub (when available)
 - Extract all image layers using `docker export`
 - Merge layers into unified filesystem structure
 - Preserve file permissions, ownership, symlinks

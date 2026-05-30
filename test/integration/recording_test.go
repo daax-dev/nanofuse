@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/recording"
 	"github.com/google/uuid"
-	"github.com/jpoley/nanofuse/internal/recording"
 )
 
 // eventProcessingDelay is the time to wait for asynchronous mock event processing.

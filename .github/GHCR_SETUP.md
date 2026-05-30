@@ -5,7 +5,7 @@ This document explains how to configure GHCR authentication for nanofuse images.
 ## Overview
 
 The CI/CD pipeline automatically builds and pushes Docker images to GitHub Container Registry (GHCR) at:
-- `ghcr.io/jpoley/nanofuse/base`
+- `ghcr.io/daax-dev/nanofuse/base`
 
 **Images are PRIVATE** and require authentication to pull.
 
@@ -58,7 +58,7 @@ The CI pipeline creates the following tags:
 **Solutions**:
 1. Authenticate with `docker login ghcr.io` (see above)
 2. Ensure you have access to the repository
-3. Check if CI has run: https://github.com/jpoley/nanofuse/actions
+3. Check if CI has run: https://github.com/daax-dev/nanofuse/actions
 
 ### CI fails to push images
 

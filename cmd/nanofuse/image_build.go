@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/layerbuild"
+	"github.com/daax-dev/nanofuse/internal/layerbuild"
 	"github.com/spf13/cobra"
 )
 

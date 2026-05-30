@@ -46,7 +46,7 @@ EOF
 cat > "${ROOTFS_PATH}/etc/systemd/system/record-agent.service" << EOF
 [Unit]
 Description=NanoFuse Recording Agent
-Documentation=https://github.com/jpoley/nanofuse
+Documentation=https://github.com/daax-dev/nanofuse
 After=network.target
 Wants=network.target
 

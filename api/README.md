@@ -41,6 +41,7 @@ npx @redocly/cli preview-docs openapi.yaml --port 8080
 
 ### Health
 - `GET /health` - Health check
+- `GET /capabilities` - Runtime host, KVM, Firecracker, and API transport capabilities
 
 ### Virtual Machines
 - `GET /vms` - List all VMs
@@ -76,9 +77,11 @@ npx @redocly/cli preview-docs openapi.yaml --port 8080
 
 ## Authentication
 
-Currently, the NanoFuse API does not require authentication when accessed via Unix socket (default).
+By default, the NanoFuse API does not require application-layer authentication when accessed via Unix socket. Access is controlled by Unix socket permissions.
 
-If using TCP binding, consider implementing authentication middleware or using a reverse proxy with authentication.
+When `auth.enabled` is true and `api.tcp_bind` is configured, the TCP API listener uses mutual TLS with `tls.RequireAndVerifyClientCert`. Configure `auth.tls_cert_file`, `auth.tls_key_file`, and `auth.client_ca_file`. Requests must present a client certificate verified by that CA, and the certificate must contain a `spiffe://` URI SAN. NanoFuse extracts that verified SPIFFE URI into request context and records audit logs.
+
+NanoFuse does not trust `X-SPIFFE-ID` or other client-controlled identity headers, does not implement an Aembit-style policy engine, and does not rotate SVIDs. Unix socket listeners remain local/plain unless a separate transport wrapper is configured outside the daemon.
 
 ## Error Handling
 
@@ -117,7 +120,7 @@ All errors follow a consistent format:
 curl -X POST http://localhost:8080/images/pull \
   -H "Content-Type: application/json" \
   -d '{
-    "reference": "ghcr.io/jpoley/nanofuse/base:latest"
+    "image_ref": "ghcr.io/daax-dev/nanofuse/base:latest"
   }'
 
 # Create a VM
@@ -125,7 +128,7 @@ curl -X POST http://localhost:8080/vms \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-vm",
-    "image": "ghcr.io/jpoley/nanofuse/base:latest",
+    "image": "ghcr.io/daax-dev/nanofuse/base:latest",
     "config": {
       "vcpus": 2,
       "memory_mib": 512,

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,15 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/config"
-	"github.com/jpoley/nanofuse/internal/firecracker"
-	"github.com/jpoley/nanofuse/internal/logging"
-	"github.com/jpoley/nanofuse/internal/network"
-	"github.com/jpoley/nanofuse/internal/policy"
-	"github.com/jpoley/nanofuse/internal/recording"
-	"github.com/jpoley/nanofuse/internal/registry"
-	"github.com/jpoley/nanofuse/internal/spire"
-	"github.com/jpoley/nanofuse/internal/storage"
+	"github.com/daax-dev/nanofuse/internal/config"
+	"github.com/daax-dev/nanofuse/internal/firecracker"
+	"github.com/daax-dev/nanofuse/internal/logging"
+	"github.com/daax-dev/nanofuse/internal/network"
+	"github.com/daax-dev/nanofuse/internal/recording"
+	"github.com/daax-dev/nanofuse/internal/registry"
+	"github.com/daax-dev/nanofuse/internal/spire"
+	"github.com/daax-dev/nanofuse/internal/storage"
 )
 
 // Server represents the API server
@@ -33,8 +33,6 @@ type Server struct {
 	startTime        time.Time
 	recordingStorage RecordingStorageInterface
 	spireService     *spire.Service
-	policyEngine     *policy.Engine
-	rotationMgr      *spire.RotationManager
 }
 
 // loadExistingAllocations loads IP allocations from existing VMs in the database
@@ -71,7 +69,7 @@ func loadExistingAllocations(db *storage.DB, ipam *network.IPAM, logger *logging
 // initializeInfrastructure initializes database and managers
 func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*storage.DB, *firecracker.Manager, *registry.Client, error) {
 	// Create data directory
-	if err := os.MkdirAll(cfg.Storage.DataDir, 0750); err != nil { //nolint:gosec // data dir is private to the daemon
+	if err := os.MkdirAll(cfg.Storage.DataDir, 0755); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -144,6 +142,7 @@ func setupHTTPRouter(server *Server) *http.ServeMux {
 
 	// Health endpoint
 	mux.HandleFunc("GET /health", server.handleHealth)
+	mux.HandleFunc("GET /capabilities", server.handleCapabilities)
 
 	// VM collection endpoints
 	mux.HandleFunc("GET /vms", server.handleListVMs)
@@ -223,7 +222,7 @@ func setupListeners(cfg *config.Config, logger *logging.Logger) ([]net.Listener,
 		}
 
 		// Set socket permissions to allow group access
-		if err := os.Chmod(socketPath, 0660); err != nil { //nolint:gosec // Unix socket needs group-readable perms for client access
+		if err := os.Chmod(socketPath, 0666); err != nil {
 			logger.Warn("Failed to set socket permissions: %v", err)
 		}
 
@@ -368,31 +367,6 @@ func startServer(cfg *config.Config) error {
 		logger.Info("SPIRE workload registration enabled (trust domain: %s)", cfg.SPIRE.TrustDomain)
 	}
 
-	// Initialize policy engine (issue #3 — Aembit-compatible workload IAM).
-	policyEngine := policy.NewEngine()
-	logger.Info("Workload policy engine initialized")
-
-	// Initialize SVID rotation manager (issue #4).
-	rotationMgr := spire.NewRotationManager(
-		&cfg.Auth.SVIDRotation,
-		func(ctx context.Context, spiffeID string) {
-			// Default rotation callback: re-register the workload via SPIRE.
-			// In production this would trigger a SPIFFE workload API call.
-			logger.Info("SVID pre-refresh triggered for %s — re-registering workload", spiffeID)
-			if _, err := spireService.CreateVMWorkloadEntry(ctx, spiffeID, "", ""); err != nil {
-				logger.Warn("SVID rotation re-registration failed for %s: %v", spiffeID, err)
-			}
-		},
-		func(spiffeID string, issuedAt time.Time) {
-			logger.Warn("SVID stale pickup alert: agent has not confirmed new SVID for %s (issued at %s)",
-				spiffeID, issuedAt.Format(time.RFC3339))
-		},
-	)
-	if cfg.Auth.Enabled {
-		logger.Info("Auth middleware enabled (DEV_STATIC_KEYS=%s)", os.Getenv("DEV_STATIC_KEYS"))
-		go rotationMgr.Run(context.Background())
-	}
-
 	server := &Server{
 		config:           cfg,
 		db:               db,
@@ -403,8 +377,6 @@ func startServer(cfg *config.Config) error {
 		startTime:        time.Now(),
 		recordingStorage: recordingStorage,
 		spireService:     spireService,
-		policyEngine:     policyEngine,
-		rotationMgr:      rotationMgr,
 	}
 
 	// Set up process exit handler to reap zombies and update VM state
@@ -413,10 +385,15 @@ func startServer(cfg *config.Config) error {
 
 	// Setup HTTP routes and server
 	mux := setupHTTPRouter(server)
-	// Chain: logging → auth → routes
-	handler := loggingMiddleware(logger)(
-		AuthMiddleware(&cfg.Auth, policyEngine)(mux),
-	)
+	handler := loggingMiddleware(logger)(mux)
+	var authTLSConfig *tls.Config
+	if cfg.Auth.Enabled && cfg.API.TCPBind != "" {
+		authTLSConfig, err = BuildAuthTLSConfig(&cfg.Auth)
+		if err != nil {
+			return err
+		}
+		logger.Info("TCP API mTLS auth enabled")
+	}
 
 	// Setup listeners (can have multiple: Unix socket + TCP)
 	listeners, err := setupListeners(cfg, logger)
@@ -427,8 +404,14 @@ func startServer(cfg *config.Config) error {
 	// Create HTTP server for each listener
 	errChan := make(chan error, len(listeners))
 	for i, listener := range listeners {
+		listenerHandler := handler
+		serveListener := listener
+		if cfg.Auth.Enabled && listener.Addr().Network() == "tcp" {
+			serveListener = tls.NewListener(listener, authTLSConfig)
+			listenerHandler = loggingMiddleware(logger)(MTLSIdentityMiddleware(mux))
+		}
 		httpServer := &http.Server{
-			Handler:           handler,
+			Handler:           listenerHandler,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 
@@ -440,11 +423,11 @@ func startServer(cfg *config.Config) error {
 			go func(l net.Listener, srv *http.Server) {
 				logger.Info("Starting server on listener: %s", l.Addr())
 				errChan <- srv.Serve(l)
-			}(listener, httpServer)
+			}(serveListener, httpServer)
 		} else {
 			// Start last server in main goroutine
 			logger.Info("NanoFuse API Daemon started successfully")
-			return httpServer.Serve(listener)
+			return httpServer.Serve(serveListener)
 		}
 	}
 

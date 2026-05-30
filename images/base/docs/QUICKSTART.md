@@ -227,7 +227,7 @@ The build artifacts are ready to use with the NanoFuse API (once implemented):
 **API Integration** (future):
 ```bash
 # When nanofuse CLI is ready
-nanofuse image pull ghcr.io/jpoley/nanofuse-base:latest
+nanofuse image pull ghcr.io/daax-dev/nanofuse/base:latest
 nanofuse vm create nanofuse-base:latest my-vm
 nanofuse vm start my-vm
 ```

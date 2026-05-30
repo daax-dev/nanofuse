@@ -40,7 +40,7 @@ test -x test/e2e/full-workflow-test.sh
 
 **Verification:**
 ```bash
-./test/e2e/full-workflow-test.sh --image ghcr.io/peregrinesummit/nanofuse-base:latest
+./test/e2e/full-workflow-test.sh --image ghcr.io/daax-dev/nanofuse/base:latest
 # Expected: exit code 0
 ```
 
@@ -51,7 +51,7 @@ test -x test/e2e/full-workflow-test.sh
 
 **Verification:**
 ```bash
-./test/e2e/full-workflow-test.sh --image ghcr.io/peregrinesummit/nanofuse-todo-app:latest
+./test/e2e/full-workflow-test.sh --image ghcr.io/daax-dev/nanofuse/todo-app:latest
 # Expected: exit code 0
 ```
 

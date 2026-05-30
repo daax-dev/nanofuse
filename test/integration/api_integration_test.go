@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jpoley/nanofuse/internal/client"
+	"github.com/daax-dev/nanofuse/internal/client"
 )
 
 const (

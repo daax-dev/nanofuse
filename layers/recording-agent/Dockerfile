@@ -72,7 +72,7 @@ RUN chmod +x /usr/local/bin/record-agent
 RUN cat > /etc/systemd/system/record-agent.service << 'SERVICE'
 [Unit]
 Description=NanoFuse Recording Agent
-Documentation=https://github.com/peregrinesummit/nanofuse
+Documentation=https://github.com/daax-dev/nanofuse
 After=network.target
 Wants=network.target
 

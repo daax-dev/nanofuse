@@ -1,7 +1,7 @@
 # -*- mode: ruby -*-
 # nanofuse dev/test VM — Ubuntu 24.04 with nested KVM + Firecracker
 #
-# Gives Claude (or any agent) full sudo in a disposable VM to:
+# Gives automation full sudo in a disposable VM to:
 #   - Build nanofuse from source (Go + mage)
 #   - Build base microVM images (Docker + kernel)
 #   - Run Firecracker microVMs (nested KVM)
@@ -15,7 +15,7 @@
 # Usage:
 #   vagrant up                    # provision + build + verify
 #   vagrant ssh                   # interactive shell (full sudo)
-#   vagrant ssh -c "sudo ..."    # run commands from host (Claude workflow)
+#   vagrant ssh -c "sudo ..."    # run commands from host
 #   vagrant destroy -f            # tear down and start fresh
 #   vagrant provision             # re-run setup + verify without rebuild
 
@@ -36,6 +36,7 @@ NANOFUSE_ROOT = if ENV["NANOFUSE_SRC"]
   end
 
 puts "nanofuse source: #{NANOFUSE_ROOT}"
+PARALLELS_NESTED = ENV["NANOFUSE_PARALLELS_NESTED"] == "1" ? "on" : "off"
 
 Vagrant.configure("2") do |config|
   config.vm.box = "bento/ubuntu-24.04"
@@ -49,6 +50,13 @@ Vagrant.configure("2") do |config|
     lv.cpu_mode = "host-passthrough"   # nested KVM for Firecracker
     lv.nested = true
     lv.default_prefix = "nanofuse_"
+  end
+
+  config.vm.provider "parallels" do |prl|
+    prl.cpus = 4
+    prl.memory = 4096
+    prl.customize "pre-boot", ["set", :id, "--nested-virt", PARALLELS_NESTED]
+    prl.update_guest_tools = false
   end
 
   # Sync nanofuse source — exclude heavy/generated dirs

@@ -39,6 +39,7 @@ type NetworkConfig struct {
 	Gateway      string        `json:"gateway,omitempty"`
 	Netmask      string        `json:"netmask,omitempty"`
 	PortForwards []PortForward `json:"port_forwards,omitempty"`
+	EgressPolicy *EgressPolicy `json:"egress_policy,omitempty"`
 }
 
 // PortForward represents a port forwarding rule from host to VM
@@ -46,6 +47,31 @@ type PortForward struct {
 	HostPort int    `json:"host_port"`
 	VMPort   int    `json:"vm_port"`
 	Protocol string `json:"protocol"` // "tcp" or "udp"
+}
+
+// EgressPolicy controls outbound VM network access.
+type EgressPolicy struct {
+	Enabled       bool         `json:"enabled"`
+	DefaultAction string       `json:"default_action,omitempty"`
+	AllowDNS      bool         `json:"allow_dns,omitempty"`
+	ProxyOnly     bool         `json:"proxy_only,omitempty"`
+	Proxy         *EgressProxy `json:"proxy,omitempty"`
+	AllowRules    []EgressRule `json:"allow_rules,omitempty"`
+}
+
+// EgressProxy is the host-controlled proxy endpoint a VM may reach.
+type EgressProxy struct {
+	IP       string `json:"ip"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol,omitempty"`
+}
+
+// EgressRule allows one outbound L3/L4 destination.
+type EgressRule struct {
+	CIDR        string `json:"cidr"`
+	Protocol    string `json:"protocol"`
+	Port        int    `json:"port"`
+	Description string `json:"description,omitempty"`
 }
 
 // DiskConfig represents disk configuration

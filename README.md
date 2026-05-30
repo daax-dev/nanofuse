@@ -25,6 +25,7 @@ Nanofuse provides hardware-level isolation for running untrusted workloads with 
 |----------|-------------|
 | [Quick Start Guide](docs/QUICKSTART.md) | Get Nanofuse running in 5 minutes |
 | [API Quick Start](docs/API_QUICK_START.md) | REST API usage with curl examples |
+| [Mac and Windows Clients](docs/MAC_WINDOWS_CLIENTS.md) | Manage a Linux/KVM daemon from macOS or Windows |
 | [SSH Access Guide](docs/SSH_ACCESS_QUICK_START.md) | SSH into your microVMs |
 
 ### For Developers
@@ -41,6 +42,7 @@ Nanofuse provides hardware-level isolation for running untrusted workloads with 
 | Document | Description |
 |----------|-------------|
 | [Project Goals](docs/GOALS.md) | Mission, design principles, and success criteria |
+| [Sandbox API Comparison](docs/building/sandbox-api-comparison.md) | How Nanofuse differs from other sandbox APIs |
 | [Architecture Design](docs/firecracker-runner-design.md) | Detailed implementation specification |
 | [Networking](docs/firecracker-runner-networking-extension.md) | VM-to-VM communication and overlay networks |
 | [Firewall Capabilities](docs/future-fw.md) | L3-L7 security control reference |

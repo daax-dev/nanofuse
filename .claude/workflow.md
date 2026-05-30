@@ -3,7 +3,7 @@
 ## Planning
 - A plan is required for any non-trivial change.
 - Trivial: typo fix, single-line config update, obvious rename. Everything else requires a plan.
-- This repo is spec-driven. Non-trivial features flow spec -> plan -> implement (jp-spec-kit / SpecKit; see `.claude/CLAUDE.md` and `.specify/`). Specs are technology-agnostic (WHAT/WHY, not HOW).
+- This repo is spec-driven. Non-trivial features flow spec -> plan -> implement (Flowspec; see `.claude/CLAUDE.md` and `.flowspec/`). Specs are technology-agnostic (WHAT/WHY, not HOW).
 - Write the plan down — in the PR description, the Backlog.md task, or `.logs/decisions/`. Plans held only in chat do not count.
 - Present trade-offs as facts: option, cost, risk, reversibility. The operator decides; the agent executes.
 - Do not start coding until the plan is approved.
@@ -22,7 +22,7 @@
 
 ## Work Intake
 Tasks originate from (check in this order):
-1. Backlog.md — the `backlog/` directory is the canonical task system (`backlog task list --plain`, `backlog task create`, `backlog task edit`). Tasks reference the matching spec under `.specify/features/{branch}/`.
+1. Backlog.md — the `backlog/` directory is the canonical task system (`backlog task list --plain`, `backlog task create`, `backlog task edit`). Tasks reference the matching spec under `.flowspec/features/{branch}/`.
 2. GitHub Issues / PR review threads on `daax-dev/nanofuse`.
 3. Direct request from operator.
 

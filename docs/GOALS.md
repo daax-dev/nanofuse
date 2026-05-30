@@ -1,233 +1,102 @@
 # Nanofuse Project Goals
 
-## Mission Statement
+**Last updated:** 2026-05-30
+**Status:** Alpha. Core Firecracker lifecycle exists; production sandbox controls are being added and validated.
 
-Nanofuse is a secure, microVM-based platform for running untrusted and semi-trusted workloads with granular access controls. The platform enables safe execution of AI coding agents and other potentially risky workloads by providing hardware-level isolation while maintaining container-like performance and developer experience.
+## Mission
 
-## Problem Statement
+Nanofuse is a self-hosted microVM sandbox platform for running untrusted and semi-trusted code with a smaller security surface than container-only execution. The immediate target is AI coding-agent workloads that need filesystem state, controlled network access, and credential isolation.
 
-Modern AI coding agents (Claude Code, GitHub Copilot, Cursor, etc.) require execution environments that balance two competing needs:
+## Current Platform Model
 
-1. **Productivity**: Developers need agents with sufficient access to read code, execute commands, and modify files
-2. **Security**: Organizations need protection against agents that may exfiltrate data, execute malicious code, or consume excessive resources
+| Host family | Current support | Constraint |
+|-------------|-----------------|------------|
+| Linux | Native runtime target when `/dev/kvm` is present and readable/writable. | Firecracker requires Linux KVM. |
+| macOS | Operator/developer host only. Use the API, CLI, curl, SSH tunnel, or planned tray app against a Linux/KVM `nanofused` daemon. Local Vagrant only works when the provider exposes `/dev/kvm`. | Native macOS Firecracker runtime is not supported. |
+| Windows | Operator/developer host only. Use the API, CLI, PowerShell, SSH tunnel, or planned tray app against a Linux/KVM `nanofused` daemon. WSL2 or local VM paths only work when Linux KVM is exposed. | Native Windows Firecracker runtime is not supported. |
 
-Traditional solutions fall short:
+Do not treat macOS or Windows local OS sandboxing as equivalent to the Nanofuse security boundary. The runtime security boundary is the Linux/KVM microVM.
 
-| Approach | Limitation |
-|----------|------------|
-| Containers | Share the host kernel; insufficient isolation for untrusted code ([Amazon Science][1]) |
-| Traditional VMs | High overhead (seconds to boot, GBs of memory) |
-| Language sandboxes | Bypassable; insufficient for defense in depth ([NVIDIA Technical Blog][2]) |
+Primary Firecracker references:
 
-Nanofuse addresses this gap by providing microVM-based isolation with sub-second boot times and minimal resource overhead.
+- [Firecracker getting started](https://github.com/firecracker-microvm/firecracker/blob/main/docs/getting-started.md)
+- [Firecracker jailer](https://github.com/firecracker-microvm/firecracker/blob/main/docs/jailer.md)
+- [Firecracker seccomp](https://github.com/firecracker-microvm/firecracker/blob/main/docs/seccomp.md)
 
-## Goals
+## Required Outcomes
 
-### Primary Goals
-
-1. **Multi-Platform Support**
-   - Run on Linux (native KVM), macOS (via Virtualization.framework), and Windows (WSL2)
-   - Deploy in self-hosted, AWS, GCP, and Azure environments
-   - Provide consistent security guarantees across all platforms
-
-2. **Granular Access Control**
-   - **Filesystem**: Controlled read/write access to specific paths
-   - **Network**: Allowlist-based outbound connectivity with L3/L4/L7 filtering
-   - **Secrets**: Scoped credential injection with automatic rotation support
-
-3. **AI Agent Isolation**
-   - Isolate each coding agent session in its own microVM
-   - Log and audit all LLM API traffic for prompt inspection
-   - Support future AI guardrails for content filtering
-
-4. **Developer Experience**
-   - TTY/CLI access via SSH or web terminal
-   - Sub-second cold start for interactive use
-   - Seamless integration with existing development workflows
-
-### Success Criteria
-
-| Goal | Metric | Target |
-|------|--------|--------|
-| Boot time | Cold start to shell | < 500ms |
-| Memory overhead | Per-microVM footprint | < 10 MiB |
-| Density | Concurrent microVMs per host | > 100 |
-| Security | Kernel attack surface | No shared kernel with host |
+| Objective | Current state | Target |
+|-----------|---------------|--------|
+| Small security surface | Firecracker VMM with TAP networking and optional SPIRE vsock proxy. Jailer integration is configured but not the default launch path. | Firecracker launched through jailer by default with cgroups, chroot, seccomp, least-privilege file layout, and release-gated escape tests. |
+| Container workload support | OCI/container images can be extracted into microVM rootfs artifacts through Docker/Podman and layer build paths. | Any supported container workload can be wrapped into a bootable rootfs or container-capable guest image and run inside microVM isolation. |
+| API-driven control | `nanofused` exposes the REST API over Unix socket or optional TCP. CLI clients can use `--api-url` or `NANOFUSE_API_URL`; `GET /capabilities` reports runtime readiness. | Authenticated/TLS API profiles, generated SDKs, and tray/menu clients for macOS and Windows. |
+| Desktop management UI | No desktop UI is implemented. Requirements are captured for an API-only tray/menu app so it does not bypass the daemon boundary. | macOS and Windows tray apps manage daemon profiles, health, images, VMs, logs, and lifecycle actions through the REST API only. |
+| Persistent filesystem | Writable root disks are materialized per VM under daemon storage; registered image rootfs files remain sources. | Policy-selectable ephemeral, persistent, and snapshot-backed filesystems. |
+| Fast short-running sessions | Create/start/stop/kill lifecycle exists. Fast-start targets are not yet proven by current gates. | Measured cold-start and warm-start budgets with regression tests. |
+| Long-running sessions | VMs can remain running until stopped or killed. | Lease, quota, idle timeout, and recovery policies for long-running sessions. |
+| Secrets and identity away from LLMs | Host-side SPIFFE workload registration and vsock proxy exist. Raw secret injection is not implemented in VM config. | Guest receives identity material only; host-side broker or forced egress proxy injects credentials per request. Raw long-lived secrets never enter LLM-visible filesystem, env, logs, or prompts. |
+| Restricted/interceptable egress | Per-VM L3/L4 egress policy supports default deny and proxy-only mode. L7 interception proxy is documented, not embedded. | All external LLM/API/MCP traffic forced through a host-controlled proxy with audit, policy, and credential injection. Direct bypass blocked. |
+| Closed-loop kernel testing | `dev/vagrant` provides the local hypervisor harness and capability checks. | Every kernel/rootfs update is validated through Vagrant or an equivalent Linux/KVM runner before merge. |
 
 ## Design Principles
 
-### Security First
+### Security Boundary First
 
-Treat all guest code as untrusted. The guest has full access to its own microVM kernel, but that kernel is explicitly isolated from the host via hardware virtualization ([AWS Lambda Firecracker Design][3]).
+Untrusted code must run behind a guest-kernel boundary. Containers are accepted as packaging/build inputs or as guest-internal workloads, not as the host isolation boundary for adversarial code.
 
-**Defense in Depth layers:**
-1. Hardware virtualization (KVM/Hypervisor)
-2. Minimal VMM with reduced attack surface
-3. Jailer component with seccomp-bpf, cgroups, and chroot
-4. Network proxy with traffic inspection
+### Immutable Source Images, Mutable VM State
 
-### Ephemeral by Default
+Registered images are source artifacts. Writable VM disks are copied into VM-specific storage so one VM cannot mutate the base image used by another VM.
 
-Treat microVM filesystems as disposable scratch space:
-- Persist only explicitly designated artifacts (git commits, build outputs)
-- Assume short-lived secrets may exist; minimize blast radius
-- Support snapshotting for reproducible environments
+### Deny by Policy
 
-### Observable and Auditable
+Network policy must be explicit for untrusted agent jobs. Proxy-only mode is the required path for credential-injected LLM/API/MCP calls because the guest should not possess raw upstream credentials.
 
-All security-relevant events must be logged:
-- Network connections and data transfer volumes
-- LLM API calls with prompt/response logging
-- Filesystem access patterns
-- Resource consumption metrics
+### Validate Before Claiming
 
-## Architecture Overview
+Performance, platform support, and security claims must be tied to a test result or a primary source. If a host cannot expose Linux KVM, validation must fail with that exact reason.
 
-```
-+-----------------------------------------------------------------+
-|                         Host System                              |
-+-----------------------------------------------------------------+
-|  +-------------+  +-------------+  +-------------+               |
-|  |  microVM 1  |  |  microVM 2  |  |  microVM N  |               |
-|  | (Agent A)   |  | (Agent B)   |  |    ...      |               |
-|  +------+------+  +------+------+  +------+------+               |
-|         |                |                |                      |
-|  +------+----------------+----------------+------+               |
-|  |              Network Proxy / Firewall         |               |
-|  |         (L3/L4 rules + L7 AI guardrails)      |               |
-|  +------------------------+----------------------+               |
-|                           |                                      |
-|  +------------------------+----------------------+               |
-|  |              Nanofuse Control Plane           |               |
-|  |  - microVM lifecycle management (start/stop)  |               |
-|  |  - API Gateway (REST + MCP)                   |               |
-|  |  - Telemetry aggregation                      |               |
-|  |  - Secret injection                           |               |
-|  +-----------------------------------------------+               |
-+-----------------------------------------------------------------+
+## Architecture Direction
+
+```text
+Host Linux/KVM
+├── nanofused daemon
+│   ├── VM lifecycle and Firecracker process control
+│   ├── per-VM root disk materialization
+│   ├── TAP/IPAM/port-forward/egress policy setup
+│   ├── image registry and rootfs build integration
+│   └── SPIFFE/SPIRE registration hooks
+├── host egress proxy (planned sidecar)
+│   ├── LLM/API/MCP allow rules
+│   ├── credential injection
+│   └── audit events
+└── Firecracker microVMs
+    ├── dedicated guest kernel
+    ├── VM-specific writable root disk
+    └── optional guest identity client over vsock
 ```
 
-### Control Plane Components
+## Success Criteria
 
-| Component | Responsibility |
-|-----------|----------------|
-| **nanofused** | microVM lifecycle daemon; manages start/stop/snapshot |
-| **Firewall** | iptables/nftables rules over tun/tap interfaces |
-| **API Gateway** | REST API for orchestration; MCP protocol support |
-| **Proxy** | L7 reverse proxy for LLM traffic inspection |
-| **Telemetry** | Log collection and metrics aggregation |
-
-## Technology Choices
-
-### Primary Hypervisor: Firecracker
-
-[Firecracker][4] is the default microVM engine, selected for:
-
-- **Minimal attack surface**: ~50,000 lines of Rust vs. 1.4M+ lines in QEMU ([Amazon Science][1])
-- **Fast startup**: 125ms to user code execution
-- **Low overhead**: < 5 MiB memory per microVM
-- **Production proven**: Powers AWS Lambda and Fargate
-
-**Limitations:**
-- No PCI bus (no GPU passthrough)
-- Limited block device options (virtio-block only)
-
-### Alternative Hypervisor: Cloud Hypervisor
-
-[Cloud Hypervisor][5] is used when additional capabilities are required:
-
-- **GPU passthrough**: VFIO support for direct GPU access ([Cloud Hypervisor v38.0][6])
-- **Multi-GPU workloads**: PCIe P2P for GPUDirect operations
-- **Hot-plug support**: CPU, memory, and device hot-plug
-
-**Trade-offs:**
-- Larger footprint than Firecracker
-- More complex configuration
-
-### Container Runtime
-
-microVMs must support running OCI-compatible containers via:
-- [containerd][7] as the container runtime
-- [firecracker-containerd][8] for Firecracker integration
-
-### Network Security
-
-Egress filtering implemented via:
-- **L3/L4**: iptables/nftables rules on host tun/tap interfaces
-- **L7**: Reverse proxy for HTTPS traffic inspection (especially LLM API calls)
-- **Future**: AI guardrails for prompt/response filtering
-
-See [Advanced Firewall Capabilities](future-fw.md) for the complete L3-L7 security reference.
-
-## Boot-Time Configuration
-
-microVMs receive configuration at boot via:
-
-| Method | Use Case |
-|--------|----------|
-| Kernel command line | Basic parameters |
-| virtio-vsock | Control plane communication |
-| Cloud-init / ignition | User configuration, SSH keys |
-| Secrets injection | Short-lived credentials |
-
-Required boot-time parameters:
-- SSH public keys for `authorized_keys`
-- Network configuration
-- Workspace mount points
-- Initial secrets (with TTL)
+| Goal | Current gate | Target gate |
+|------|--------------|-------------|
+| Build and unit correctness | `mage ci` | Required before PR review |
+| Kernel/rootfs compatibility | Vagrant or Linux/KVM closed-loop run | Required for kernel/rootfs changes |
+| Filesystem isolation | Unit tests for per-VM rootfs materialization | E2E sentinel tests inside a VM |
+| Network restriction | Unit tests for egress rule generation | E2E blocked/allowed traffic tests inside a VM |
+| Secret isolation | SPIFFE/vsock unit and integration tests | No raw secret matches in guest fs/env/log fixtures |
+| Container wrapping | Image/layer build tests | Boot a container-derived rootfs inside Firecracker |
 
 ## Related Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Firecracker Runner Design](firecracker-runner-design.md) | Detailed implementation specification |
-| [Networking Extension](firecracker-runner-networking-extension.md) | VM-to-VM communication and overlay networks |
-| [Advanced Firewall Capabilities](future-fw.md) | L3-L7 security control reference |
-
-## References
-
-### Core Technologies
-
-- [KVM (Kernel-based Virtual Machine)][9] - Linux hypervisor
-- [Linux ABI Guide][10] - Kernel interface stability
-
-### microVM Platforms
-
-- [Firecracker][4] - AWS microVM
-- [Cloud Hypervisor][5] - GPU-capable microVM
-- [firecracker-containerd][8] - Container runtime integration
-
-### Related Projects
-
-- [SlicerVM][11] - microVM management platform
-- [Kata Containers with Firecracker][12] - Kubernetes integration
-- [Firecracker in Docker (PoC)][13] - Nested virtualization exploration
-
-### AI Agent Security
-
-- [Security of AI Agents (arXiv)][14] - Academic research on agent security
-- [Code Sandboxes for LLM AI Agents][15] - Sandbox comparison
-- [Sandboxing for AI Agents][16] - Best practices guide
-
----
-
-[1]: https://www.amazon.science/blog/how-awss-firecracker-virtual-machines-work
-[2]: https://developer.nvidia.com/blog/how-code-execution-drives-key-risks-in-agentic-ai-systems/
-[3]: https://aws.amazon.com/blogs/aws/firecracker-lightweight-virtualization-for-serverless-computing/
-[4]: https://github.com/firecracker-microvm/firecracker
-[5]: https://github.com/cloud-hypervisor/cloud-hypervisor
-[6]: https://www.cloudhypervisor.org/blog/cloud-hypervisor-v38.0-released/
-[7]: https://containerd.io/
-[8]: https://github.com/firecracker-microvm/firecracker-containerd
-[9]: https://linux-kvm.org/page/Main_Page
-[10]: https://docs.kernel.org/admin-guide/abi.html
-[11]: https://docs.slicervm.com/
-[12]: https://arun-gupta.github.io/kata-firecracker/
-[13]: https://github.com/fadams/firecracker-in-docker
-[14]: https://arxiv.org/html/2406.08689v2
-[15]: https://amirmalik.net/2025/03/07/code-sandboxes-for-llm-ai-agents
-[16]: https://medium.com/@yessine.abdelmaksoud.03/sandboxing-for-ai-agents-2420ac69569e
-
----
-
-*Last updated: December 2025*
+| [Sandbox Objective Validation](building/sandbox-objective-validation.md) | Current validation plan and evidence |
+| [API Quick Start](API_QUICK_START.md) | Runnable Linux/KVM API daemon and client examples |
+| [Mac and Windows Clients](MAC_WINDOWS_CLIENTS.md) | Cross-platform client runbook |
+| [Sandbox API Comparison](building/sandbox-api-comparison.md) | Comparison against current sandbox APIs |
+| [Tray App Plan](building/nanofuse-tray-app.md) | macOS/Windows tray app requirements |
+| [Firecracker Runner Design](firecracker-runner-design.md) | Daemon/Firecracker design |
+| [Programmable Egress Proxy Integration](prd/programmable-egress-proxy-integration.md) | Forced proxy model for LLM/API/MCP egress |
+| [SPIFFE/SPIRE Integration Status](specs/spiffe-integration-status.md) | Current identity implementation status |
+| [Advanced Firewall Capabilities](future-fw.md) | L3-L7 security reference |

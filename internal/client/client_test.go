@@ -48,6 +48,58 @@ func TestClient_Health(t *testing.T) {
 	}
 }
 
+func TestClient_Capabilities(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/capabilities" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		resp := CapabilitiesResponse{
+			Status:  "ok",
+			Version: "0.1.0",
+			Host: HostCapabilities{
+				OS:           "linux",
+				Arch:         "amd64",
+				KVMDevice:    "/dev/kvm",
+				KVMExists:    true,
+				KVMReadWrite: true,
+			},
+			Runtime: RuntimeCapabilities{
+				NativeRuntime:        true,
+				FirecrackerBinary:    "/usr/local/bin/firecracker",
+				FirecrackerAvailable: true,
+				RootRequired:         true,
+				NetworkSetupRequired: true,
+			},
+			API: APITransportCapabilities{
+				UnixSocket: "/var/run/nanofused.sock",
+				TCPBind:    "0.0.0.0:8080",
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewTCPClient(server.URL, 5*time.Second, false)
+
+	capabilities, err := client.Capabilities(context.Background())
+	if err != nil {
+		t.Fatalf("Capabilities() error = %v", err)
+	}
+
+	if capabilities.Status != "ok" {
+		t.Errorf("expected status 'ok', got '%s'", capabilities.Status)
+	}
+
+	if !capabilities.Runtime.NativeRuntime {
+		t.Error("expected native runtime to be true")
+	}
+
+	if capabilities.API.TCPBind != "0.0.0.0:8080" {
+		t.Errorf("expected TCP bind '0.0.0.0:8080', got '%s'", capabilities.API.TCPBind)
+	}
+}
+
 func TestClient_ListVMs(t *testing.T) {
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

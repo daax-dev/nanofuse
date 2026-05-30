@@ -53,5 +53,5 @@ Read the matching file **before** you:
 - `magefile.go` — build/test/lint/CI automation (mage). `config.dev.yaml` — local dev daemon config.
 - `.github/workflows/` — CI (`ci.yaml`), release (`release.yaml`), PR comment (`pr-comment.yaml`).
 - `backlog.md` — task system (source of work intake). `docs/` — user + developer docs; `docs/building/` — WIP/implementation docs.
-- `.claude/CLAUDE.md` — extended repo-specific guidance (spec-driven dev, file-organization, no-stale-images). `.specify/` — jp-spec-kit artifacts and constitution.
+- `.claude/CLAUDE.md` — extended repo-specific guidance (Flowspec spec-driven dev, file-organization, no-stale-images). `.flowspec/` — Flowspec artifacts and constitution.
 - `test/` — integration and e2e tests. `systemd/`, `nanofused.service` — daemon service units.

@@ -41,6 +41,7 @@ npx @redocly/cli preview-docs openapi.yaml --port 8080
 
 ### Health
 - `GET /health` - Health check
+- `GET /capabilities` - Runtime host, KVM, Firecracker, and API transport capabilities
 
 ### Virtual Machines
 - `GET /vms` - List all VMs
@@ -117,7 +118,7 @@ All errors follow a consistent format:
 curl -X POST http://localhost:8080/images/pull \
   -H "Content-Type: application/json" \
   -d '{
-    "reference": "ghcr.io/daax-dev/nanofuse/base:latest"
+    "image_ref": "ghcr.io/daax-dev/nanofuse/base:latest"
   }'
 
 # Create a VM

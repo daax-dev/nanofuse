@@ -141,6 +141,7 @@ func setupHTTPRouter(server *Server) *http.ServeMux {
 
 	// Health endpoint
 	mux.HandleFunc("GET /health", server.handleHealth)
+	mux.HandleFunc("GET /capabilities", server.handleCapabilities)
 
 	// VM collection endpoints
 	mux.HandleFunc("GET /vms", server.handleListVMs)

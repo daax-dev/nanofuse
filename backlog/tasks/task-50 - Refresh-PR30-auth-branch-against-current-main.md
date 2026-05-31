@@ -4,7 +4,7 @@ title: Refresh PR30 auth branch against current main
 status: Done
 assignee: []
 created_date: '2026-05-30 23:18'
-updated_date: '2026-05-31 00:16'
+updated_date: '2026-05-31 00:26'
 labels:
   - pr30
   - auth
@@ -12,7 +12,7 @@ labels:
   - replacement-pr
 dependencies: []
 references:
-  - 'https://github.com/daax-dev/nanofuse/pull/49'
+  - 'https://github.com/daax-dev/nanofuse/pull/50'
 documentation:
   - api/README.md
   - config.dev.yaml
@@ -67,10 +67,12 @@ Follow-up replacement PR opened as #49 from the same branch after merging curren
 Fresh Copilot review on PR #49 identified an inaccurate README sentence about no-cert clients receiving JSON 401 after TLS RequireAndVerifyClientCert, and a non-portable absolute worktree path in task references. The README now distinguishes TLS handshake failure from middleware JSON 401 responses, and references use the branch name plus public PR URLs.
 
 TASK-50 references were further shortened to only the replacement PR URL so the stale multi-line Copilot anchor over the old references block no longer tracks an unrelated public URL line.
+
+Closed PR #49 was not merged after its Copilot issues were resolved and checks passed. Replacement PR #50 opened from the same branch with the same fixed head.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Replacement PR open: https://github.com/daax-dev/nanofuse/pull/49. Closed PR #48 was not merged, so fix/issues-2-3-4-v2 was updated with current origin/main via a normal merge commit, then hardened with explicit mTLS denial and client CA loading helpers. Fresh PR #49 Copilot comments were addressed by documenting that no-cert TCP clients fail the TLS handshake before HTTP JSON handling and by removing the non-portable absolute worktree path from task references. The branch still scopes auth to TCP mTLS SPIFFE URI SAN identity, rejects/ignores spoofed X-SPIFFE-ID, routes audit events through internal/logging.Logger, returns JSON 401 errors for middleware-level auth denials, and includes configured CA paths in read/parse errors. Validation passed: go test ./internal/api ./internal/config ./internal/types; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci. mage ci printed existing non-fatal gosec-not-found, no-tag git describe, and macOS linker warnings.
+Replacement PR open: https://github.com/daax-dev/nanofuse/pull/50. Closed PR #49 Copilot issues were already addressed: the README distinguishes TCP mTLS handshake failure from HTTP JSON UNAUTHORIZED middleware denial, and TASK-50 references no longer include local absolute worktree paths. The same branch fix/issues-2-3-4-v2 remains current with origin/main and scopes auth to TCP mTLS SPIFFE URI SAN identity, rejects/ignores spoofed X-SPIFFE-ID, routes audit events through internal/logging.Logger, returns JSON 401 errors for middleware-level auth denials, and includes configured CA paths in read/parse errors. Validation passed: go test ./internal/api ./internal/config ./internal/types; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci. Closed PR #49 GitHub checks passed before opening PR #50.
 <!-- SECTION:FINAL_SUMMARY:END -->

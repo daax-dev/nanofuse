@@ -26,6 +26,8 @@ type Credential struct {
 	Kind     string
 }
 
+const mtlsUnauthorizedMessage = "mTLS client certificate with SPIFFE identity is required"
+
 // CredentialFromContext retrieves the Credential stored by MTLSIdentityMiddleware.
 // It returns nil when no mTLS identity middleware ran for the request.
 func CredentialFromContext(ctx context.Context) *Credential {
@@ -46,13 +48,9 @@ func BuildAuthTLSConfig(cfg *config.AuthConfig) (*tls.Config, error) {
 		return nil, fmt.Errorf("failed to load API TLS key pair: %w", err)
 	}
 
-	caPEM, err := os.ReadFile(cfg.ClientCAFile) //nolint:gosec // operator-supplied daemon config path
+	clientCAs, err := loadClientCAPool(cfg.ClientCAFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read API client CA file: %w", err)
-	}
-	clientCAs := x509.NewCertPool()
-	if !clientCAs.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("failed to parse API client CA file %q", cfg.ClientCAFile)
+		return nil, err
 	}
 
 	return &tls.Config{
@@ -61,6 +59,18 @@ func BuildAuthTLSConfig(cfg *config.AuthConfig) (*tls.Config, error) {
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    clientCAs,
 	}, nil
+}
+
+func loadClientCAPool(path string) (*x509.CertPool, error) {
+	caPEM, err := os.ReadFile(path) //nolint:gosec // operator-supplied daemon config path
+	if err != nil {
+		return nil, fmt.Errorf("failed to read API client CA file %q: %w", path, err)
+	}
+	clientCAs := x509.NewCertPool()
+	if !clientCAs.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to parse API client CA file %q", path)
+	}
+	return clientCAs, nil
 }
 
 // MTLSIdentityMiddleware requires a verified client certificate containing a
@@ -73,8 +83,7 @@ func MTLSIdentityMiddleware(logger *logging.Logger, next http.Handler) http.Hand
 		cred, err := credentialFromTLS(r)
 		if err != nil {
 			auditCredential(logger, r, nil, false, err.Error())
-			types.WriteError(w, http.StatusUnauthorized, types.ErrUnauthorized,
-				"mTLS client certificate with SPIFFE identity is required", nil)
+			writeMTLSUnauthorized(w)
 			return
 		}
 
@@ -82,6 +91,10 @@ func MTLSIdentityMiddleware(logger *logging.Logger, next http.Handler) http.Hand
 		ctx := context.WithValue(r.Context(), ctxKeyCredential{}, cred)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func writeMTLSUnauthorized(w http.ResponseWriter) {
+	types.WriteError(w, http.StatusUnauthorized, types.ErrUnauthorized, mtlsUnauthorizedMessage, nil)
 }
 
 func credentialFromTLS(r *http.Request) (*Credential, error) {

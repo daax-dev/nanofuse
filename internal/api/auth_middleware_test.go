@@ -65,6 +65,12 @@ func assertUnauthorizedJSON(t *testing.T, w *httptest.ResponseRecorder) {
 	if response.Error.Code != types.ErrUnauthorized {
 		t.Fatalf("error code = %s, want %s", response.Error.Code, types.ErrUnauthorized)
 	}
+	if response.Error.Message != mtlsUnauthorizedMessage {
+		t.Fatalf("error message = %q, want %q", response.Error.Message, mtlsUnauthorizedMessage)
+	}
+	if response.Error.Details != nil {
+		t.Fatalf("error details = %#v, want nil", response.Error.Details)
+	}
 	if strings.Contains(response.Error.Message, "mTLS is required") {
 		t.Fatalf("error message leaked internal deny reason: %q", response.Error.Message)
 	}
@@ -213,6 +219,24 @@ func TestBuildAuthTLSConfigIncludesClientCAPathOnParseError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("BuildAuthTLSConfig returned nil error, want client CA parse error")
+	}
+	if !strings.Contains(err.Error(), caPath) {
+		t.Fatalf("error = %q, want client CA path %q", err.Error(), caPath)
+	}
+}
+
+func TestBuildAuthTLSConfigIncludesClientCAPathOnReadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	certPath, keyPath := writeTestKeyPair(t, tmpDir)
+	caPath := filepath.Join(tmpDir, "missing-client-ca.pem")
+
+	_, err := BuildAuthTLSConfig(&config.AuthConfig{
+		TLSCertFile:  certPath,
+		TLSKeyFile:   keyPath,
+		ClientCAFile: caPath,
+	})
+	if err == nil {
+		t.Fatal("BuildAuthTLSConfig returned nil error, want client CA read error")
 	}
 	if !strings.Contains(err.Error(), caPath) {
 		t.Fatalf("error = %q, want client CA path %q", err.Error(), caPath)

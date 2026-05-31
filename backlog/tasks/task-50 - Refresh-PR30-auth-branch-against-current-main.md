@@ -1,10 +1,10 @@
 ---
 id: TASK-50
 title: Refresh PR30 auth branch against current main
-status: Done
+status: In Progress
 assignee: []
 created_date: '2026-05-30 23:18'
-updated_date: '2026-05-30 23:41'
+updated_date: '2026-05-31 00:04'
 labels:
   - pr30
   - auth
@@ -44,12 +44,11 @@ Audit the PR30 branch fix/issues-2-3-4-v2 against origin/main after PR #46. Repl
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Use gh review-thread/REST data for closed PR #30 to separate outdated Copilot comments from comments still represented in the current diff.
-2. Inspect the current branch against origin/main for mTLS auth behavior, config validation, and spoofed-header protections that are under-tested or under-documented.
-3. Fix only branch-local current-head gaps: add explicit spoofed X-SPIFFE-ID rejection coverage, add config validation tests for TCP mTLS requirements, and tighten trust-boundary documentation/comments.
-4. Append a JSONL decision explaining the explicit header-spoofing/config-validation hardening and why stale policy/rotation Copilot comments are not reintroduced.
-5. Run gofmt, focused Go tests, diff checks, JSONL parsing, and mage ci.
-6. Commit, push fix/issues-2-3-4-v2, and open a replacement PR from the same branch with review audit and validation evidence.
+1. Merge origin/main into fix/issues-2-3-4-v2 with a normal merge commit to avoid rewriting the pushed branch history.
+2. Rework the PR48 auth feedback locations so the JSON 401 response and client CA parse-path behavior are explicit, test-covered, and not anchored to stale review lines.
+3. Update API/building docs, Backlog notes, and .logs/decisions/auth.jsonl for the follow-up scope.
+4. Run gofmt, focused go tests, JSONL parsing, git diff --check, and mage ci.
+5. Commit, push the same branch, and open a new replacement PR with current validation evidence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -62,6 +61,8 @@ Reopened on 2026-05-30 for replacement PR hardening after closed PR #30 retained
 Replacement hardening completed: closed PR #30 Copilot threads were stale/outdated against old commit f21a353; current-head fixes add spoofed X-SPIFFE-ID rejection/ignore coverage and TCP mTLS config validation tests. Validation: go test ./internal/api; go test ./internal/config; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci.
 
 Fresh Copilot review on replacement PR #48 identified plaintext auth errors, global slog audit logging, and missing CA path context. Scope revised to return standard JSON errors, route audit events through internal/logging.Logger, and include the CA path in parse errors.
+
+Reopened on 2026-05-30 after replacement PR #48 was closed without merge. Current origin/main now includes PR #47, so the same branch must absorb current main without history rewrite, make the PR48 auth fixes unambiguous for a fresh replacement PR, rerun local gates, push, and open a new PR from fix/issues-2-3-4-v2.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

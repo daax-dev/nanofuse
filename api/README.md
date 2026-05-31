@@ -83,7 +83,7 @@ When `auth.enabled` is true and `api.tcp_bind` is configured, the TCP API listen
 
 NanoFuse does not trust `X-SPIFFE-ID` or other client-controlled identity headers, does not implement an Aembit-style policy engine, and does not rotate SVIDs. Unix socket listeners remain local/plain unless a separate transport wrapper is configured outside the daemon.
 
-A request that only sends `X-SPIFFE-ID` without a verified client certificate is rejected with the standard JSON API error schema; if a verified certificate is present, the certificate URI SAN is the identity source and headers are ignored.
+On the TCP mTLS listener, a client that sends only `X-SPIFFE-ID` and no CA-verified client certificate fails the TLS handshake before HTTP handling. JSON `UNAUTHORIZED` responses apply to requests that reach the HTTP middleware but lack a valid SPIFFE URI SAN. If a verified certificate is present, the certificate URI SAN is the identity source and headers are ignored.
 
 ## Error Handling
 

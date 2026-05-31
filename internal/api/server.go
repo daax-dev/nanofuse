@@ -118,7 +118,7 @@ func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*stor
 }
 
 func selectedRuntimeDriver(cfg *config.Config) string {
-	if cfg.Runtime.Driver == "auto" || cfg.Runtime.Driver == "" {
+	if cfg == nil || cfg.Runtime.Driver == "auto" || cfg.Runtime.Driver == "" {
 		if goruntime.GOOS == "darwin" {
 			return applecontainer.DriverName
 		}

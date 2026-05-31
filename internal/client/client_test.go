@@ -66,6 +66,7 @@ func TestClient_Capabilities(t *testing.T) {
 			},
 			Runtime: RuntimeCapabilities{
 				NativeRuntime:        true,
+				Driver:               "firecracker",
 				FirecrackerBinary:    "/usr/local/bin/firecracker",
 				FirecrackerAvailable: true,
 				RootRequired:         true,
@@ -95,8 +96,42 @@ func TestClient_Capabilities(t *testing.T) {
 		t.Error("expected native runtime to be true")
 	}
 
+	if capabilities.Runtime.Driver != "firecracker" {
+		t.Errorf("expected runtime driver firecracker, got %q", capabilities.Runtime.Driver)
+	}
+
 	if capabilities.API.TCPBind != "0.0.0.0:8080" {
 		t.Errorf("expected TCP bind '0.0.0.0:8080', got '%s'", capabilities.API.TCPBind)
+	}
+}
+
+func TestRuntimeCapabilitiesJSONIncludesRequiredAndFalseDiagnostics(t *testing.T) {
+	payload, err := json.Marshal(RuntimeCapabilities{
+		Driver:  "firecracker",
+		Message: "test",
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if got["driver"] != "firecracker" {
+		t.Fatalf("driver = %#v, want firecracker", got["driver"])
+	}
+	for _, key := range []string{
+		"apple_container_available",
+		"apple_container_running",
+		"virtualization_framework_supported",
+	} {
+		if _, ok := got[key]; !ok {
+			t.Fatalf("%s omitted from JSON payload %s", key, payload)
+		}
+		if _, ok := got[key].(bool); !ok {
+			t.Fatalf("%s = %#v, want bool", key, got[key])
+		}
 	}
 }
 

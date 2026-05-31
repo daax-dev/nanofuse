@@ -89,13 +89,13 @@ type HostCapabilities struct {
 // RuntimeCapabilities describes the microVM runtime available to nanofused.
 type RuntimeCapabilities struct {
 	NativeRuntime                    bool   `json:"native_runtime"`
-	Driver                           string `json:"driver,omitempty"`
+	Driver                           string `json:"driver"`
 	FirecrackerBinary                string `json:"firecracker_binary"`
 	FirecrackerAvailable             bool   `json:"firecracker_available"`
 	AppleContainerBinary             string `json:"apple_container_binary,omitempty"`
-	AppleContainerAvailable          bool   `json:"apple_container_available,omitempty"`
-	AppleContainerRunning            bool   `json:"apple_container_running,omitempty"`
-	VirtualizationFrameworkSupported bool   `json:"virtualization_framework_supported,omitempty"`
+	AppleContainerAvailable          bool   `json:"apple_container_available"`
+	AppleContainerRunning            bool   `json:"apple_container_running"`
+	VirtualizationFrameworkSupported bool   `json:"virtualization_framework_supported"`
 	RootRequired                     bool   `json:"root_required"`
 	NetworkSetupRequired             bool   `json:"network_setup_required"`
 	Message                          string `json:"message"`

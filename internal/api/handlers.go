@@ -45,14 +45,13 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 	socketPath := ""
 	tcpBind := ""
 	firecrackerBinary := ""
-	driver := ""
+	driver := selectedRuntimeDriver(s.config)
 	appleContainerBinary := ""
 	appleContainerAutoStart := false
 	if s.config != nil {
 		socketPath = s.config.API.Socket
 		tcpBind = s.config.API.TCPBind
 		firecrackerBinary = s.config.Firecracker.BinaryPath
-		driver = selectedRuntimeDriver(s.config)
 		appleContainerBinary = s.config.Runtime.AppleContainer.BinaryPath
 		appleContainerAutoStart = s.config.Runtime.AppleContainer.AutoStart
 	}

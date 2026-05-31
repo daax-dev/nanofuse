@@ -116,6 +116,46 @@ func TestCapabilitiesEndpoint(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesEndpointIncludesRuntimeContractFieldsWithoutConfig(t *testing.T) {
+	server := &Server{
+		startTime: time.Now(),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/capabilities", nil)
+	w := httptest.NewRecorder()
+
+	server.handleCapabilities(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	runtimePayload, ok := response["runtime"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("runtime payload missing or wrong type: %#v", response["runtime"])
+	}
+	if got := runtimePayload["driver"]; got != selectedRuntimeDriver(nil) {
+		t.Fatalf("runtime.driver = %#v, want %q", got, selectedRuntimeDriver(nil))
+	}
+	for _, key := range []string{
+		"apple_container_available",
+		"apple_container_running",
+		"virtualization_framework_supported",
+	} {
+		if _, ok := runtimePayload[key]; !ok {
+			t.Fatalf("runtime.%s omitted from capabilities response", key)
+		}
+		if _, ok := runtimePayload[key].(bool); !ok {
+			t.Fatalf("runtime.%s = %#v, want bool", key, runtimePayload[key])
+		}
+	}
+}
+
 func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
 	tests := []struct {
 		name      string

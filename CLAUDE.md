@@ -22,6 +22,7 @@ Goal: Production-ready control plane — `nanofuse` CLI + `nanofused` daemon —
 ## Hard Guardrails (always apply)
 - Plan before any non-trivial change. Write the plan down. Wait for approval.
 - Never commit or merge directly to `main`.
+- Never update a GitHub PR after creation. Once a PR exists for a branch, create a new branch and a new PR for any further changes. Keep the repo pre-push PR immutability guard installed; do not bypass it.
 - Never commit secrets, tokens, keys, or `.env` files with live values.
 - No destructive git (`reset --hard`, force-push, branch delete) without explicit operator approval.
 - Never overwrite uncommitted user changes. Inspect existing patterns before editing.

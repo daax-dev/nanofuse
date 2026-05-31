@@ -33,6 +33,8 @@
 ## Pull Requests
 - Open a PR as soon as the branch has a meaningful commit. Draft is fine.
 - PR title = leading commit subject line.
+- PRs are immutable after creation: do not push additional commits to a PR head branch, do not amend the pushed commits, and do not edit the PR title/body/metadata. If any change is needed after PR creation, close that PR and create a fresh branch with a fresh PR.
+- Install the repo-local push guard before PR work: `git config core.hooksPath .githooks`. The `.githooks/pre-push` hook calls `scripts/guard-pr-updates.sh` and rejects pushes to any branch that already has a GitHub PR in any state.
 - PR body must include:
   - Problem statement.
   - Approach taken and alternatives considered.

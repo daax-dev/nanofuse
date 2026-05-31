@@ -115,6 +115,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-tray-windows.ps1 -ApiUrl 
 
 See [Tray App](TRAY_APP.md) for smoke mode and validation evidence.
 
+In the tray menu, select a cached image, then choose `Create and Start VM From Image`. This calls `POST /vms` followed by `POST /vms/{id}/start` against the configured Linux/KVM daemon.
+
 ## Vagrant API Path
 
 The development Vagrant VM forwards guest port `8080` to host port `18080` by default:

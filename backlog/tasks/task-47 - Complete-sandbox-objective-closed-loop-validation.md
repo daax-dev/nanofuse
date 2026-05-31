@@ -81,6 +81,8 @@ Deliver the repository objective from objective.md on the current branch only. N
 2026-05-31: Added `cmd/nanofuse-tray`, `internal/trayapp`, macOS/Windows launch scripts, and `docs/TRAY_APP.md`. Local macOS tests/build/smoke/bounded launch passed. Windows tray executable cross-built. vagrant-skill verify passed with KVM skipped, focused tray smoke passed inside the VM, and synced vagrant-skill `mage ci` passed. The local Parallels guest still reports `KVM_MISSING`, so no local Firecracker boot is claimed.
 
 2026-05-31: Merged current `origin/main` into `codex-goal`, resolved conflicts, reran local `mage ci`, reran `mage ci` inside the synced `daax-dev/vagrant-skill` Parallels VM, reran tray smoke inside the VM, and opened replacement PR https://github.com/daax-dev/nanofuse/pull/55.
+
+2026-05-31: Updated PR #55 after Copilot review and operator SlicerVM guidance so the tray app can select a cached container-derived image and create/start a VM through `nanofused`. Local focused tray tests/build/smoke, macOS bounded launch, local `mage ci`, vagrant-skill focused tray smoke, and vagrant-skill `mage ci` passed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -91,4 +93,6 @@ Completed sandbox objective validation work on branch `codex-goal` and opened re
 Follow-up on 2026-05-30: PR #46 now also includes the explicit API run path required by the operator: GET /capabilities, Mac/Windows API client docs, corrected OpenAPI examples, Vagrant host port forwarding for the guest API, sandbox API comparison, tray/menu-app requirements, and Flowspec artifact path corrections. Local Parallels Vagrant remains KVM-unavailable at /dev/kvm not found.
 
 Follow-up on 2026-05-31: Replacement PR https://github.com/daax-dev/nanofuse/pull/55 contains the real tray/menu app, one-line launch scripts, vagrant-skill validation, post-merge conflict resolution from `origin/main`, and refreshed JSONL validation evidence. Local and Vagrant `mage ci` passed after the merge. The local Apple Silicon Parallels VM remains usable for repo/API/tray validation but not Firecracker execution because `/dev/kvm` is absent.
+
+PR #55 follow-up after review: the tray app now includes the missing create/start-from-image workflow. The Mac launch point is `scripts/run-tray-macos.sh`; the implementation is `cmd/nanofuse-tray` plus `internal/trayapp`.
 <!-- SECTION:FINAL_SUMMARY:END -->

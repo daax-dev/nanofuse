@@ -11,8 +11,9 @@ import (
 )
 
 type fakeAPI struct {
-	calls []string
-	errAt string
+	calls     []string
+	errAt     string
+	createReq *client.CreateVMRequest
 }
 
 func (f *fakeAPI) Health(context.Context) (*client.HealthResponse, error) {
@@ -57,6 +58,12 @@ func (f *fakeAPI) ListImages(context.Context) (*client.ListImagesResponse, error
 	return &client.ListImagesResponse{
 		Images: []client.Image{{Digest: "sha256:abc", Tags: []string{"nanofuse-ci:latest"}}},
 	}, nil
+}
+
+func (f *fakeAPI) CreateVM(_ context.Context, req *client.CreateVMRequest) (*client.VM, error) {
+	f.calls = append(f.calls, "create:"+req.Image)
+	f.createReq = req
+	return &client.VM{ID: "vm-created", State: "created", Image: req.Image}, nil
 }
 
 func (f *fakeAPI) StartVM(context.Context, string) (*client.VM, error) {
@@ -157,6 +164,63 @@ func TestExecuteVMActionRejectsMissingVMID(t *testing.T) {
 	_, err := ExecuteVMAction(context.Background(), &fakeAPI{}, VMActionStart, " ")
 	if err == nil {
 		t.Fatal("ExecuteVMAction() error = nil")
+	}
+}
+
+func TestLaunchVMFromImageCreatesAndStartsVM(t *testing.T) {
+	api := &fakeAPI{}
+
+	vm, err := LaunchVMFromImage(context.Background(), api, "nanofuse-ci:latest")
+	if err != nil {
+		t.Fatalf("LaunchVMFromImage() error = %v", err)
+	}
+	wantCalls := []string{"create:nanofuse-ci:latest", "start"}
+	if !reflect.DeepEqual(api.calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", api.calls, wantCalls)
+	}
+	if vm.State != "running" {
+		t.Fatalf("state = %q, want running", vm.State)
+	}
+	if api.createReq.Config.VCPUs != DefaultVCPUs || api.createReq.Config.MemoryMiB != DefaultMemoryMiB {
+		t.Fatalf("config = %#v, want default resources", api.createReq.Config)
+	}
+	if api.createReq.Config.Network.Mode != DefaultNetworkMode {
+		t.Fatalf("network mode = %q, want %q", api.createReq.Config.Network.Mode, DefaultNetworkMode)
+	}
+}
+
+func TestLaunchVMFromImageRejectsMissingImage(t *testing.T) {
+	_, err := LaunchVMFromImage(context.Background(), &fakeAPI{}, " ")
+	if err == nil {
+		t.Fatal("LaunchVMFromImage() error = nil")
+	}
+}
+
+func TestVMActionReady(t *testing.T) {
+	readyStatus := &Status{
+		Capabilities: &client.CapabilitiesResponse{
+			Runtime: client.RuntimeCapabilities{NativeRuntime: true},
+		},
+	}
+
+	tests := []struct {
+		name   string
+		status *Status
+		want   bool
+	}{
+		{name: "ready", status: readyStatus, want: true},
+		{name: "nil status", status: nil, want: false},
+		{name: "status error", status: &Status{Error: "health failed", Capabilities: readyStatus.Capabilities}, want: false},
+		{name: "missing capabilities", status: &Status{}, want: false},
+		{name: "native runtime false", status: &Status{Capabilities: &client.CapabilitiesResponse{}}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := VMActionReady(tt.status); got != tt.want {
+				t.Fatalf("VMActionReady() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

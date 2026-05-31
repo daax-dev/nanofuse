@@ -35,6 +35,7 @@ type Status struct {
 type API interface {
 	Health(context.Context) (*client.HealthResponse, error)
 	Capabilities(context.Context) (*client.CapabilitiesResponse, error)
+	CreateVM(context.Context, *client.CreateVMRequest) (*client.VM, error)
 	ListVMs(context.Context, string) (*client.ListVMsResponse, error)
 	ListImages(context.Context) (*client.ListImagesResponse, error)
 	StartVM(context.Context, string) (*client.VM, error)
@@ -50,6 +51,12 @@ const (
 	VMActionStop   VMAction = "stop"
 	VMActionKill   VMAction = "kill"
 	VMActionDelete VMAction = "delete"
+)
+
+const (
+	DefaultVCPUs       = 2
+	DefaultMemoryMiB   = 512
+	DefaultNetworkMode = "nat"
 )
 
 func ConfigFromEnv() Config {
@@ -153,6 +160,36 @@ func ExecuteVMAction(ctx context.Context, api API, action VMAction, vmID string)
 	}
 }
 
+func LaunchVMFromImage(ctx context.Context, api API, imageRef string) (*client.VM, error) {
+	imageRef = strings.TrimSpace(imageRef)
+	if imageRef == "" {
+		return nil, fmt.Errorf("image reference is required")
+	}
+
+	vm, err := api.CreateVM(ctx, &client.CreateVMRequest{
+		Image: imageRef,
+		Config: client.VMConfig{
+			VCPUs:     DefaultVCPUs,
+			MemoryMiB: DefaultMemoryMiB,
+			Network: client.NetworkConfig{
+				Mode: DefaultNetworkMode,
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create VM from image %q: %w", imageRef, err)
+	}
+	if vm == nil || strings.TrimSpace(vm.ID) == "" {
+		return nil, fmt.Errorf("create VM from image %q returned no VM id", imageRef)
+	}
+
+	started, err := api.StartVM(ctx, vm.ID)
+	if err != nil {
+		return nil, fmt.Errorf("start VM %q: %w", vm.ID, err)
+	}
+	return started, nil
+}
+
 func RuntimeSummary(status *Status) string {
 	if status == nil {
 		return "unknown"
@@ -170,6 +207,13 @@ func RuntimeSummary(status *Status) string {
 		return status.Capabilities.Runtime.Message
 	}
 	return "runtime unavailable"
+}
+
+func VMActionReady(status *Status) bool {
+	return status != nil &&
+		status.Error == "" &&
+		status.Capabilities != nil &&
+		status.Capabilities.Runtime.NativeRuntime
 }
 
 func firstNonEmpty(values ...string) string {

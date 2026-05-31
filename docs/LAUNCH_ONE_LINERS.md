@@ -2,7 +2,7 @@
 
 Nanofuse VM execution runs on a Linux/KVM host. macOS and Windows are API clients only; they do not run Firecracker locally.
 
-`nanofuse-tray` now ships as a minimal macOS menu bar / Windows tray API client. It manages health, capabilities, VM list, image list, and VM start/stop/kill/delete through `nanofused`.
+`nanofuse-tray` now ships as a minimal macOS menu bar / Windows tray API client. It manages health, capabilities, VM list, image list, create/start from selected container-derived image, and VM start/stop/kill/delete through `nanofused`.
 
 Primary runtime requirement: Firecracker requires Linux KVM and read/write access to `/dev/kvm`. Apple documents nested virtualization support as available on Macs with M3 chips and later. Parallels documents nested virtualization as not supported on Mac computers with Apple silicon for its current nested Hyper-V path, and the local Parallels VM on this Apple M2 Max does not expose `/dev/kvm`.
 

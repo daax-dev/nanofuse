@@ -17,6 +17,7 @@ The current implementation adds a minimal Go tray client at `cmd/nanofuse-tray` 
 | Health/capabilities | Implemented through `GET /health` and `GET /capabilities`. |
 | VM list | Implemented through `GET /vms`, limited to 10 menu rows. |
 | Image list | Implemented through `GET /images`, limited to 10 menu rows. |
+| Create/start VM from image | Implemented through `POST /vms` followed by `POST /vms/{id}/start` for the selected image. |
 | VM start/stop | Implemented through `POST /vms/{id}/start` and `POST /vms/{id}/stop`. |
 | VM kill/delete | Implemented with second-click confirmation through `POST /vms/{id}/kill` and `DELETE /vms/{id}`. |
 | Smoke mode | Implemented with `nanofuse-tray --smoke --api-url ...` for non-GUI validation. |
@@ -34,7 +35,7 @@ The current implementation adds a minimal Go tray client at `cmd/nanofuse-tray` 
 | Connection profiles | Add/edit/select API profiles, including URL, timeout, optional tunnel instructions, and future auth material reference. |
 | Health and capabilities | Show `/health` and `/capabilities`; disable VM actions when `native_runtime` is false or API is unreachable. |
 | VM list | Show VM name, ID, state, image, CPU, memory, uptime, owner/group identity, and last update. |
-| VM actions | Create, start, stop, kill, delete, pause/resume where implemented, and open logs. Current app implements start, stop, kill, and delete for an existing selected VM. |
+| VM actions | Create from selected image, start, stop, kill, delete, pause/resume where implemented, and open logs. Current app implements create/start from selected image plus start, stop, kill, and delete for an existing selected VM. |
 | Image list | Show pulled images, tags, architecture, size, labels, and delete where safe. |
 | Image pull | Pull image by reference and poll `/images/jobs/{id}` with progress. |
 | Logs | Tail VM console logs with copy/save controls and no hidden credential display. |

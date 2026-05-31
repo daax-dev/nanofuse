@@ -1,6 +1,6 @@
 # Nanofuse Tray App
 
-`nanofuse-tray` is a macOS menu bar and Windows tray API client. It does not run Firecracker, edit Nanofuse storage, shell into the runtime host, or manipulate TAP/KVM directly. Every status check and VM action goes through `nanofused`.
+`nanofuse-tray` is a macOS menu bar and Windows tray API client. It does not run Firecracker, edit Nanofuse storage, shell into the runtime host, or manipulate TAP/KVM directly. Every status check, image launch, and VM action goes through `nanofused`.
 
 ## Requirements
 
@@ -52,7 +52,7 @@ Windows:
 
 ## Implemented Controls
 
-The current tray app shows the configured endpoint, health, runtime capability summary, up to 10 VMs, and up to 10 cached images. Selecting a VM enables start, stop, kill, and delete actions through the REST API. Kill and delete require a second click within 10 seconds.
+The current tray app shows the configured endpoint, health, runtime capability summary, up to 10 VMs, and up to 10 cached images. Selecting an image enables `Create and Start VM From Image`, which creates a VM from that container-derived Nanofuse image and starts it through the API. Selecting a VM enables start, stop, kill, and delete actions through the REST API. VM actions stay disabled when the daemon is unreachable or `/capabilities` reports `native_runtime=false`. Kill and delete require a second click within 10 seconds.
 
 The app uses these endpoints:
 
@@ -60,6 +60,7 @@ The app uses these endpoints:
 - `GET /capabilities`
 - `GET /vms`
 - `GET /images`
+- `POST /vms`
 - `POST /vms/{id}/start`
 - `POST /vms/{id}/stop`
 - `POST /vms/{id}/kill`

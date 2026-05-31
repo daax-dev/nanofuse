@@ -94,6 +94,6 @@ The CLI reads these environment variables:
 
 ## Tray App
 
-`nanofuse-tray` is implemented as an API client only. It must not call Firecracker, manipulate TAP devices, edit Nanofuse storage, or shell into the runtime host directly. The current app shows daemon health/capabilities, VM list, image list, and VM start/stop/kill/delete actions backed by `api/openapi.yaml`.
+`nanofuse-tray` is implemented as an API client only. It must not call Firecracker, manipulate TAP devices, edit Nanofuse storage, or shell into the runtime host directly. The current app shows daemon health/capabilities, VM list, image list, create/start from selected image, and VM start/stop/kill/delete actions backed by `api/openapi.yaml`.
 
 See [Tray App](TRAY_APP.md).

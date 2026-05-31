@@ -14,9 +14,15 @@ import (
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
-const appleContainerSystemStatusTimeout = 2 * time.Second
+const (
+	appleContainerSystemStatusTimeout = 2 * time.Second
+	appleVirtualizationProbeTimeout   = 2 * time.Second
+)
 
-var appleContainerSystemStatusCommand = exec.CommandContext
+var (
+	appleContainerSystemStatusCommand = exec.CommandContext
+	appleVirtualizationSupportCommand = exec.CommandContext
+)
 
 // handleHealth handles the health check endpoint (GET /health)
 // Method validation is handled by the router using Go 1.22+ patterns
@@ -63,9 +69,9 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 	if driver == applecontainer.DriverName && appleContainerAvailable {
 		appleContainerRunning = appleContainerSystemRunning(appleContainerBinary)
 	}
-	virtualizationSupported := runtime.GOOS == "darwin" && appleContainerAvailable
+	virtualizationSupported := appleVirtualizationFrameworkSupported(runtime.GOOS)
 	appleContainerReady := driver == applecontainer.DriverName &&
-		appleContainerNativeReady(runtime.GOOS, appleContainerAvailable, appleContainerRunning, appleContainerAutoStart)
+		appleContainerNativeReady(runtime.GOOS, appleContainerAvailable, virtualizationSupported, appleContainerRunning, appleContainerAutoStart)
 	nativeRuntime := (driver == "firecracker" && runtime.GOOS == "linux" && kvmReadWrite && firecrackerAvailable) ||
 		appleContainerReady
 
@@ -114,8 +120,24 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 	}
 }
 
-func appleContainerNativeReady(goos string, available, running, autoStart bool) bool {
-	return goos == "darwin" && available && (running || autoStart)
+func appleContainerNativeReady(goos string, available, virtualizationSupported, running, autoStart bool) bool {
+	return goos == "darwin" && available && virtualizationSupported && (running || autoStart)
+}
+
+func appleVirtualizationFrameworkSupported(goos string) bool {
+	if goos != "darwin" {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), appleVirtualizationProbeTimeout)
+	defer cancel()
+
+	cmd := appleVirtualizationSupportCommand(ctx, "sysctl", "-n", "kern.hv_support")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "1"
 }
 
 func appleContainerSystemRunning(path string) bool {

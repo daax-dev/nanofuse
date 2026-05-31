@@ -679,6 +679,9 @@ components:
         - driver
         - firecracker_binary
         - firecracker_available
+        - apple_container_available
+        - apple_container_running
+        - virtualization_framework_supported
         - root_required
         - network_setup_required
         - message

@@ -623,7 +623,7 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request, vmID str
 	}()
 
 	// Stop VM if running
-	if vm.State == types.StateRunning || vm.State == types.StatePaused {
+	if (vm.State == types.StateRunning || vm.State == types.StatePaused) && vmHasRuntimeHandle(vm) {
 		if err := s.runtimeManager.Kill(vm); err != nil {
 			s.logger.Printf("ERROR: Failed to kill VM before delete: %v", err)
 			types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,

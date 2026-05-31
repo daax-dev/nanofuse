@@ -161,6 +161,7 @@ func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
 		name      string
 		goos      string
 		available bool
+		vfSupport bool
 		running   bool
 		autoStart bool
 		want      bool
@@ -169,6 +170,7 @@ func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
 			name:      "running service is ready",
 			goos:      "darwin",
 			available: true,
+			vfSupport: true,
 			running:   true,
 			autoStart: false,
 			want:      true,
@@ -177,14 +179,25 @@ func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
 			name:      "auto start can become ready",
 			goos:      "darwin",
 			available: true,
+			vfSupport: true,
 			running:   false,
 			autoStart: true,
 			want:      true,
 		},
 		{
+			name:      "unsupported virtualization framework is not ready",
+			goos:      "darwin",
+			available: true,
+			vfSupport: false,
+			running:   true,
+			autoStart: true,
+			want:      false,
+		},
+		{
 			name:      "stopped service without auto start is not ready",
 			goos:      "darwin",
 			available: true,
+			vfSupport: true,
 			running:   false,
 			autoStart: false,
 			want:      false,
@@ -193,6 +206,7 @@ func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
 			name:      "missing CLI is not ready",
 			goos:      "darwin",
 			available: false,
+			vfSupport: true,
 			running:   true,
 			autoStart: true,
 			want:      false,
@@ -201,6 +215,7 @@ func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
 			name:      "linux does not use apple container readiness",
 			goos:      "linux",
 			available: true,
+			vfSupport: true,
 			running:   true,
 			autoStart: true,
 			want:      false,
@@ -209,11 +224,60 @@ func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := appleContainerNativeReady(tt.goos, tt.available, tt.running, tt.autoStart)
+			got := appleContainerNativeReady(tt.goos, tt.available, tt.vfSupport, tt.running, tt.autoStart)
 			if got != tt.want {
 				t.Fatalf("appleContainerNativeReady() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestAppleVirtualizationFrameworkSupportedProbesHypervisorSupport(t *testing.T) {
+	oldCommand := appleVirtualizationSupportCommand
+	t.Cleanup(func() {
+		appleVirtualizationSupportCommand = oldCommand
+	})
+
+	t.Setenv("NANOFUSE_TEST_APPLE_VIRTUALIZATION_SUPPORT", "1")
+	called := false
+	appleVirtualizationSupportCommand = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+		called = true
+		if name != "sysctl" {
+			t.Fatalf("command name = %q, want sysctl", name)
+		}
+		if len(arg) != 2 || arg[0] != "-n" || arg[1] != "kern.hv_support" {
+			t.Fatalf("command args = %#v, want -n kern.hv_support", arg)
+		}
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("expected virtualization support command to receive a deadline")
+		}
+		testBinary, err := os.Executable()
+		if err != nil {
+			t.Fatalf("os.Executable: %v", err)
+		}
+		return exec.CommandContext(ctx, testBinary, "-test.run=TestAppleVirtualizationSupportHelper", "--")
+	}
+
+	if !appleVirtualizationFrameworkSupported("darwin") {
+		t.Fatal("expected darwin host with kern.hv_support=1 to support virtualization framework")
+	}
+	if !called {
+		t.Fatal("expected virtualization support command to be called")
+	}
+
+	called = false
+	if appleVirtualizationFrameworkSupported("linux") {
+		t.Fatal("expected non-darwin host to report virtualization framework unsupported")
+	}
+	if called {
+		t.Fatal("expected non-darwin host to skip virtualization support command")
+	}
+}
+
+func TestAppleVirtualizationSupportHelper(t *testing.T) {
+	if value := os.Getenv("NANOFUSE_TEST_APPLE_VIRTUALIZATION_SUPPORT"); value != "" {
+		fmt.Println(value)
+		os.Exit(0)
 	}
 }
 

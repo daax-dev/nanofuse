@@ -357,3 +357,67 @@ func TestHandleDeleteVMKeepsMetadataWhenRuntimeDeleteFails(t *testing.T) {
 		t.Fatal("VM metadata was deleted after runtime cleanup failure")
 	}
 }
+
+func TestHandleDeleteVMWithoutRuntimeHandleSkipsKillAndDeletes(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("db.Close: %v", err)
+		}
+	}()
+
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+
+	runtimeManager := &runtimeImageProviderStub{}
+	server := &Server{
+		config:         &config.Config{Storage: config.StorageConfig{DataDir: t.TempDir()}},
+		db:             db,
+		logger:         logger,
+		runtimeManager: runtimeManager,
+	}
+	vm := &types.VM{
+		ID:           "vm-delete-no-runtime-handle",
+		Name:         "delete-no-runtime-handle",
+		State:        types.StateRunning,
+		Image:        "docker.io/library/alpine:3.20",
+		ImageDigest:  "sha256:test",
+		Architecture: "arm64",
+		Config: types.VMConfig{
+			VCPUs:     1,
+			MemoryMiB: 256,
+			Network:   types.NetworkConfig{Mode: "nat"},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := db.CreateVM(vm); err != nil {
+		t.Fatalf("CreateVM: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/vms/"+vm.ID, nil)
+	rec := httptest.NewRecorder()
+	server.handleDeleteVM(rec, req, vm.ID)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if runtimeManager.killCalls != 0 {
+		t.Fatalf("runtime kill calls = %d, want 0", runtimeManager.killCalls)
+	}
+	if runtimeManager.deleteCalls != 1 {
+		t.Fatalf("runtime delete calls = %d, want 1", runtimeManager.deleteCalls)
+	}
+	got, err := db.GetVM(vm.ID)
+	if err != nil {
+		t.Fatalf("GetVM: %v", err)
+	}
+	if got != nil {
+		t.Fatal("VM metadata was not deleted")
+	}
+}

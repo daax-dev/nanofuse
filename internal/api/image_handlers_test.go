@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"runtime"
@@ -82,8 +83,12 @@ type runtimeImageProviderStub struct {
 	err         error
 	killErr     error
 	deleteErr   error
+	execResult  *types.VMExecResult
+	execErr     error
 	killCalls   int
 	deleteCalls int
+	execCalls   int
+	execCommand []string
 }
 
 func (r *runtimeImageProviderStub) ResolveImage(_ string) (*types.Image, error) {
@@ -128,3 +133,15 @@ func (r *runtimeImageProviderStub) CreateSnapshot(*types.VM, string, string) err
 func (r *runtimeImageProviderStub) GetConsoleLogs(*types.VM, int) ([]byte, error) { return nil, nil }
 
 func (r *runtimeImageProviderStub) CleanupNetwork(*types.VM) error { return nil }
+
+func (r *runtimeImageProviderStub) Exec(_ context.Context, _ *types.VM, command []string) (*types.VMExecResult, error) {
+	r.execCalls++
+	r.execCommand = append([]string(nil), command...)
+	if r.execErr != nil {
+		return nil, r.execErr
+	}
+	if r.execResult != nil {
+		return r.execResult, nil
+	}
+	return &types.VMExecResult{Command: command}, nil
+}

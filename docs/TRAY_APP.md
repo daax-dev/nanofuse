@@ -59,7 +59,7 @@ Windows:
 
 ## Implemented Controls
 
-The current tray app shows the configured endpoint, health, runtime capability summary, up to 10 VMs, and up to 10 cached images. Selecting an image enables `Create and Start VM From Image`, which creates a VM from that container-derived Nanofuse image and starts it through the API. On macOS this launches the selected OCI image through Apple's container runtime as a local Linux microVM. Selecting a VM enables start, stop, kill, and delete actions through the REST API. VM actions stay disabled when the daemon is unreachable or `/capabilities` reports `native_runtime=false`. Kill and delete require a second click within 10 seconds.
+The current tray app shows the configured endpoint, health, runtime capability summary, up to 25 VMs, and up to 25 cached images. VM rows include state and configured port forwards. Selecting an image enables `Create and Start VM From Image`, which creates a VM from that container-derived Nanofuse image and starts it through the API. On macOS this launches the selected OCI image through Apple's container runtime as a local Linux microVM. Selecting a VM enables start, stop, kill, and delete actions through the REST API. VM actions stay disabled when the daemon is unreachable or `/capabilities` reports `native_runtime=false`. Kill and delete require a second click within 10 seconds.
 
 The app uses these endpoints:
 
@@ -68,6 +68,7 @@ The app uses these endpoints:
 - `GET /vms`
 - `GET /images`
 - `POST /vms`
+- `POST /vms/{id}/exec`
 - `POST /vms/{id}/start`
 - `POST /vms/{id}/stop`
 - `POST /vms/{id}/kill`
@@ -86,4 +87,4 @@ Validated on 2026-05-31 from this Mac:
 - `./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s`
 - `./scripts/run-tray-macos.sh --help`
 - API lifecycle on macOS Apple container runtime:
-  `POST /vms` with `alpine:3.20`, `POST /vms/{id}/start`, `container exec <runtime.external_id> uname -a`, `POST /vms/{id}/stop`, `DELETE /vms/{id}`. The guest reported Linux `6.12.28` on `aarch64`; no `nf-*` runtime containers remained after delete.
+  `POST /vms` with `alpine:3.20`, `POST /vms/{id}/start`, `nanofuse vm ports`, `nanofuse vm exec <vm> -- uname -a`, `POST /vms/{id}/stop`, `DELETE /vms/{id}`. The guest reported Linux `6.12.28` on `aarch64`; no test VM metadata remained after delete.

@@ -111,6 +111,10 @@ Tray app:
 powershell -ExecutionPolicy Bypass -File .\scripts\run-tray-windows.ps1 -ApiUrl "$env:NANOFUSE_API_URL"
 ```
 
+## Daily Operations
+
+For the exact commands to see published ports, execute commands inside running VMs through the API, launch multiple VMs, and enable more launchable OCI images, see [Operating Local MicroVMs](OPERATING_LOCAL_MICROVMS.md).
+
 ## Vagrant From a Client Host
 
 The Vagrant development environment forwards host `127.0.0.1:18080` to guest `8080`:

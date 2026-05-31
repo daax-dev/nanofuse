@@ -224,6 +224,21 @@ type StopRequest struct {
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 }
 
+// VMExecRequest represents a command execution request for a running VM.
+type VMExecRequest struct {
+	Command        []string `json:"command"`
+	TimeoutSeconds *int     `json:"timeout_seconds,omitempty"`
+}
+
+// VMExecResult represents the result of executing a command in a VM.
+type VMExecResult struct {
+	Command   []string `json:"command"`
+	ExitCode  int      `json:"exit_code"`
+	Stdout    string   `json:"stdout"`
+	Stderr    string   `json:"stderr"`
+	RuntimeID string   `json:"runtime_id,omitempty"`
+}
+
 // PullImageRequest represents image pull request
 type PullImageRequest struct {
 	ImageRef string `json:"image_ref"`

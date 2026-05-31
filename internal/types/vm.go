@@ -162,6 +162,21 @@ type ResumeVMRequest struct {
 	SnapshotID *string `json:"snapshot_id,omitempty"`
 }
 
+// VMExecRequest represents a command execution request for a running VM.
+type VMExecRequest struct {
+	Command        []string `json:"command"`
+	TimeoutSeconds *int     `json:"timeout_seconds,omitempty"`
+}
+
+// VMExecResult represents the result of executing a command in a VM.
+type VMExecResult struct {
+	Command   []string `json:"command"`
+	ExitCode  int      `json:"exit_code"`
+	Stdout    string   `json:"stdout"`
+	Stderr    string   `json:"stderr"`
+	RuntimeID string   `json:"runtime_id,omitempty"`
+}
+
 // ListVMsResponse represents a list of VMs
 type ListVMsResponse struct {
 	VMs   []VMListItem `json:"vms"`
@@ -170,15 +185,16 @@ type ListVMsResponse struct {
 
 // VMListItem represents a VM in list view
 type VMListItem struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	State         VMState   `json:"state"`
-	Image         string    `json:"image"`
-	ImageDigest   string    `json:"image_digest"`
-	Architecture  string    `json:"architecture"`
-	Config        VMConfig  `json:"config"`
-	CreatedAt     time.Time `json:"created_at"`
-	UptimeSeconds *int      `json:"uptime_seconds,omitempty"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	State         VMState    `json:"state"`
+	Image         string     `json:"image"`
+	ImageDigest   string     `json:"image_digest"`
+	Architecture  string     `json:"architecture"`
+	Config        VMConfig   `json:"config"`
+	Runtime       *VMRuntime `json:"runtime,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UptimeSeconds *int       `json:"uptime_seconds,omitempty"`
 
 	// SPIFFE human attribution (D025 format)
 	OwnerUserID string `json:"owner_user_id,omitempty"`

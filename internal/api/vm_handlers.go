@@ -23,6 +23,11 @@ var (
 	errRuntimeEgressPolicyUnsupported = errors.New("runtime-managed networking does not support nanofuse egress_policy")
 )
 
+const (
+	defaultExecTimeoutSeconds = 30
+	maxExecTimeoutSeconds     = 600
+)
+
 // handleListVMs lists all VMs
 func (s *Server) handleListVMs(w http.ResponseWriter, r *http.Request) {
 	stateFilter := r.URL.Query().Get("state")
@@ -44,6 +49,7 @@ func (s *Server) handleListVMs(w http.ResponseWriter, r *http.Request) {
 			ImageDigest:  vm.ImageDigest,
 			Architecture: vm.Architecture,
 			Config:       vm.Config,
+			Runtime:      vm.Runtime,
 			CreatedAt:    vm.CreatedAt,
 		}
 
@@ -962,6 +968,13 @@ func vmHasRuntimeHandle(vm *types.VM) bool {
 	return vm != nil && vm.Runtime != nil && (vm.Runtime.PID != 0 || vm.Runtime.ExternalID != "")
 }
 
+func normalizeExecCommand(command []string) []string {
+	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
+		return nil
+	}
+	return append([]string(nil), command...)
+}
+
 // handleVMPauseByPath handles POST /vms/{id}/pause using path parameters
 func (s *Server) handleVMPauseByPath(w http.ResponseWriter, r *http.Request) {
 	vmID := r.PathValue("id")
@@ -1155,6 +1168,86 @@ func (s *Server) handleVMLogsByPath(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write(logs); err != nil { //nolint:gosec // text/plain + nosniff prevents content sniffing
 		s.logger.Printf("WARN: Failed to write logs response: %v", err)
 	}
+}
+
+// handleVMExecByPath handles POST /vms/{id}/exec using path parameters.
+func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
+	vmID := r.PathValue("id")
+	if vmID == "" {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest, "VM ID is required", nil)
+		return
+	}
+
+	var req types.VMExecRequest
+	if err := readJSON(r, &req); err != nil {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest, "Invalid request body", nil)
+		return
+	}
+
+	command := normalizeExecCommand(req.Command)
+	if len(command) == 0 {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest, "command is required", nil)
+		return
+	}
+
+	timeoutSeconds := defaultExecTimeoutSeconds
+	if req.TimeoutSeconds != nil {
+		timeoutSeconds = *req.TimeoutSeconds
+	}
+	if timeoutSeconds <= 0 || timeoutSeconds > maxExecTimeoutSeconds {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+			fmt.Sprintf("timeout_seconds must be between 1 and %d", maxExecTimeoutSeconds), nil)
+		return
+	}
+
+	vm, err := s.db.GetVM(vmID)
+	if err != nil {
+		s.logger.Printf("ERROR: Failed to get VM: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to get VM", nil)
+		return
+	}
+	if vm == nil {
+		types.WriteError(w, http.StatusNotFound, types.ErrVMNotFound,
+			fmt.Sprintf("Virtual machine with ID '%s' does not exist", vmID),
+			map[string]interface{}{"vm_id": vmID})
+		return
+	}
+	if vm.State != types.StateRunning {
+		types.WriteError(w, http.StatusConflict, types.ErrInvalidStateTransition,
+			fmt.Sprintf("Cannot exec in VM in state '%s'", vm.State),
+			map[string]interface{}{"current_state": vm.State})
+		return
+	}
+	if !vmHasRuntimeHandle(vm) {
+		types.WriteError(w, http.StatusConflict, types.ErrInvalidStateTransition,
+			"Cannot exec because VM runtime handle is unavailable", map[string]interface{}{"vm_id": vm.ID})
+		return
+	}
+
+	execer, ok := s.runtimeManager.(vmm.CommandExecutor)
+	if !ok {
+		types.WriteError(w, http.StatusNotImplemented, types.ErrUnsupportedOperation,
+			"Runtime does not support VM exec", map[string]interface{}{"vm_id": vm.ID})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+
+	result, err := execer.Exec(ctx, vm, command)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			types.WriteError(w, http.StatusGatewayTimeout, types.ErrServiceUnavailable,
+				"VM exec timed out", map[string]interface{}{"vm_id": vm.ID, "timeout_seconds": timeoutSeconds})
+			return
+		}
+		s.logger.Printf("ERROR: Failed to exec in VM: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			"Failed to exec in VM", map[string]interface{}{"vm_id": vm.ID})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // handleVMProcessExit handles VM process termination

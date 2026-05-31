@@ -110,7 +110,7 @@ An operator on macOS or Windows can start a Nanofuse tray/menu app, point it at 
 **Acceptance Scenarios**:
 
 1. **Given** a reachable `nanofused` API, **When** the tray app starts, **Then** it shows daemon health and runtime capability state.
-2. **Given** VMs exist in the daemon API, **When** the operator opens the VM menu, **Then** the app lists VM state and exposes start, stop, kill, and delete actions through API calls.
+2. **Given** VMs exist in the daemon API, **When** the operator opens the VM menu, **Then** the app lists VM state, configured port forwards, and exposes start, stop, kill, and delete actions through API calls.
 3. **Given** images exist in the daemon API, **When** the operator opens the image menu, **Then** the app lists cached image references and exposes image pull status or refresh behavior through API calls.
 4. **Given** the daemon is unreachable, **When** the tray app starts or refreshes, **Then** it reports the configured endpoint and keeps destructive actions disabled.
 
@@ -142,6 +142,8 @@ An operator on macOS or Windows can start a Nanofuse tray/menu app, point it at 
 - **FR-012**: System MUST document Mac local runtime instructions and Windows client instructions for running against a reachable daemon.
 - **FR-013**: System MUST ship a minimal API-only tray/menu app entry point for macOS and Windows that never touches Firecracker sockets, TAP devices, daemon storage, or host hypervisor tooling directly.
 - **FR-014**: System MUST provide a non-GUI smoke mode for the tray app so API behavior can be tested in CI and Vagrant without relying on desktop interaction.
+- **FR-015**: System MUST expose configured VM port forwards through operator-facing CLI/tray surfaces without requiring raw JSON inspection.
+- **FR-016**: System MUST provide daemon-mediated command execution for runtime backends that support it, while documenting that SSH depends on guest image contents and port forwarding.
 
 ### Key Entities
 
@@ -165,3 +167,4 @@ An operator on macOS or Windows can start a Nanofuse tray/menu app, point it at 
 - **SC-008**: The tray/menu app has unit tests or smoke tests proving it uses the Nanofuse API for health, capabilities, VMs, and images.
 - **SC-009**: The required Vagrant evidence uses `daax-dev/vagrant-skill` for this branch, with the exact KVM/runtime result recorded.
 - **SC-010**: macOS local validation proves an API-created VM starts through Apple `container`, runs a Linux guest kernel, stops, deletes, and leaves no stale runtime container.
+- **SC-011**: Local validation proves `nanofuse vm ports` shows configured forwards and `nanofuse vm exec` executes through the Nanofuse API against a running macOS Apple-container VM.

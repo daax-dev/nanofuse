@@ -60,6 +60,13 @@
 - [x] T035 Update Backlog acceptance criteria and final summaries
 - [x] T036 Commit, push, and update PR
 
+## Phase 8: Operator Port, Exec, and Image Workflow Gaps
+
+- [x] T037 Add daemon-mediated VM exec API/client/CLI support for runtimes that support it
+- [x] T038 Surface configured VM port forwards in CLI list/status/ports output and tray VM rows
+- [x] T039 Document local commands for ports, exec/SSH, multiple VMs, and image enablement
+- [x] T040 Validate focused tests, `mage ci`, and macOS Apple-container exec/ports closed loop
+
 ## Dependencies
 
 - T001-T005 block implementation.
@@ -69,3 +76,4 @@
 - T021-T025 depend on T018 because the tray app uses the API client boundary.
 - T026-T030 depend on T018 and T021 because the macOS runtime is managed through the same API and tray launch path.
 - T031-T036 run after all code and docs are complete.
+- T037-T040 run on the same branch after TASK-51 and must complete before a replacement PR is opened.

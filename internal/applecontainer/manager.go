@@ -2,6 +2,7 @@ package applecontainer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,6 +25,7 @@ const (
 )
 
 type commandRunner func(args ...string) ([]byte, error)
+type execRunner func(ctx context.Context, args ...string) ([]byte, []byte, int, error)
 
 // Manager controls macOS lightweight Linux VMs through Apple's container CLI.
 type Manager struct {
@@ -32,6 +34,7 @@ type Manager struct {
 	autoStart      bool
 	defaultCommand string
 	runCommand     commandRunner
+	execCommand    execRunner
 	onProcessExit  vmm.ProcessExitHandler
 	watchMu        sync.Mutex
 	watching       map[string]struct{}
@@ -55,6 +58,7 @@ func NewManager(cfg config.AppleContainerRuntimeConfig, dataDir string) *Manager
 		watching:       make(map[string]struct{}),
 	}
 	m.runCommand = m.execContainer
+	m.execCommand = m.execContainerCommand
 	return m
 }
 
@@ -66,6 +70,28 @@ func (m *Manager) execContainer(args ...string) ([]byte, error) {
 		return out, fmt.Errorf("container %s failed: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return out, nil
+}
+
+func (m *Manager) execContainerCommand(ctx context.Context, args ...string) ([]byte, []byte, int, error) {
+	// #nosec G204 -- binaryPath is trusted daemon configuration; command args execute inside the selected VM.
+	cmd := exec.CommandContext(ctx, m.binaryPath, args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	exitCode := 0
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
+	if err != nil {
+		if _, ok := err.(*exec.ExitError); ok {
+			return stdout.Bytes(), stderr.Bytes(), exitCode, nil
+		}
+		return stdout.Bytes(), stderr.Bytes(), exitCode, err
+	}
+	return stdout.Bytes(), stderr.Bytes(), exitCode, nil
 }
 
 // SetProcessExitHandler sets the callback for runtime exits.
@@ -541,6 +567,34 @@ func (m *Manager) GetConsoleLogs(vm *types.VM, tailLines int) ([]byte, error) {
 	}
 	args = append(args, name)
 	return m.runCommand(args...)
+}
+
+// Exec runs a command inside the Apple container-backed VM.
+func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*types.VMExecResult, error) {
+	name := runtimeName(vm)
+	if name == "" {
+		return nil, fmt.Errorf("apple container runtime id not available")
+	}
+
+	args := make([]string, 0, 2+len(command))
+	args = append(args, "exec", name)
+	args = append(args, command...)
+
+	stdout, stderr, exitCode, err := m.execCommand(ctx, args...)
+	result := &types.VMExecResult{
+		Command:   append([]string(nil), command...),
+		ExitCode:  exitCode,
+		Stdout:    string(stdout),
+		Stderr:    string(stderr),
+		RuntimeID: name,
+	}
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return result, ctxErr
+		}
+		return nil, fmt.Errorf("container exec %s failed: %w", name, err)
+	}
+	return result, nil
 }
 
 // CleanupNetwork is handled by Apple's container runtime.

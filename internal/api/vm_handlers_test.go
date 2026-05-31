@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -419,5 +420,78 @@ func TestHandleDeleteVMWithoutRuntimeHandleSkipsKillAndDeletes(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatal("VM metadata was not deleted")
+	}
+}
+
+func TestHandleVMExecRunsThroughRuntime(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("db.Close: %v", err)
+		}
+	}()
+
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+
+	runtimeManager := &runtimeImageProviderStub{
+		execResult: &types.VMExecResult{
+			Command:   []string{"uname", "-a"},
+			ExitCode:  0,
+			Stdout:    "Linux test\n",
+			RuntimeID: "nf-test",
+		},
+	}
+	server := &Server{
+		db:             db,
+		logger:         logger,
+		runtimeManager: runtimeManager,
+	}
+	vm := &types.VM{
+		ID:           "vm-exec",
+		Name:         "exec",
+		State:        types.StateRunning,
+		Image:        "docker.io/library/alpine:3.20",
+		ImageDigest:  "sha256:test",
+		Architecture: "arm64",
+		Config: types.VMConfig{
+			VCPUs:     1,
+			MemoryMiB: 256,
+			Network:   types.NetworkConfig{Mode: "nat"},
+		},
+		Runtime:   &types.VMRuntime{Driver: "apple_container", ExternalID: "nf-test"},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := db.CreateVM(vm); err != nil {
+		t.Fatalf("CreateVM: %v", err)
+	}
+
+	body := `{"command":["uname","-a"],"timeout_seconds":5}`
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vm.ID+"/exec", strings.NewReader(body))
+	req.SetPathValue("id", vm.ID)
+	rec := httptest.NewRecorder()
+	server.handleVMExecByPath(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if runtimeManager.execCalls != 1 {
+		t.Fatalf("runtime exec calls = %d, want 1", runtimeManager.execCalls)
+	}
+	if strings.Join(runtimeManager.execCommand, " ") != "uname -a" {
+		t.Fatalf("runtime exec command = %#v", runtimeManager.execCommand)
+	}
+	var result types.VMExecResult
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if result.Stdout != "Linux test\n" {
+		t.Fatalf("stdout = %q, want Linux test", result.Stdout)
 	}
 }

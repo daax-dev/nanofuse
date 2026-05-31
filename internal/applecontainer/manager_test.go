@@ -1,6 +1,7 @@
 package applecontainer
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -89,6 +90,53 @@ func TestRunArgsRejectsNetworkNone(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `network mode "none"`) {
 		t.Fatalf("runArgs() error = %v, want network mode none", err)
+	}
+}
+
+func TestExecRunsCommandInRuntimeContainer(t *testing.T) {
+	manager := NewManager(config.AppleContainerRuntimeConfig{DefaultCommand: "sleep infinity"}, t.TempDir())
+	var gotArgs []string
+	manager.execCommand = func(_ context.Context, args ...string) ([]byte, []byte, int, error) {
+		gotArgs = append([]string(nil), args...)
+		return []byte("Linux\n"), []byte(""), 0, nil
+	}
+
+	result, err := manager.Exec(context.Background(), &types.VM{
+		ID:      "vm-test",
+		Runtime: &types.VMRuntime{ExternalID: "nf-test"},
+	}, []string{"uname", "-a"})
+	if err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+	if strings.Join(gotArgs, " ") != "exec nf-test uname -a" {
+		t.Fatalf("exec args = %#v", gotArgs)
+	}
+	if result.Stdout != "Linux\n" {
+		t.Fatalf("stdout = %q, want Linux", result.Stdout)
+	}
+	if result.RuntimeID != "nf-test" {
+		t.Fatalf("runtime id = %q, want nf-test", result.RuntimeID)
+	}
+}
+
+func TestExecReturnsNonZeroExitCodeWithoutTransportError(t *testing.T) {
+	manager := NewManager(config.AppleContainerRuntimeConfig{DefaultCommand: "sleep infinity"}, t.TempDir())
+	manager.execCommand = func(_ context.Context, args ...string) ([]byte, []byte, int, error) {
+		return []byte(""), []byte("missing\n"), 127, nil
+	}
+
+	result, err := manager.Exec(context.Background(), &types.VM{
+		ID:      "vm-test",
+		Runtime: &types.VMRuntime{ExternalID: "nf-test"},
+	}, []string{"missing-command"})
+	if err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+	if result.ExitCode != 127 {
+		t.Fatalf("exit code = %d, want 127", result.ExitCode)
+	}
+	if result.Stderr != "missing\n" {
+		t.Fatalf("stderr = %q, want missing", result.Stderr)
 	}
 }
 

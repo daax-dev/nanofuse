@@ -1,6 +1,10 @@
 package vmm
 
-import "github.com/daax-dev/nanofuse/internal/types"
+import (
+	"context"
+
+	"github.com/daax-dev/nanofuse/internal/types"
+)
 
 // ProcessExitHandler is called when a VM runtime exits.
 // exitCode is nil when the runtime cannot provide a process exit code.
@@ -24,4 +28,9 @@ type Manager interface {
 type ImageProvider interface {
 	ResolveImage(imageRef string) (*types.Image, error)
 	ListImages() ([]*types.Image, error)
+}
+
+// CommandExecutor is implemented by runtimes that can execute a command in a running VM.
+type CommandExecutor interface {
+	Exec(ctx context.Context, vm *types.VM, command []string) (*types.VMExecResult, error)
 }

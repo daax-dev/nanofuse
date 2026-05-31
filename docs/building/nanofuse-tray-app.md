@@ -15,8 +15,8 @@ The current implementation adds a minimal Go tray client at `cmd/nanofuse-tray` 
 | macOS menu bar app | Implemented and built locally as `bin/nanofuse-tray`. |
 | Windows tray app | Implemented and cross-built as `nanofuse-tray.exe`; desktop runtime click testing still needs a Windows session. |
 | Health/capabilities | Implemented through `GET /health` and `GET /capabilities`. |
-| VM list | Implemented through `GET /vms`, limited to 10 menu rows. |
-| Image list | Implemented through `GET /images`, limited to 10 menu rows. |
+| VM list | Implemented through `GET /vms`, limited to 25 menu rows and showing state plus port context. |
+| Image list | Implemented through `GET /images`, limited to 25 menu rows. |
 | Create/start VM from image | Implemented through `POST /vms` followed by `POST /vms/{id}/start` for the selected image. |
 | VM start/stop | Implemented through `POST /vms/{id}/start` and `POST /vms/{id}/stop`. |
 | VM kill/delete | Implemented with second-click confirmation through `POST /vms/{id}/kill` and `DELETE /vms/{id}`. |
@@ -54,6 +54,7 @@ The current implementation adds a minimal Go tray client at `cmd/nanofuse-tray` 
 
 - `GET /capabilities` exists and is used for capability gating.
 - `api/openapi.yaml` is the source of generated client types.
+- `POST /vms/{id}/exec` exists for runtime-backed command execution; interactive SSH still requires guest sshd and a port forward to port 22.
 - Remote API auth profile is designed before any non-localhost default profile ships.
 - VM create supports egress policy selection from the app.
 - Image pull job polling is stable enough for progress UI.

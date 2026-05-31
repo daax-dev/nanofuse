@@ -192,6 +192,7 @@ func setupHTTPRouter(server *Server) *http.ServeMux {
 	mux.HandleFunc("POST /vms/{id}/pause", server.handleVMPauseByPath)
 	mux.HandleFunc("POST /vms/{id}/resume", server.handleVMResumeByPath)
 	mux.HandleFunc("GET /vms/{id}/logs", server.handleVMLogsByPath)
+	mux.HandleFunc("POST /vms/{id}/exec", server.handleVMExecByPath)
 
 	// VM snapshot endpoints
 	mux.HandleFunc("GET /vms/{id}/snapshots", server.handleListSnapshotsByPath)

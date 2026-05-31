@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -659,6 +661,7 @@ var (
 	vmKernelArgs   string
 	vmPortForwards []string
 	vmSSHKey       string
+	vmExecTimeout  int
 )
 
 var vmCreateCmd = &cobra.Command{
@@ -733,7 +736,11 @@ Examples:
 		fmt.Printf("State: %s\n", vm.State)
 		fmt.Printf("Image: %s\n", vm.Image)
 		if sshKeyEncoded != "" {
-			fmt.Printf("SSH:   key will be injected on boot\n")
+			if hostPort, ok := sshHostPort(portForwards); ok {
+				fmt.Printf("SSH:   ssh -p %d root@127.0.0.1 after start if the image runs sshd\n", hostPort)
+			} else {
+				fmt.Printf("SSH:   key saved; add --port-forward <host>:22 and use an image that runs sshd\n")
+			}
 		}
 		if len(portForwards) > 0 {
 			fmt.Printf("\nPort Forwards:\n")
@@ -827,7 +834,11 @@ Examples:
 		if vm.Runtime != nil && vm.Runtime.NetworkInfo.GuestIP != "" {
 			fmt.Printf("IP:     %s\n", vm.Runtime.NetworkInfo.GuestIP)
 			if sshKeyEncoded != "" {
-				fmt.Printf("\nSSH: ssh root@%s\n", vm.Runtime.NetworkInfo.GuestIP)
+				if hostPort, ok := sshHostPort(portForwards); ok {
+					fmt.Printf("\nSSH: ssh -p %d root@127.0.0.1\n", hostPort)
+				} else {
+					fmt.Printf("\nSSH: ssh root@%s (only if guest IP is routable and sshd is running)\n", vm.Runtime.NetworkInfo.GuestIP)
+				}
 			}
 		}
 		if len(portForwards) > 0 {
@@ -871,6 +882,101 @@ var vmStatusCmd = &cobra.Command{
 		}
 
 		return formatter.PrintVM(vm)
+	},
+}
+
+type vmPortForwardStatus struct {
+	Host       string `json:"host"`
+	HostPort   int    `json:"host_port"`
+	VMPort     int    `json:"vm_port"`
+	Protocol   string `json:"protocol"`
+	Reachable  *bool  `json:"reachable,omitempty"`
+	ReachCheck string `json:"reach_check,omitempty"`
+}
+
+type vmPortsOutput struct {
+	ID    string                `json:"id"`
+	Name  string                `json:"name"`
+	State string                `json:"state"`
+	Ports []vmPortForwardStatus `json:"ports"`
+}
+
+var vmPortsCmd = &cobra.Command{
+	Use:   "ports [vm-id]",
+	Short: "Show configured VM port forwards",
+	Long: `Show configured host-to-VM port forwards.
+
+For TCP forwards, the CLI also checks whether localhost:hostPort accepts a connection.
+UDP reachability is shown as configured because a generic UDP open check is not reliable.
+
+Examples:
+  nanofuse vm ports
+  nanofuse vm ports my-vm`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var vms []client.VM
+		if len(args) == 1 {
+			vm, err := apiClient.GetVM(cmd.Context(), args[0])
+			if err != nil {
+				return handleAPIErrorWithResource(err, "get VM ports", args[0])
+			}
+			vms = []client.VM{*vm}
+		} else {
+			resp, err := apiClient.ListVMs(cmd.Context(), "")
+			if err != nil {
+				return handleAPIError(err, "list VM ports")
+			}
+			vms = resp.VMs
+		}
+
+		return printVMPorts(vms)
+	},
+}
+
+var vmExecCmd = &cobra.Command{
+	Use:   "exec <vm-id> -- <command> [args...]",
+	Short: "Execute a command in a running VM",
+	Long: `Execute a command in a running VM through the Nanofuse API.
+
+This is not SSH. It uses a runtime exec capability when the selected backend
+supports it. SSH still requires an image with sshd installed and a port forward
+to guest port 22.
+
+Examples:
+  nanofuse vm exec my-vm -- uname -a
+  nanofuse vm exec my-vm -- sh -lc 'cat /etc/os-release'`,
+	Args: cobra.MinimumNArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vmID := args[0]
+		command := args[1:]
+		timeoutSeconds := vmExecTimeout
+		req := &client.VMExecRequest{Command: command}
+		if timeoutSeconds > 0 {
+			req.TimeoutSeconds = &timeoutSeconds
+		}
+
+		result, err := apiClient.ExecVM(cmd.Context(), vmID, req)
+		if err != nil {
+			return handleAPIErrorWithResource(err, "exec in VM", vmID)
+		}
+
+		if jsonOutput {
+			if err := formatter.PrintJSON(result); err != nil {
+				return err
+			}
+		} else {
+			if result.Stdout != "" {
+				fmt.Fprint(os.Stdout, result.Stdout)
+			}
+			if result.Stderr != "" {
+				fmt.Fprint(os.Stderr, result.Stderr)
+			}
+		}
+
+		if result.ExitCode != 0 {
+			return fmt.Errorf("VM command exited with status %d", result.ExitCode)
+		}
+		return nil
 	},
 }
 
@@ -1213,11 +1319,15 @@ func init() {
 	vmLogsCmd.Flags().IntP("lines", "n", 0, "show last N lines (alias for --tail)")
 	vmLogsCmd.Flags().BoolP("follow", "f", false, "stream logs in real-time")
 
+	// VM exec flags
+	vmExecCmd.Flags().IntVar(&vmExecTimeout, "timeout", 30, "command timeout in seconds")
+
 	// Add VM subcommands
 	vmCmd.AddCommand(vmCreateCmd)
 	vmCmd.AddCommand(vmRunCmd)
 	vmCmd.AddCommand(vmListCmd)
 	vmCmd.AddCommand(vmStatusCmd)
+	vmCmd.AddCommand(vmPortsCmd)
 	vmCmd.AddCommand(vmStartCmd)
 	vmCmd.AddCommand(vmStopCmd)
 	vmCmd.AddCommand(vmKillCmd)
@@ -1226,6 +1336,7 @@ func init() {
 	vmCmd.AddCommand(vmResumeCmd)
 	vmCmd.AddCommand(vmDeleteCmd)
 	vmCmd.AddCommand(vmLogsCmd)
+	vmCmd.AddCommand(vmExecCmd)
 
 	// Snapshot commands as subcommand of vm
 	vmCmd.AddCommand(snapshotCmd)
@@ -1475,6 +1586,110 @@ PowerShell:
 }
 
 // Helper functions
+
+func printVMPorts(vms []client.VM) error {
+	output := make([]vmPortsOutput, 0, len(vms))
+	for _, vm := range vms {
+		output = append(output, vmPortsForOutput(vm))
+	}
+	if jsonOutput {
+		return formatter.PrintJSON(map[string]interface{}{
+			"vms":   output,
+			"total": len(output),
+		})
+	}
+
+	for _, vm := range output {
+		if len(vm.Ports) == 0 {
+			fmt.Printf("%s [%s]: no port forwards configured\n", displayVMLabel(vm.ID, vm.Name), vm.State)
+			continue
+		}
+		for _, port := range vm.Ports {
+			status := port.ReachCheck
+			if port.Reachable != nil {
+				if *port.Reachable {
+					status = "reachable"
+				} else {
+					status = "not reachable"
+				}
+			}
+			fmt.Printf("%s [%s] %s:%d -> vm:%d/%s (%s)\n",
+				displayVMLabel(vm.ID, vm.Name),
+				vm.State,
+				port.Host,
+				port.HostPort,
+				port.VMPort,
+				port.Protocol,
+				status,
+			)
+		}
+	}
+	return nil
+}
+
+func vmPortsForOutput(vm client.VM) vmPortsOutput {
+	ports := make([]vmPortForwardStatus, 0, len(vm.Config.Network.PortForwards))
+	for _, pf := range vm.Config.Network.PortForwards {
+		protocol := pf.Protocol
+		if protocol == "" {
+			protocol = "tcp"
+		}
+		status := vmPortForwardStatus{
+			Host:       "127.0.0.1",
+			HostPort:   pf.HostPort,
+			VMPort:     pf.VMPort,
+			Protocol:   protocol,
+			ReachCheck: "configured",
+		}
+		if protocol == "tcp" {
+			reachable := tcpPortReachable(status.Host, status.HostPort)
+			status.Reachable = &reachable
+			status.ReachCheck = "tcp-connect"
+		}
+		ports = append(ports, status)
+	}
+	return vmPortsOutput{
+		ID:    vm.ID,
+		Name:  vm.Name,
+		State: vm.State,
+		Ports: ports,
+	}
+}
+
+func tcpPortReachable(host string, port int) bool {
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 200*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+func displayVMLabel(id, name string) string {
+	if name != "" {
+		return name
+	}
+	if len(id) > 8 {
+		return id[:8]
+	}
+	if id != "" {
+		return id
+	}
+	return "unnamed"
+}
+
+func sshHostPort(portForwards []client.PortForward) (int, bool) {
+	for _, pf := range portForwards {
+		protocol := pf.Protocol
+		if protocol == "" {
+			protocol = "tcp"
+		}
+		if pf.VMPort == 22 && protocol == "tcp" {
+			return pf.HostPort, true
+		}
+	}
+	return 0, false
+}
 
 // resolveImageRef resolves image reference, handling special shorthands
 func resolveImageRef(imageRef string) string {

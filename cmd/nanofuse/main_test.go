@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/client"
 	"github.com/daax-dev/nanofuse/internal/clierrors"
 )
 
@@ -52,6 +53,60 @@ func TestVMLogsCommandFlags(t *testing.T) {
 	}
 	if followFlag.Shorthand != "f" {
 		t.Errorf("Expected shorthand 'f' for --follow, got '%s'", followFlag.Shorthand)
+	}
+}
+
+func TestVMPortsAndExecCommandsExist(t *testing.T) {
+	if vmPortsCmd == nil {
+		t.Fatal("vmPortsCmd is nil")
+	}
+	if vmPortsCmd.Use != "ports [vm-id]" {
+		t.Fatalf("vmPortsCmd.Use = %q, want ports [vm-id]", vmPortsCmd.Use)
+	}
+	if vmExecCmd == nil {
+		t.Fatal("vmExecCmd is nil")
+	}
+	if vmExecCmd.Flags().Lookup("timeout") == nil {
+		t.Fatal("vm exec --timeout flag not found")
+	}
+}
+
+func TestVMPortsForOutputIncludesConfiguredPorts(t *testing.T) {
+	got := vmPortsForOutput(client.VM{
+		ID:    "vm-123",
+		Name:  "test",
+		State: "running",
+		Config: client.VMConfig{
+			Network: client.NetworkConfig{
+				PortForwards: []client.PortForward{{
+					HostPort: 18081,
+					VMPort:   8080,
+					Protocol: "udp",
+				}},
+			},
+		},
+	})
+	if len(got.Ports) != 1 {
+		t.Fatalf("ports = %d, want 1", len(got.Ports))
+	}
+	if got.Ports[0].Host != "127.0.0.1" || got.Ports[0].HostPort != 18081 || got.Ports[0].VMPort != 8080 {
+		t.Fatalf("port output = %#v", got.Ports[0])
+	}
+	if got.Ports[0].Reachable != nil {
+		t.Fatalf("udp port should not have a generic reachability check: %#v", got.Ports[0].Reachable)
+	}
+}
+
+func TestSSHHostPortFindsTCPGuestPort22(t *testing.T) {
+	hostPort, ok := sshHostPort([]client.PortForward{
+		{HostPort: 18080, VMPort: 8080, Protocol: "tcp"},
+		{HostPort: 2222, VMPort: 22, Protocol: "tcp"},
+	})
+	if !ok {
+		t.Fatal("expected SSH host port")
+	}
+	if hostPort != 2222 {
+		t.Fatalf("host port = %d, want 2222", hostPort)
 	}
 }
 

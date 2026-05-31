@@ -25,6 +25,7 @@ const (
 	ErrSnapshotIncompatible   ErrorCode = "SNAPSHOT_INCOMPATIBLE"
 	ErrInternalError          ErrorCode = "INTERNAL_ERROR"
 	ErrServiceUnavailable     ErrorCode = "SERVICE_UNAVAILABLE"
+	ErrUnsupportedOperation   ErrorCode = "UNSUPPORTED_OPERATION"
 	ErrInsufficientStorage    ErrorCode = "INSUFFICIENT_STORAGE"
 	ErrNotFound               ErrorCode = "NOT_FOUND"
 )

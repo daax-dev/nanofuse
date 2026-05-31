@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	maxMenuRows        = 10
+	maxMenuRows        = 25
 	confirmationWindow = 10 * time.Second
 )
 
@@ -223,8 +223,8 @@ func (ui *trayUI) updateVMItems(vms []client.VM) {
 			continue
 		}
 		vm := vms[idx]
-		item.SetTitle(limitTitle(fmt.Sprintf("%s [%s]", displayVMName(vm), vm.State)))
-		item.SetTooltip(vm.ID)
+		item.SetTitle(limitTitle(displayVMRow(vm)))
+		item.SetTooltip(displayVMTooltip(vm))
 		item.Show()
 		item.Enable()
 	}
@@ -255,7 +255,7 @@ func (ui *trayUI) selectVM(index int) {
 	ui.selected = vm.ID
 	ui.pending = ""
 	ui.pendingAt = time.Time{}
-	ui.selectedItem.SetTitle(limitTitle("Selected VM: " + displayVMName(vm)))
+	ui.selectedItem.SetTitle(limitTitle("Selected VM: " + displayVMRow(vm)))
 	ui.updateActionStateLocked()
 }
 
@@ -304,7 +304,7 @@ func (ui *trayUI) launchSelectedImage() {
 		ui.mu.Lock()
 		if vm != nil && vm.ID != "" {
 			ui.selected = vm.ID
-			ui.selectedItem.SetTitle(limitTitle("Selected VM: " + displayVMName(*vm)))
+			ui.selectedItem.SetTitle(limitTitle("Selected VM: " + displayVMRow(*vm)))
 		}
 		ui.mu.Unlock()
 		ui.statusItem.SetTitle("Status: VM launched")
@@ -439,6 +439,49 @@ func displayVMName(vm client.VM) string {
 		return vm.ID
 	}
 	return "unnamed"
+}
+
+func displayVMRow(vm client.VM) string {
+	label := fmt.Sprintf("%s [%s]", displayVMName(vm), vm.State)
+	if ports := portSummary(vm.Config.Network.PortForwards); ports != "" {
+		label += " " + ports
+	}
+	return label
+}
+
+func displayVMTooltip(vm client.VM) string {
+	parts := []string{}
+	if vm.ID != "" {
+		parts = append(parts, "id="+vm.ID)
+	}
+	if vm.Image != "" {
+		parts = append(parts, "image="+vm.Image)
+	}
+	if vm.Runtime != nil && vm.Runtime.ExternalID != "" {
+		parts = append(parts, "runtime="+vm.Runtime.ExternalID)
+	}
+	if ports := portSummary(vm.Config.Network.PortForwards); ports != "" {
+		parts = append(parts, "ports="+ports)
+	}
+	if len(parts) == 0 {
+		return "VM"
+	}
+	return strings.Join(parts, " ")
+}
+
+func portSummary(portForwards []client.PortForward) string {
+	if len(portForwards) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(portForwards))
+	for _, pf := range portForwards {
+		protocol := pf.Protocol
+		if protocol == "" {
+			protocol = "tcp"
+		}
+		parts = append(parts, fmt.Sprintf(":%d->%d/%s", pf.HostPort, pf.VMPort, protocol))
+	}
+	return strings.Join(parts, ",")
 }
 
 func displayImageName(image client.Image) string {

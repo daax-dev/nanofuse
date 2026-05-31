@@ -168,6 +168,8 @@ See [Tray App](TRAY_APP.md) for smoke mode and validation evidence.
 
 In the tray menu, select a cached image, then choose `Create and Start VM From Image`. This calls `POST /vms` followed by `POST /vms/{id}/start` against the configured `nanofused` daemon.
 
+For port visibility, API-backed VM exec, multiple VM launches, and image enablement, see [Operating Local MicroVMs](OPERATING_LOCAL_MICROVMS.md).
+
 ## Vagrant API Path
 
 The development Vagrant VM forwards guest port `8080` to host port `18080` by default:
@@ -229,6 +231,9 @@ VM_ID="550e8400-e29b-41d4-a716-446655440000"
 curl -X POST "http://127.0.0.1:8080/vms/${VM_ID}/start"
 curl "http://127.0.0.1:8080/vms/${VM_ID}"
 curl "http://127.0.0.1:8080/vms/${VM_ID}/logs?tail=50"
+curl -X POST "http://127.0.0.1:8080/vms/${VM_ID}/exec" \
+  -H "Content-Type: application/json" \
+  -d '{"command":["uname","-a"],"timeout_seconds":30}'
 curl -X POST "http://127.0.0.1:8080/vms/${VM_ID}/stop" \
   -H "Content-Type: application/json" \
   -d '{"timeout_seconds":30}'
@@ -240,8 +245,10 @@ CLI equivalent:
 ```bash
 export NANOFUSE_API_URL="http://127.0.0.1:8080"
 nanofuse image pull ghcr.io/daax-dev/nanofuse/base:latest
-nanofuse vm create ghcr.io/daax-dev/nanofuse/base:latest api-test --vcpus 2 --memory 512
+nanofuse vm run ghcr.io/daax-dev/nanofuse/base:latest api-test --vcpus 2 --memory 512
 nanofuse vm list
+nanofuse vm ports
+nanofuse vm exec api-test -- uname -a
 ```
 
 ## Endpoint Summary
@@ -260,6 +267,7 @@ nanofuse vm list
 | POST | `/vms/{id}/pause` | Pause VM |
 | POST | `/vms/{id}/resume` | Resume VM |
 | GET | `/vms/{id}/logs` | VM console logs |
+| POST | `/vms/{id}/exec` | Execute a command in a running VM when supported by the runtime |
 | GET | `/vms/{id}/snapshots` | List VM snapshots |
 | POST | `/vms/{id}/snapshots` | Create VM snapshot |
 | GET | `/snapshots/{id}` | Get snapshot |

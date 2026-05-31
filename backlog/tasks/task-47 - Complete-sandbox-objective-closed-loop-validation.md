@@ -87,6 +87,8 @@ Deliver the repository objective from objective.md on the current branch only. N
 2026-05-31: Opened replacement PR https://github.com/daax-dev/nanofuse/pull/56 from the same `codex-goal` branch with the two Copilot review fixes and tray image-launch workflow.
 
 2026-05-31: Fixed the macOS tray launcher so `./scripts/run-tray-macos.sh` no longer appears to do nothing. It now prints build/start status, reports existing `nanofuse-tray` PIDs, supports `--restart`, `--foreground`, `--smoke`, and `--timeout`, and documents the background log path.
+
+2026-05-31: Addressed PR #56 Copilot review threads. Overlapping tray refreshes now discard stale results before applying UI/action state, and kill/delete confirmation titles expire after the confirmation window instead of remaining visually stale.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -98,5 +100,5 @@ Follow-up on 2026-05-30: PR #46 now also includes the explicit API run path requ
 
 Follow-up on 2026-05-31: Replacement PR https://github.com/daax-dev/nanofuse/pull/56 contains the real tray/menu app, one-line launch scripts, vagrant-skill validation, post-merge conflict resolution from `origin/main`, and refreshed JSONL validation evidence. Local and Vagrant `mage ci` passed after the merge. The local Apple Silicon Parallels VM remains usable for repo/API/tray validation but not Firecracker execution because `/dev/kvm` is absent.
 
-PR #56 carries the PR #55 Copilot fixes: runtime-capability action gating in the tray app and fail-fast Windows build launcher behavior. The tray app now includes the missing create/start-from-image workflow. The Mac launch point is `scripts/run-tray-macos.sh`; it prints visible status, detects existing tray processes, and supports `--restart`/`--foreground` for predictable operator control. The implementation is `cmd/nanofuse-tray` plus `internal/trayapp`.
+PR #56 carries the PR #55 and PR #56 Copilot fixes: runtime-capability action gating in the tray app, fail-fast Windows build launcher behavior, stale refresh protection, and visual expiry for kill/delete confirmation. The tray app now includes the missing create/start-from-image workflow. The Mac launch point is `scripts/run-tray-macos.sh`; it prints visible status, detects existing tray processes, and supports `--restart`/`--foreground` for predictable operator control. The implementation is `cmd/nanofuse-tray` plus `internal/trayapp`.
 <!-- SECTION:FINAL_SUMMARY:END -->

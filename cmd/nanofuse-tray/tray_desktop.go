@@ -14,7 +14,10 @@ import (
 	"github.com/getlantern/systray"
 )
 
-const maxMenuRows = 10
+const (
+	maxMenuRows        = 10
+	confirmationWindow = 10 * time.Second
+)
 
 type trayUI struct {
 	ctx       context.Context
@@ -26,6 +29,7 @@ type trayUI struct {
 	imageRef  string
 	pending   trayapp.VMAction
 	pendingAt time.Time
+	refreshID uint64
 
 	endpointItem *systray.MenuItem
 	statusItem   *systray.MenuItem
@@ -176,23 +180,31 @@ func (ui *trayUI) listen() {
 }
 
 func (ui *trayUI) refresh() {
+	ui.mu.Lock()
+	ui.refreshID++
+	refreshID := ui.refreshID
+	ui.mu.Unlock()
+
 	go func() {
 		ctx, cancel := withTimeout(ui.ctx, ui.cfg.Timeout)
 		defer cancel()
 
 		status, err := trayapp.CollectStatus(ctx, ui.api, ui.cfg.Endpoint())
 		ui.mu.Lock()
+		defer ui.mu.Unlock()
+		if refreshID != ui.refreshID {
+			return
+		}
 		ui.status = status
 		ui.pending = ""
 		ui.pendingAt = time.Time{}
-		ui.mu.Unlock()
 
 		if err != nil {
 			ui.statusItem.SetTitle("Status: error")
 			ui.runtimeItem.SetTitle(limitTitle("Runtime: " + trayapp.RuntimeSummary(status)))
 			ui.updateVMItems(nil)
 			ui.updateImageItems(nil)
-			ui.updateActionState()
+			ui.updateActionStateLocked()
 			return
 		}
 
@@ -200,7 +212,7 @@ func (ui *trayUI) refresh() {
 		ui.runtimeItem.SetTitle(limitTitle("Runtime: " + trayapp.RuntimeSummary(status)))
 		ui.updateVMItems(status.VMs)
 		ui.updateImageItems(status.Images)
-		ui.updateActionState()
+		ui.updateActionStateLocked()
 	}()
 }
 
@@ -316,11 +328,13 @@ func (ui *trayUI) runAction(action trayapp.VMAction) {
 		return
 	}
 	if action == trayapp.VMActionKill || action == trayapp.VMActionDelete {
-		if ui.pending != action || time.Since(ui.pendingAt) > 10*time.Second {
+		if ui.pending != action || time.Since(ui.pendingAt) > confirmationWindow {
+			pendingAt := time.Now()
 			ui.pending = action
-			ui.pendingAt = time.Now()
+			ui.pendingAt = pendingAt
 			ui.setPendingTitleLocked(action)
 			ui.mu.Unlock()
+			ui.expirePending(action, pendingAt)
 			return
 		}
 	}
@@ -339,6 +353,28 @@ func (ui *trayUI) runAction(action trayapp.VMAction) {
 		}
 		ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s sent", action)))
 		ui.refresh()
+	}()
+}
+
+func (ui *trayUI) expirePending(action trayapp.VMAction, pendingAt time.Time) {
+	go func() {
+		timer := time.NewTimer(confirmationWindow)
+		defer timer.Stop()
+
+		select {
+		case <-ui.ctx.Done():
+			return
+		case <-timer.C:
+		}
+
+		ui.mu.Lock()
+		defer ui.mu.Unlock()
+		if ui.pending == action && ui.pendingAt.Equal(pendingAt) {
+			ui.pending = ""
+			ui.pendingAt = time.Time{}
+			ui.statusItem.SetTitle("Status: confirmation expired")
+			ui.updateActionStateLocked()
+		}
 	}()
 }
 

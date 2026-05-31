@@ -141,6 +141,48 @@ func TestHandleAPIErrorUsesAPIURLForTCPConnection(t *testing.T) {
 	}
 }
 
+func TestHandleAPIErrorUsesDefaultSocketWhenEndpointUnset(t *testing.T) {
+	resetCLIStateForTest(t)
+
+	err := handleAPIError(errors.New("dial unix /var/run/nanofused.sock: connect: no such file or directory"), "check API health")
+	cliErr, ok := err.(*clierrors.CLIError)
+	if !ok {
+		t.Fatalf("handleAPIError() = %T, want *clierrors.CLIError", err)
+	}
+	if cliErr.Context == nil {
+		t.Fatal("expected error context")
+	}
+	if cliErr.Context.Resource != DefaultAPISocketPath {
+		t.Fatalf("Resource = %q, want %q", cliErr.Context.Resource, DefaultAPISocketPath)
+	}
+}
+
+func TestRootCommandDoesNotSilenceUsageByDefault(t *testing.T) {
+	resetCLIStateForTest(t)
+
+	if rootCmd.SilenceUsage {
+		t.Fatal("root command should not silence Cobra usage by default")
+	}
+	if rootCmd.SilenceErrors {
+		t.Fatal("root command should not silence Cobra errors by default")
+	}
+}
+
+func TestFormattedCLIErrorSilencesCobraOutput(t *testing.T) {
+	resetCLIStateForTest(t)
+
+	err := formattedCLIError(&clierrors.CLIError{Message: "formatted failure", ExitCode: 1})
+	if err == nil {
+		t.Fatal("formattedCLIError() returned nil")
+	}
+	if !rootCmd.SilenceUsage {
+		t.Fatal("formatted CLI errors should silence Cobra usage")
+	}
+	if !rootCmd.SilenceErrors {
+		t.Fatal("formatted CLI errors should silence Cobra errors")
+	}
+}
+
 func resetCLIStateForTest(t *testing.T) {
 	t.Helper()
 
@@ -151,6 +193,8 @@ func resetCLIStateForTest(t *testing.T) {
 	oldJSONOutput := jsonOutput
 	oldNoColor := noColor
 	oldTimeout := timeout
+	oldSilenceUsage := rootCmd.SilenceUsage
+	oldSilenceErrors := rootCmd.SilenceErrors
 
 	cfgFile = ""
 	apiSocket = ""
@@ -159,6 +203,8 @@ func resetCLIStateForTest(t *testing.T) {
 	jsonOutput = false
 	noColor = false
 	timeout = 30 * time.Second
+	rootCmd.SilenceUsage = false
+	rootCmd.SilenceErrors = false
 
 	t.Cleanup(func() {
 		cfgFile = oldCfgFile
@@ -168,5 +214,7 @@ func resetCLIStateForTest(t *testing.T) {
 		jsonOutput = oldJSONOutput
 		noColor = oldNoColor
 		timeout = oldTimeout
+		rootCmd.SilenceUsage = oldSilenceUsage
+		rootCmd.SilenceErrors = oldSilenceErrors
 	})
 }

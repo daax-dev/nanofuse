@@ -51,13 +51,13 @@ npx @redocly/cli preview-docs openapi.yaml --port 8080
 - `POST /vms/{vmId}/start` - Start a VM
 - `POST /vms/{vmId}/stop` - Stop a VM
 - `POST /vms/{vmId}/kill` - Force kill a VM
-- `POST /vms/{vmId}/pause` - Pause a VM (⚠️ not yet implemented)
-- `POST /vms/{vmId}/resume` - Resume a paused VM (⚠️ not yet implemented)
+- `POST /vms/{vmId}/pause` - Pause a running VM
+- `POST /vms/{vmId}/resume` - Resume a paused VM
 - `GET /vms/{vmId}/logs` - Get console logs
 
 ### Snapshots
 - `GET /vms/{vmId}/snapshots` - List VM snapshots
-- `POST /vms/{vmId}/snapshots` - Create a snapshot
+- `POST /vms/{vmId}/snapshots` - Create a snapshot of a paused VM
 - `GET /snapshots/{snapshotId}` - Get snapshot details
 - `DELETE /snapshots/{snapshotId}` - Delete a snapshot
 
@@ -77,9 +77,13 @@ npx @redocly/cli preview-docs openapi.yaml --port 8080
 
 ## Authentication
 
-Currently, the NanoFuse API does not require authentication when accessed via Unix socket (default).
+By default, the NanoFuse API does not require application-layer authentication when accessed via Unix socket. Access is controlled by Unix socket permissions.
 
-If using TCP binding, consider implementing authentication middleware or using a reverse proxy with authentication.
+When `auth.enabled` is true and `api.tcp_bind` is configured, the TCP API listener uses mutual TLS with `tls.RequireAndVerifyClientCert`. Configure `auth.tls_cert_file`, `auth.tls_key_file`, and `auth.client_ca_file`. Requests must present a client certificate verified by that CA, and the certificate must contain a `spiffe://` URI SAN. NanoFuse extracts that verified SPIFFE URI into request context and records audit logs.
+
+NanoFuse does not trust `X-SPIFFE-ID` or other client-controlled identity headers, does not implement an Aembit-style policy engine, and does not rotate SVIDs. Unix socket listeners remain local/plain unless a separate transport wrapper is configured outside the daemon.
+
+On the TCP mTLS listener, a client that sends only `X-SPIFFE-ID` and no CA-verified client certificate fails the TLS handshake before HTTP handling. JSON `UNAUTHORIZED` responses apply to requests that reach the HTTP middleware but lack a valid SPIFFE URI SAN. If a verified certificate is present, the certificate URI SAN is the identity source and headers are ignored.
 
 ## Error Handling
 
@@ -153,7 +157,7 @@ curl http://localhost:8080/vms/{vmId}/logs
 ### Create a Snapshot
 
 ```bash
-# Create a snapshot
+# Create a snapshot after pausing the VM
 curl -X POST http://localhost:8080/vms/{vmId}/snapshots \
   -H "Content-Type: application/json" \
   -d '{
@@ -189,16 +193,15 @@ curl -X POST http://localhost:8080/backups/{backupId}/restore \
 
 ### ✅ Implemented
 - Health check
-- VM lifecycle (create, start, stop, kill, delete)
+- VM lifecycle (create, start, stop, kill, pause, resume, delete)
 - Image pull and management
 - Snapshot create, list, delete
 - Console logs
 - Port forwarding
 
 ### 🚧 Not Yet Implemented
-- **Pause/Resume** - VM pause and resume operations via Firecracker API
 - **S3 Backups** - Complete backup and restore functionality:
-  - Create snapshot from running VM
+  - Create snapshot from paused VM
   - Compress and upload to S3
   - Download and restore from S3
   - Backup job status tracking

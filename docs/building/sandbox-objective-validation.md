@@ -67,7 +67,7 @@ Local Vagrant result on 2026-05-30:
 - Provisioning failed at the required KVM preflight: `/dev/kvm not found. Nested KVM required`.
 - A second attempt enabling Parallels nested virtualization reached `prlctl start` and failed before guest boot with `Unable to start the virtual machine`.
 - Guest-side `mage ci`, daemon health/capabilities, and Firecracker boot verification did not run because Firecracker cannot execute without guest KVM.
-- The Parallels VM was halted after the latest blocked run.
+- The Parallels VM was halted after the latest KVM-unavailable run.
 
 The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-2026-05-30.log` and `.logs/validation/vagrant-closed-loop-2026-05-30-nested.log` in the local working tree. The committed validation record is `.logs/validation/sandbox-objective.jsonl`.
 
@@ -88,4 +88,4 @@ The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-20
 - Snapshot/resume methods are currently stubs.
 - L7 egress proxy and credential injection are planned sidecar integration, not embedded in `nanofused`.
 - Guest-side SPIFFE SVID client is still required for end-to-end identity retrieval inside the VM.
-- macOS arm64 Parallels validation depends on whether the provider exposes Linux KVM to the guest; unsupported providers must be reported as blockers, not treated as pass.
+- macOS arm64 Parallels validation depends on whether the provider exposes Linux KVM to the guest; unsupported providers must be reported as KVM-unavailable, not treated as pass.

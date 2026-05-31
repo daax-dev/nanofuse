@@ -1,6 +1,8 @@
 package firecracker
 
 import (
+	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,42 +13,63 @@ import (
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
-func TestCreateSnapshot(t *testing.T) {
-	t.Skip("Skipping: CreateSnapshot not yet implemented")
+type snapshotAPICall struct {
+	method string
+	path   string
+	body   []byte
+}
 
-	// Create temp directory for test
-	tmpDir, err := os.MkdirTemp("", "nanofuse-snapshot-test-*")
+func startUnixSnapshotAPIServer(t *testing.T, handler http.Handler) (string, <-chan snapshotAPICall) {
+	t.Helper()
+
+	tmpDir, err := os.MkdirTemp("/tmp", "nf-fc-*")
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+		t.Fatalf("create short temp dir for unix socket: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create a mock Firecracker API server
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/snapshot/create" && r.Method == http.MethodPut {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
+	t.Cleanup(func() {
+		_ = os.RemoveAll(tmpDir)
 	})
 
-	// Create Unix socket server
-	socketPath := filepath.Join(tmpDir, "test.sock")
+	socketPath := filepath.Join(tmpDir, "firecracker.sock")
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
-		t.Fatalf("Failed to create Unix socket: %v", err)
+		t.Fatalf("listen on unix socket: %v", err)
 	}
-	defer listener.Close()
 
-	// Start test server
-	server := httptest.NewUnstartedServer(handler)
-	server.Listener.Close()
+	calls := make(chan snapshotAPICall, 1)
+	recordingHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := ioReadAll(r)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		calls <- snapshotAPICall{
+			method: r.Method,
+			path:   r.URL.Path,
+			body:   body,
+		}
+		handler.ServeHTTP(w, r)
+	})
+
+	server := httptest.NewUnstartedServer(recordingHandler)
+	if err := server.Listener.Close(); err != nil {
+		t.Fatalf("close default listener: %v", err)
+	}
 	server.Listener = listener
 	server.Start()
-	defer server.Close()
+	t.Cleanup(server.Close)
 
-	// Create test VM with runtime info
-	vm := &types.VM{
+	return socketPath, calls
+}
+
+func ioReadAll(r *http.Request) ([]byte, error) {
+	defer r.Body.Close()
+	return io.ReadAll(r.Body)
+}
+
+func snapshotTestVM(socketPath string) *types.VM {
+	return &types.VM{
 		ID:    "test-vm",
 		State: types.StateRunning,
 		Runtime: &types.VMRuntime{
@@ -54,96 +77,127 @@ func TestCreateSnapshot(t *testing.T) {
 			SocketPath: socketPath,
 		},
 	}
+}
 
-	// Create manager
+func TestCreateSnapshotSendsFirecrackerRequest(t *testing.T) {
+	socketPath, calls := startUnixSnapshotAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	tmpDir := t.TempDir()
+	snapshotPath := filepath.Join(tmpDir, "snapshots", "vm.snap")
+	memPath := filepath.Join(tmpDir, "memory", "mem.snap")
+
 	manager := NewManager("/usr/bin/firecracker", tmpDir)
-
-	// Test snapshot creation
-	snapshotPath := filepath.Join(tmpDir, "vm.snap")
-	memPath := filepath.Join(tmpDir, "mem.snap")
-
-	err = manager.CreateSnapshot(vm, snapshotPath, memPath)
-	if err != nil {
-		t.Errorf("CreateSnapshot failed: %v", err)
+	if err := manager.CreateSnapshot(snapshotTestVM(socketPath), snapshotPath, memPath); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
 	}
 
-	// Verify directories were created
-	if _, err := os.Stat(filepath.Dir(snapshotPath)); os.IsNotExist(err) {
-		t.Error("Snapshot directory was not created")
+	call := <-calls
+	if call.method != http.MethodPut {
+		t.Fatalf("method = %s, want %s", call.method, http.MethodPut)
 	}
-	if _, err := os.Stat(filepath.Dir(memPath)); os.IsNotExist(err) {
-		t.Error("Memory file directory was not created")
+	if call.path != "/snapshot/create" {
+		t.Fatalf("path = %s, want /snapshot/create", call.path)
+	}
+
+	var got snapshotCreateRequest
+	if err := json.Unmarshal(call.body, &got); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if got.SnapshotType != "Full" {
+		t.Fatalf("snapshot_type = %q, want Full", got.SnapshotType)
+	}
+	if got.SnapshotPath != snapshotPath {
+		t.Fatalf("snapshot_path = %q, want %q", got.SnapshotPath, snapshotPath)
+	}
+	if got.MemFilePath != memPath {
+		t.Fatalf("mem_file_path = %q, want %q", got.MemFilePath, memPath)
+	}
+
+	if _, err := os.Stat(filepath.Dir(snapshotPath)); err != nil {
+		t.Fatalf("snapshot directory not created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(memPath)); err != nil {
+		t.Fatalf("memory snapshot directory not created: %v", err)
 	}
 }
 
 func TestCreateSnapshotNoRuntime(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "nanofuse-snapshot-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	vm := &types.VM{
-		ID:      "test-vm",
-		State:   types.StateStopped,
-		Runtime: nil,
-	}
-
+	tmpDir := t.TempDir()
 	manager := NewManager("/usr/bin/firecracker", tmpDir)
+	vm := &types.VM{ID: "test-vm", State: types.StateStopped}
 
-	snapshotPath := filepath.Join(tmpDir, "vm.snap")
-	memPath := filepath.Join(tmpDir, "mem.snap")
-
-	err = manager.CreateSnapshot(vm, snapshotPath, memPath)
+	err := manager.CreateSnapshot(vm, filepath.Join(tmpDir, "vm.snap"), filepath.Join(tmpDir, "mem.snap"))
 	if err == nil {
-		t.Error("Expected error for VM without runtime, got nil")
+		t.Fatal("expected error for VM without runtime")
 	}
 }
 
 func TestCreateSnapshotAPIError(t *testing.T) {
-	t.Skip("Skipping: CreateSnapshot not yet implemented")
+	socketPath, _ := startUnixSnapshotAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "snapshot failed", http.StatusInternalServerError)
+	}))
 
-	tmpDir, err := os.MkdirTemp("", "nanofuse-snapshot-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create a mock Firecracker API server that returns an error
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("Internal server error"))
-	})
-
-	socketPath := filepath.Join(tmpDir, "test.sock")
-	listener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		t.Fatalf("Failed to create Unix socket: %v", err)
-	}
-	defer listener.Close()
-
-	server := httptest.NewUnstartedServer(handler)
-	server.Listener.Close()
-	server.Listener = listener
-	server.Start()
-	defer server.Close()
-
-	vm := &types.VM{
-		ID:    "test-vm",
-		State: types.StateRunning,
-		Runtime: &types.VMRuntime{
-			PID:        12345,
-			SocketPath: socketPath,
-		},
-	}
-
+	tmpDir := t.TempDir()
 	manager := NewManager("/usr/bin/firecracker", tmpDir)
 
-	snapshotPath := filepath.Join(tmpDir, "vm.snap")
-	memPath := filepath.Join(tmpDir, "mem.snap")
-
-	err = manager.CreateSnapshot(vm, snapshotPath, memPath)
+	err := manager.CreateSnapshot(snapshotTestVM(socketPath), filepath.Join(tmpDir, "vm.snap"), filepath.Join(tmpDir, "mem.snap"))
 	if err == nil {
-		t.Error("Expected error from Firecracker API, got nil")
+		t.Fatal("expected error from Firecracker API")
+	}
+}
+
+func TestPauseSendsFirecrackerVMStateRequest(t *testing.T) {
+	socketPath, calls := startUnixSnapshotAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	manager := NewManager("/usr/bin/firecracker", t.TempDir())
+	if err := manager.Pause(snapshotTestVM(socketPath)); err != nil {
+		t.Fatalf("Pause: %v", err)
+	}
+
+	call := <-calls
+	if call.method != http.MethodPatch {
+		t.Fatalf("method = %s, want %s", call.method, http.MethodPatch)
+	}
+	if call.path != "/vm" {
+		t.Fatalf("path = %s, want /vm", call.path)
+	}
+
+	var got vmStateRequest
+	if err := json.Unmarshal(call.body, &got); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if got.State != "Paused" {
+		t.Fatalf("state = %q, want Paused", got.State)
+	}
+}
+
+func TestResumeSendsFirecrackerVMStateRequest(t *testing.T) {
+	socketPath, calls := startUnixSnapshotAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	manager := NewManager("/usr/bin/firecracker", t.TempDir())
+	if err := manager.Resume(snapshotTestVM(socketPath)); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+
+	call := <-calls
+	if call.method != http.MethodPatch {
+		t.Fatalf("method = %s, want %s", call.method, http.MethodPatch)
+	}
+	if call.path != "/vm" {
+		t.Fatalf("path = %s, want /vm", call.path)
+	}
+
+	var got vmStateRequest
+	if err := json.Unmarshal(call.body, &got); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if got.State != "Resumed" {
+		t.Fatalf("state = %q, want Resumed", got.State)
 	}
 }

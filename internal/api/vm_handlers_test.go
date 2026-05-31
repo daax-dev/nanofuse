@@ -1,6 +1,10 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -211,7 +215,40 @@ func TestSetupVMNetworkingRejectsManagedModeWhenNetworkSetupDisabled(t *testing.
 	if err == nil {
 		t.Fatal("expected setupVMNetworking() to reject managed networking")
 	}
-	if err.Error() != "network setup disabled; use network mode none or enable network.setup" {
+	if !errors.Is(err, errNetworkSetupDisabled) {
 		t.Fatalf("setupVMNetworking() error = %q", err)
+	}
+}
+
+func TestWriteNetworkSetupErrorUsesInvalidConfig(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	if !writeNetworkSetupError(rec, errNetworkSetupDisabled, "nat") {
+		t.Fatal("expected network setup error to be handled")
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	var apiErr types.APIError
+	if err := json.NewDecoder(rec.Body).Decode(&apiErr); err != nil {
+		t.Fatalf("decode API error: %v", err)
+	}
+	if apiErr.Error.Code != types.ErrInvalidConfig {
+		t.Fatalf("error code = %s, want %s", apiErr.Error.Code, types.ErrInvalidConfig)
+	}
+	if apiErr.Error.Details["network_mode"] != "nat" {
+		t.Fatalf("network_mode detail = %v, want nat", apiErr.Error.Details["network_mode"])
+	}
+	if apiErr.Error.Details["network_setup"] != false {
+		t.Fatalf("network_setup detail = %v, want false", apiErr.Error.Details["network_setup"])
+	}
+}
+
+func TestWriteNetworkSetupErrorIgnoresOtherErrors(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	if writeNetworkSetupError(rec, errors.New("other network failure"), "nat") {
+		t.Fatal("expected unrelated error to remain unhandled")
 	}
 }

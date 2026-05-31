@@ -49,7 +49,7 @@ Deliver the repository objective from objective.md on the current branch only. N
 - [x] #8 Vagrant/hypervisor closed-loop testing is executed and evidence is recorded, including any host capability constraints encountered.
 - [x] #9 docs/GOALS.md and directly related docs are corrected to match the validated design and implementation state.
 - [x] #10 Decision logs under .logs/ contain JSONL entries for non-trivial decisions.
-- [x] #11 Formatter, linter, and tests including mage ci are run, or every blocked gate is recorded with exact cause.
+- [x] #11 Formatter, linter, and tests including mage ci are run, or every unavailable/failed gate is recorded with exact cause.
 - [x] #12 A pull request is opened with problem statement, approach, alternatives, test evidence, and AI producer/validator information.
 - [x] #13 daax-dev/vagrant-skill is used as the required local Vagrant harness for this branch, and the exact KVM/runtime result is recorded.
 - [x] #14 A minimal macOS/Windows tray/menu app exists as an API-only client with a non-GUI smoke mode and documented one-line launch commands.
@@ -84,7 +84,7 @@ Deliver the repository objective from objective.md on the current branch only. N
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Completed sandbox objective validation work on branch `codex-goal` and opened ready-for-review PR https://github.com/daax-dev/nanofuse/pull/46. Implemented per-VM writable rootfs materialization and cleanup, typed egress policy support with iptables default-deny/proxy-only enforcement, API/client schema updates, corrected platform/runtime goals, Vagrant closed-loop tooling, and JSONL decision/reference/validation logs. Local `mage ci` passed; shell/Vagrantfile syntax and Vagrant validation passed where possible. Local Parallels validation is blocked for Firecracker execution because `/dev/kvm` is not exposed, and enabling Parallels nested virtualization prevents the VM from starting on this host.
+Completed sandbox objective validation work on branch `codex-goal` and opened ready-for-review PR https://github.com/daax-dev/nanofuse/pull/46. Implemented per-VM writable rootfs materialization and cleanup, typed egress policy support with iptables default-deny/proxy-only enforcement, API/client schema updates, corrected platform/runtime goals, Vagrant closed-loop tooling, and JSONL decision/reference/validation logs. Local `mage ci` passed; shell/Vagrantfile syntax and Vagrant validation passed where possible. Local Parallels validation cannot execute Firecracker because `/dev/kvm` is not exposed, and enabling Parallels nested virtualization prevents the VM from starting on this host.
 
-Follow-up on 2026-05-30: PR #46 now also includes the explicit API run path required by the operator: GET /capabilities, Mac/Windows API client docs, corrected OpenAPI examples, Vagrant host port forwarding for the guest API, sandbox API comparison, tray/menu-app requirements, and Flowspec artifact path corrections. Local Parallels Vagrant remains blocked at /dev/kvm not found.
+Follow-up on 2026-05-30: PR #46 now also includes the explicit API run path required by the operator: GET /capabilities, Mac/Windows API client docs, corrected OpenAPI examples, Vagrant host port forwarding for the guest API, sandbox API comparison, tray/menu-app requirements, and Flowspec artifact path corrections. Local Parallels Vagrant remains KVM-unavailable at /dev/kvm not found.
 <!-- SECTION:FINAL_SUMMARY:END -->

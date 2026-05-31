@@ -112,3 +112,44 @@ network:
 		t.Fatal("expected explicit network.setup=false to be honored")
 	}
 }
+
+func TestRuntimeDriverForHostRejectsIncompatibleDrivers(t *testing.T) {
+	tests := []struct {
+		name    string
+		driver  string
+		goos    string
+		want    string
+		wantErr string
+	}{
+		{name: "auto darwin", driver: "auto", goos: "darwin", want: "apple_container"},
+		{name: "auto linux", driver: "auto", goos: "linux", want: "firecracker"},
+		{name: "empty defaults to auto", driver: "", goos: "linux", want: "firecracker"},
+		{name: "explicit firecracker linux", driver: "firecracker", goos: "linux", want: "firecracker"},
+		{name: "explicit apple darwin", driver: "apple_container", goos: "darwin", want: "apple_container"},
+		{name: "firecracker darwin rejected", driver: "firecracker", goos: "darwin", wantErr: "firecracker requires linux host"},
+		{name: "apple linux rejected", driver: "apple_container", goos: "linux", wantErr: "apple_container requires darwin host"},
+		{name: "auto windows rejected", driver: "auto", goos: "windows", wantErr: "auto does not support host OS"},
+		{name: "unknown rejected", driver: "unknown", goos: "linux", wantErr: "runtime.driver must be one of"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := runtimeDriverForHost(tt.driver, tt.goos)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("runtimeDriverForHost() error = %v", err)
+				}
+				if got != tt.want {
+					t.Fatalf("runtimeDriverForHost() = %q, want %q", got, tt.want)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("runtimeDriverForHost() error = nil, want %q", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("runtimeDriverForHost() error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}

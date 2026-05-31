@@ -439,7 +439,7 @@ func (m *Manager) Kill(vm *types.VM) error {
 	return nil
 }
 
-// Delete performs runtime-specific deletion after VM metadata cleanup.
+// Delete performs runtime-specific cleanup before VM metadata deletion.
 func (m *Manager) Delete(vm *types.VM) error {
 	return nil
 }

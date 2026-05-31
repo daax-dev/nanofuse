@@ -234,17 +234,16 @@ func (c *Config) validateRuntime() error {
 	if c.Runtime.Driver == "" {
 		c.Runtime.Driver = "auto"
 	}
-	switch c.Runtime.Driver {
-	case "auto", "firecracker", "apple_container":
-	default:
-		return fmt.Errorf("runtime.driver must be one of auto, firecracker, apple_container")
+	driver, err := runtimeDriverForHost(c.Runtime.Driver, runtime.GOOS)
+	if err != nil {
+		return err
 	}
-	if c.Runtime.Driver == "firecracker" || (c.Runtime.Driver == "auto" && runtime.GOOS != "darwin") {
+	if driver == "firecracker" {
 		if c.Firecracker.BinaryPath == "" {
 			return fmt.Errorf("firecracker.binary_path is required")
 		}
 	}
-	if c.Runtime.Driver == "apple_container" || (c.Runtime.Driver == "auto" && runtime.GOOS == "darwin") {
+	if driver == "apple_container" {
 		if c.Runtime.AppleContainer.BinaryPath == "" {
 			c.Runtime.AppleContainer.BinaryPath = "/usr/local/bin/container"
 		}
@@ -253,6 +252,35 @@ func (c *Config) validateRuntime() error {
 		}
 	}
 	return nil
+}
+
+func runtimeDriverForHost(driver, goos string) (string, error) {
+	if driver == "" {
+		driver = "auto"
+	}
+	switch driver {
+	case "auto":
+		switch goos {
+		case "darwin":
+			return "apple_container", nil
+		case "linux":
+			return "firecracker", nil
+		default:
+			return "", fmt.Errorf("runtime.driver auto does not support host OS %q; use linux with firecracker or darwin with apple_container", goos)
+		}
+	case "firecracker":
+		if goos != "linux" {
+			return "", fmt.Errorf("runtime.driver firecracker requires linux host, got %q", goos)
+		}
+		return "firecracker", nil
+	case "apple_container":
+		if goos != "darwin" {
+			return "", fmt.Errorf("runtime.driver apple_container requires darwin host, got %q", goos)
+		}
+		return "apple_container", nil
+	default:
+		return "", fmt.Errorf("runtime.driver must be one of auto, firecracker, apple_container")
+	}
 }
 
 func (c *Config) validateAuth() error {

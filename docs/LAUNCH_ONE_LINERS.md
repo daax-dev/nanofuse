@@ -30,7 +30,7 @@ One-line local startup from the repo root:
 ./scripts/run-tray-macos.sh --start-api --restart
 ```
 
-That command builds `bin/nanofused` and `bin/nanofuse-tray`, writes a macOS daemon config under `${NANOFUSE_DATA_DIR:-/tmp/nanofuse-macos}`, starts `nanofused` through launchd with `runtime.driver=apple_container`, then starts the menu bar app. Daemon logs go to `${NANOFUSE_API_LOG:-/tmp/nanofused-macos.log}`. Tray logs go to `${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}`.
+That command builds `bin/nanofused` and `bin/nanofuse-tray`, writes a macOS daemon config under `${NANOFUSE_DATA_DIR:-/tmp/nanofuse-macos}`, starts `nanofused` through launchd with `runtime.driver=apple_container`, then starts the menu bar app through launchd label `com.daax.nanofuse.tray`. Daemon logs go to `${NANOFUSE_API_LOG:-/tmp/nanofused-macos.log}`. Tray logs go to `${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}`. Stop the tray with `launchctl bootout gui/$(id -u)/com.daax.nanofuse.tray`.
 
 Smoke test without opening the menu bar UI:
 

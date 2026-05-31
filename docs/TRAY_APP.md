@@ -17,7 +17,7 @@ The default local API URL is `http://127.0.0.1:18080`. `NANOFUSE_TRAY_API_URL` o
 ./scripts/run-tray-macos.sh --start-api --restart
 ```
 
-The script builds `bin/nanofuse-tray` and `bin/nanofused`, writes a local macOS daemon config under `${NANOFUSE_DATA_DIR:-/tmp/nanofuse-macos}`, starts `nanofused` through launchd with `runtime.driver=apple_container`, then starts the menu bar app. Daemon logs go to `${NANOFUSE_API_LOG:-/tmp/nanofused-macos.log}`. Tray logs go to `${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}`.
+The script builds `bin/nanofuse-tray` and `bin/nanofused`, writes a local macOS daemon config under `${NANOFUSE_DATA_DIR:-/tmp/nanofuse-macos}`, starts `nanofused` through launchd with `runtime.driver=apple_container`, then starts the menu bar app through launchd label `com.daax.nanofuse.tray`. Daemon logs go to `${NANOFUSE_API_LOG:-/tmp/nanofused-macos.log}`. Tray logs go to `${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}`. Stop the tray with `launchctl bootout gui/$(id -u)/com.daax.nanofuse.tray`.
 
 Useful variants:
 

@@ -14,6 +14,7 @@ api_pid_file="${NANOFUSE_API_PID_FILE:-/tmp/nanofused-macos.pid}"
 api_data_dir="${NANOFUSE_DATA_DIR:-/tmp/nanofuse-macos}"
 api_config="${NANOFUSE_CONFIG:-${api_data_dir}/nanofused.yaml}"
 api_launchd_label="${NANOFUSE_API_LAUNCHD_LABEL:-com.daax.nanofuse.macos-api}"
+tray_launchd_label="${NANOFUSE_TRAY_LAUNCHD_LABEL:-com.daax.nanofuse.tray}"
 api_bind="${NANOFUSE_API_BIND:-}"
 
 usage() {
@@ -164,6 +165,10 @@ wait_for_api() {
   return 1
 }
 
+find_tray_pids() {
+  pgrep -x nanofuse-tray 2>/dev/null || true
+}
+
 if [[ "${start_api}" -eq 1 ]]; then
   write_api_config
   launchd_target="gui/$(id -u)/${api_launchd_label}"
@@ -208,14 +213,28 @@ if [[ "${smoke}" -eq 1 ]]; then
   exec ./bin/nanofuse-tray --smoke "${args[@]}"
 fi
 
-existing_pids="$(pgrep -f '(^|/)nanofuse-tray( |$)' || true)"
+tray_launchd_target="gui/$(id -u)/${tray_launchd_label}"
+if launchctl print "${tray_launchd_target}" >/dev/null 2>&1; then
+  if [[ "${restart}" -eq 1 ]]; then
+    echo "Stopping existing nanofuse-tray launchd service ${tray_launchd_label}"
+    launchctl bootout "${tray_launchd_target}" >/dev/null 2>&1 || true
+    sleep 1
+  else
+    echo "nanofuse-tray launchd service is already loaded: ${tray_launchd_label}"
+    echo "Endpoint requested: ${api_url}"
+    echo "Use --restart to stop the existing tray process and launch a new one."
+    exit 0
+  fi
+fi
+
+existing_pids="$(find_tray_pids)"
 if [[ -n "${existing_pids}" && "${restart}" -eq 1 ]]; then
   echo "Stopping existing nanofuse-tray process(es): ${existing_pids//$'\n'/ }"
   while IFS= read -r pid; do
     [[ -n "${pid}" ]] && kill "${pid}" 2>/dev/null || true
   done <<< "${existing_pids}"
   sleep 1
-  existing_pids="$(pgrep -f '(^|/)nanofuse-tray( |$)' || true)"
+  existing_pids="$(find_tray_pids)"
 fi
 
 if [[ -n "${existing_pids}" ]]; then
@@ -232,11 +251,12 @@ fi
 
 echo "Starting nanofuse-tray in the background. Endpoint: ${api_url}"
 echo "Log: ${log_file}"
-./bin/nanofuse-tray "${args[@]}" >"${log_file}" 2>&1 &
-pid=$!
-sleep 1
+abs_tray="$(pwd)/bin/nanofuse-tray"
+launchctl submit -l "${tray_launchd_label}" -o "${log_file}" -e "${log_file}" -- "${abs_tray}" "${args[@]}"
+sleep 2
 
-if ! kill -0 "${pid}" 2>/dev/null; then
+pid="$(launchctl print "${tray_launchd_target}" 2>/dev/null | awk '/pid = / {print $3; exit}' || true)"
+if [[ -z "${pid}" ]] || ! kill -0 "${pid}" 2>/dev/null; then
   echo "nanofuse-tray exited during startup. Log:" >&2
   sed -n '1,120p' "${log_file}" >&2 || true
   exit 1
@@ -244,4 +264,4 @@ fi
 
 echo "Started nanofuse-tray PID ${pid}."
 echo "Look for 'NF' in the macOS menu bar."
-echo "Stop it with: kill ${pid}"
+echo "Stop it with: launchctl bootout ${tray_launchd_target}"

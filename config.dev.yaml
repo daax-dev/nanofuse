@@ -6,6 +6,16 @@ api:
   socket_mode: "0660"
   tcp_bind: "127.0.0.1:8080"  # Enable TCP for easier testing
 
+# Optional daemon API mTLS auth is disabled for local development by default.
+# When enabled with a TCP listener, tls_cert_file, tls_key_file, and
+# client_ca_file are required. Unix socket access still uses filesystem
+# permissions.
+auth:
+  enabled: false
+  tls_cert_file: ""
+  tls_key_file: ""
+  client_ca_file: ""
+
 storage:
   data_dir: /tmp/nanofuse
   database: /tmp/nanofuse/nanofuse.db

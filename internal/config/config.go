@@ -16,6 +16,23 @@ type Config struct {
 	Registry    RegistryConfig    `yaml:"registry"`
 	Logging     LoggingConfig     `yaml:"logging"`
 	SPIRE       SPIREConfig       `yaml:"spire"`
+	Auth        AuthConfig        `yaml:"auth"`
+}
+
+// AuthConfig holds authentication configuration for the daemon.
+type AuthConfig struct {
+	// Enabled requires mTLS client identity on TCP API listeners. Unix socket
+	// listeners continue to rely on filesystem permissions.
+	Enabled bool `yaml:"enabled"`
+
+	// TLSCertFile is the daemon certificate presented on TCP listeners.
+	TLSCertFile string `yaml:"tls_cert_file,omitempty"`
+
+	// TLSKeyFile is the daemon private key presented on TCP listeners.
+	TLSKeyFile string `yaml:"tls_key_file,omitempty"`
+
+	// ClientCAFile is the CA bundle used to verify client certificates.
+	ClientCAFile string `yaml:"client_ca_file,omitempty"`
 }
 
 // SPIREConfig represents SPIRE integration configuration
@@ -130,6 +147,9 @@ func DefaultConfig() *Config {
 			AgentSocket:   "/run/spire/sockets/agent.sock",      // Default SPIRE agent socket
 			ContainerName: "spire-server",                       // Default Docker container name
 		},
+		Auth: AuthConfig{
+			Enabled: false,
+		},
 	}
 }
 
@@ -173,6 +193,17 @@ func (c *Config) Validate() error {
 	}
 	if c.Limits.MaxTotalMemoryMiB <= 0 {
 		return fmt.Errorf("limits.max_total_memory_mib must be positive")
+	}
+	if c.Auth.Enabled && c.API.TCPBind != "" {
+		if c.Auth.TLSCertFile == "" {
+			return fmt.Errorf("auth.tls_cert_file is required when auth.enabled is true for TCP listeners")
+		}
+		if c.Auth.TLSKeyFile == "" {
+			return fmt.Errorf("auth.tls_key_file is required when auth.enabled is true for TCP listeners")
+		}
+		if c.Auth.ClientCAFile == "" {
+			return fmt.Errorf("auth.client_ca_file is required when auth.enabled is true for TCP listeners")
+		}
 	}
 	return nil
 }

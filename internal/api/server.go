@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -385,6 +386,14 @@ func startServer(cfg *config.Config) error {
 	// Setup HTTP routes and server
 	mux := setupHTTPRouter(server)
 	handler := loggingMiddleware(logger)(mux)
+	var authTLSConfig *tls.Config
+	if cfg.Auth.Enabled && cfg.API.TCPBind != "" {
+		authTLSConfig, err = BuildAuthTLSConfig(&cfg.Auth)
+		if err != nil {
+			return err
+		}
+		logger.Info("TCP API mTLS auth enabled")
+	}
 
 	// Setup listeners (can have multiple: Unix socket + TCP)
 	listeners, err := setupListeners(cfg, logger)
@@ -395,8 +404,14 @@ func startServer(cfg *config.Config) error {
 	// Create HTTP server for each listener
 	errChan := make(chan error, len(listeners))
 	for i, listener := range listeners {
+		listenerHandler := handler
+		serveListener := listener
+		if cfg.Auth.Enabled && listener.Addr().Network() == "tcp" {
+			serveListener = tls.NewListener(listener, authTLSConfig)
+			listenerHandler = loggingMiddleware(logger)(MTLSIdentityMiddleware(logger, mux))
+		}
 		httpServer := &http.Server{
-			Handler:           handler,
+			Handler:           listenerHandler,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 
@@ -408,11 +423,11 @@ func startServer(cfg *config.Config) error {
 			go func(l net.Listener, srv *http.Server) {
 				logger.Info("Starting server on listener: %s", l.Addr())
 				errChan <- srv.Serve(l)
-			}(listener, httpServer)
+			}(serveListener, httpServer)
 		} else {
 			// Start last server in main goroutine
 			logger.Info("NanoFuse API Daemon started successfully")
-			return httpServer.Serve(listener)
+			return httpServer.Serve(serveListener)
 		}
 	}
 

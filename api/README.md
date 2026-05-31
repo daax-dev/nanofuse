@@ -77,9 +77,13 @@ npx @redocly/cli preview-docs openapi.yaml --port 8080
 
 ## Authentication
 
-Currently, the NanoFuse API does not require authentication when accessed via Unix socket (default).
+By default, the NanoFuse API does not require application-layer authentication when accessed via Unix socket. Access is controlled by Unix socket permissions.
 
-If using TCP binding, consider implementing authentication middleware or using a reverse proxy with authentication.
+When `auth.enabled` is true and `api.tcp_bind` is configured, the TCP API listener uses mutual TLS with `tls.RequireAndVerifyClientCert`. Configure `auth.tls_cert_file`, `auth.tls_key_file`, and `auth.client_ca_file`. Requests must present a client certificate verified by that CA, and the certificate must contain a `spiffe://` URI SAN. NanoFuse extracts that verified SPIFFE URI into request context and records audit logs.
+
+NanoFuse does not trust `X-SPIFFE-ID` or other client-controlled identity headers, does not implement an Aembit-style policy engine, and does not rotate SVIDs. Unix socket listeners remain local/plain unless a separate transport wrapper is configured outside the daemon.
+
+On the TCP mTLS listener, a client that sends only `X-SPIFFE-ID` and no CA-verified client certificate fails the TLS handshake before HTTP handling. JSON `UNAUTHORIZED` responses apply to requests that reach the HTTP middleware but lack a valid SPIFFE URI SAN. If a verified certificate is present, the certificate URI SAN is the identity source and headers are ignored.
 
 ## Error Handling
 

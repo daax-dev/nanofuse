@@ -49,14 +49,15 @@ Create, start, inspect, stop, and delete a local macOS-backed Linux VM:
 
 ```bash
 API=http://127.0.0.1:18080
+VM_NAME="mac-api-alpine-$(date +%s)"
 VM_ID="$(curl -fsS -X POST "$API/vms" \
   -H "Content-Type: application/json" \
-  -d '{"name":"mac-api-alpine","image":"alpine:3.20","config":{"vcpus":1,"memory_mib":256,"network":{"mode":"none"}}}' \
-  | jq -r '.vm.id')"
-curl -fsS -X POST "$API/vms/$VM_ID/start" | jq '.vm.runtime'
-CONTAINER_ID="$(curl -fsS "$API/vms/$VM_ID" | jq -r '.vm.runtime.external_id')"
+  -d "{\"name\":\"${VM_NAME}\",\"image\":\"alpine:3.20\",\"config\":{\"vcpus\":1,\"memory_mib\":256,\"network\":{\"mode\":\"none\"}}}" \
+  | jq -r '.id')"
+curl -fsS -X POST "$API/vms/$VM_ID/start" | jq '.runtime'
+CONTAINER_ID="$(curl -fsS "$API/vms/$VM_ID" | jq -r '.runtime.external_id')"
 container exec "$CONTAINER_ID" uname -a
-curl -fsS -X POST "$API/vms/$VM_ID/stop" -H "Content-Type: application/json" -d '{"timeout_seconds":10}' | jq '.vm.state'
+curl -fsS -X POST "$API/vms/$VM_ID/stop" -H "Content-Type: application/json" -d '{"timeout_seconds":10}' | jq '.state'
 curl -fsS -X DELETE "$API/vms/$VM_ID" -o /dev/null -w "%{http_code}\n"
 ```
 

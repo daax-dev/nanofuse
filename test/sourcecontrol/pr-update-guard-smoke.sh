@@ -74,3 +74,14 @@ EOF
 PATH="$tmpdir:$PATH" "$guard" origin git@github.com:daax-dev/nanofuse.git <<EOF
 refs/heads/branch-with-pr ${zero_oid} refs/heads/branch-with-pr ${local_oid}
 EOF
+
+mkdir "$tmpdir/noop-work"
+git -C "$tmpdir/noop-work" init -q
+git -C "$tmpdir/noop-work" checkout -q -b branch-with-pr
+if (cd "$tmpdir/noop-work" && PATH="$tmpdir:$PATH" "$guard" origin git@github.com:daax-dev/nanofuse.git </dev/null); then
+  echo "expected guard to block no-op push from branch-with-pr" >&2
+  exit 1
+fi
+
+git -C "$tmpdir/noop-work" checkout -q -b branch-without-pr
+(cd "$tmpdir/noop-work" && PATH="$tmpdir:$PATH" "$guard" origin git@github.com:daax-dev/nanofuse.git </dev/null)

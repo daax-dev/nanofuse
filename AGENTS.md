@@ -25,7 +25,7 @@ Purpose: Firecracker-based microVM platform for running untrusted code in secure
 ## Hard Guardrails (always apply)
 - Plan before any non-trivial change. Write the plan down. Wait for approval.
 - Never commit or merge directly to `main`.
-- Never update a GitHub PR after creation. Once a PR exists for a branch, create a new branch and a new PR for any further changes. Keep the repo pre-push PR immutability guard installed; do not bypass it.
+- Never update a GitHub PR after creation. Once a PR exists for a branch, do not push, no-op push, amend, edit title/body/metadata, or otherwise interact with that PR branch. Create PRs only after local validation is complete. Any required change means close the PR, create a fresh branch, and open a fresh PR. Keep the repo pre-push PR immutability guard installed; do not bypass it.
 - Never commit secrets, tokens, keys, or `.env` files with live values.
 - No destructive git (`reset --hard`, force-push, branch delete) without explicit operator approval.
 - Never overwrite uncommitted user changes. Inspect existing patterns before editing.

@@ -23,23 +23,11 @@ fi
 
 blocked=0
 
-while read -r local_ref local_oid remote_ref remote_oid; do
-  [[ -z "${local_ref:-}" ]] && continue
+check_branch() {
+  local branch="$1"
+  [[ -z "$branch" ]] && return 0
 
-  # Branch deletes do not update a PR diff.
-  if [[ "$local_oid" =~ ^0+$ ]]; then
-    continue
-  fi
-
-  branch=""
-  if [[ "$local_ref" == refs/heads/* ]]; then
-    branch="${local_ref#refs/heads/}"
-  elif [[ "$remote_ref" == refs/heads/* ]]; then
-    branch="${remote_ref#refs/heads/}"
-  else
-    continue
-  fi
-
+  local errfile
   errfile="$(mktemp)"
   if ! prs="$(gh pr list \
     --repo "$repo" \
@@ -55,7 +43,7 @@ while read -r local_ref local_oid remote_ref remote_oid; do
     } >&2
     rm -f "$errfile"
     blocked=1
-    continue
+    return 0
   fi
   rm -f "$errfile"
 
@@ -68,6 +56,34 @@ while read -r local_ref local_oid remote_ref remote_oid; do
     } >&2
     blocked=1
   fi
+}
+
+processed_refs=0
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+  [[ -z "${local_ref:-}" ]] && continue
+  processed_refs=1
+
+  # Branch deletes do not update a PR diff.
+  if [[ "$local_oid" =~ ^0+$ ]]; then
+    continue
+  fi
+
+  branch=""
+  if [[ "$local_ref" == refs/heads/* ]]; then
+    branch="${local_ref#refs/heads/}"
+  elif [[ "$remote_ref" == refs/heads/* ]]; then
+    branch="${remote_ref#refs/heads/}"
+  else
+    continue
+  fi
+
+  check_branch "$branch"
 done
+
+if [[ "$processed_refs" -eq 0 ]]; then
+  current_branch="$(git branch --show-current 2>/dev/null || true)"
+  check_branch "$current_branch"
+fi
 
 exit "$blocked"

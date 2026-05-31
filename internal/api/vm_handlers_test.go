@@ -254,3 +254,42 @@ func TestWriteNetworkSetupErrorIgnoresOtherErrors(t *testing.T) {
 		t.Fatal("expected unrelated error to remain unhandled")
 	}
 }
+
+func TestVMHasRuntimeHandleAcceptsPIDOrExternalID(t *testing.T) {
+	tests := []struct {
+		name string
+		vm   *types.VM
+		want bool
+	}{
+		{name: "nil VM", vm: nil, want: false},
+		{name: "nil runtime", vm: &types.VM{}, want: false},
+		{
+			name: "firecracker PID",
+			vm: &types.VM{Runtime: &types.VMRuntime{
+				PID: 1234,
+			}},
+			want: true,
+		},
+		{
+			name: "apple container external ID",
+			vm: &types.VM{Runtime: &types.VMRuntime{
+				ExternalID: "nf-abc123",
+			}},
+			want: true,
+		},
+		{
+			name: "empty runtime",
+			vm:   &types.VM{Runtime: &types.VMRuntime{}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := vmHasRuntimeHandle(tt.vm)
+			if got != tt.want {
+				t.Fatalf("vmHasRuntimeHandle() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

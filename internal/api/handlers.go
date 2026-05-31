@@ -42,12 +42,14 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 	firecrackerBinary := ""
 	driver := ""
 	appleContainerBinary := ""
+	appleContainerAutoStart := false
 	if s.config != nil {
 		socketPath = s.config.API.Socket
 		tcpBind = s.config.API.TCPBind
 		firecrackerBinary = s.config.Firecracker.BinaryPath
 		driver = selectedRuntimeDriver(s.config)
 		appleContainerBinary = s.config.Runtime.AppleContainer.BinaryPath
+		appleContainerAutoStart = s.config.Runtime.AppleContainer.AutoStart
 	}
 
 	kvmExists, kvmReadWrite, kvmErr := inspectKVMDevice("/dev/kvm")
@@ -58,11 +60,13 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 		appleContainerRunning = appleContainerSystemRunning(appleContainerBinary)
 	}
 	virtualizationSupported := runtime.GOOS == "darwin" && appleContainerAvailable
+	appleContainerReady := driver == applecontainer.DriverName &&
+		appleContainerNativeReady(runtime.GOOS, appleContainerAvailable, appleContainerRunning, appleContainerAutoStart)
 	nativeRuntime := (driver == "firecracker" && runtime.GOOS == "linux" && kvmReadWrite && firecrackerAvailable) ||
-		(driver == applecontainer.DriverName && runtime.GOOS == "darwin" && appleContainerAvailable)
+		appleContainerReady
 
 	message := "Linux KVM and Firecracker are available for local microVM execution"
-	if driver == applecontainer.DriverName && nativeRuntime {
+	if driver == applecontainer.DriverName && appleContainerReady {
 		message = "Apple container and Virtualization.framework are available for local macOS Linux microVM execution"
 		if !appleContainerRunning {
 			message = "Apple container is installed for local macOS Linux microVM execution; service will be started on demand"
@@ -70,6 +74,9 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 	}
 	if !nativeRuntime {
 		message = "Nanofuse microVM execution requires Linux/KVM with Firecracker or macOS with Apple container and Virtualization.framework"
+		if driver == applecontainer.DriverName && runtime.GOOS == "darwin" && appleContainerAvailable && !appleContainerRunning && !appleContainerAutoStart {
+			message = "Apple container is installed but services are stopped and runtime.apple_container.auto_start is false"
+		}
 	}
 
 	return types.CapabilitiesResponse{
@@ -101,6 +108,10 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 			TCPBind:    tcpBind,
 		},
 	}
+}
+
+func appleContainerNativeReady(goos string, available, running, autoStart bool) bool {
+	return goos == "darwin" && available && (running || autoStart)
 }
 
 func appleContainerSystemRunning(path string) bool {

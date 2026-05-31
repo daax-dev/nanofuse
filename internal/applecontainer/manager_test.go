@@ -74,6 +74,49 @@ func TestRunArgsMapsVMConfigToAppleContainerCLI(t *testing.T) {
 	}
 }
 
+func TestDeleteKillsRunningContainerBeforeDelete(t *testing.T) {
+	binaryPath, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable() error = %v", err)
+	}
+	manager := NewManager(config.AppleContainerRuntimeConfig{BinaryPath: binaryPath}, t.TempDir())
+	inspectStatuses := []string{"running", "stopped"}
+	commands := []string{}
+	manager.runCommand = func(args ...string) ([]byte, error) {
+		command := strings.Join(args, " ")
+		commands = append(commands, command)
+		switch command {
+		case "inspect nf-test":
+			if len(inspectStatuses) == 0 {
+				t.Fatalf("unexpected extra inspect")
+			}
+			status := inspectStatuses[0]
+			inspectStatuses = inspectStatuses[1:]
+			return []byte(`[{"status":"` + status + `"}]`), nil
+		case "kill nf-test":
+			return nil, nil
+		case "delete nf-test":
+			return nil, nil
+		default:
+			t.Fatalf("unexpected command: %v", args)
+			return nil, nil
+		}
+	}
+
+	err = manager.Delete(&types.VM{
+		ID:      "vm-test",
+		Runtime: &types.VMRuntime{ExternalID: "nf-test"},
+	})
+	if err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+
+	want := []string{"inspect nf-test", "kill nf-test", "inspect nf-test", "delete nf-test"}
+	if strings.Join(commands, "|") != strings.Join(want, "|") {
+		t.Fatalf("commands = %#v, want %#v", commands, want)
+	}
+}
+
 func testVM() *types.VM {
 	return &types.VM{
 		ID:    "vm-1234567890abcdef",

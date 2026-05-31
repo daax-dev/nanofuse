@@ -112,6 +112,67 @@ func TestCapabilitiesEndpoint(t *testing.T) {
 	}
 }
 
+func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
+	tests := []struct {
+		name      string
+		goos      string
+		available bool
+		running   bool
+		autoStart bool
+		want      bool
+	}{
+		{
+			name:      "running service is ready",
+			goos:      "darwin",
+			available: true,
+			running:   true,
+			autoStart: false,
+			want:      true,
+		},
+		{
+			name:      "auto start can become ready",
+			goos:      "darwin",
+			available: true,
+			running:   false,
+			autoStart: true,
+			want:      true,
+		},
+		{
+			name:      "stopped service without auto start is not ready",
+			goos:      "darwin",
+			available: true,
+			running:   false,
+			autoStart: false,
+			want:      false,
+		},
+		{
+			name:      "missing CLI is not ready",
+			goos:      "darwin",
+			available: false,
+			running:   true,
+			autoStart: true,
+			want:      false,
+		},
+		{
+			name:      "linux does not use apple container readiness",
+			goos:      "linux",
+			available: true,
+			running:   true,
+			autoStart: true,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := appleContainerNativeReady(tt.goos, tt.available, tt.running, tt.autoStart)
+			if got != tt.want {
+				t.Fatalf("appleContainerNativeReady() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCapabilitiesEndpointMethodNotAllowed(t *testing.T) {
 	server := &Server{
 		startTime: time.Now(),

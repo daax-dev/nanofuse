@@ -935,7 +935,7 @@ func (s *Server) handleVMKillByPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Kill VM
-	if vm.Runtime != nil && vm.Runtime.PID != 0 {
+	if vmHasRuntimeHandle(vm) {
 		if err := s.runtimeManager.Kill(vm); err != nil {
 			s.logger.Printf("WARN: Failed to kill VM: %v", err)
 		}
@@ -950,6 +950,10 @@ func (s *Server) handleVMKillByPath(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Printf("INFO: Killed VM: %s (%s)", vm.Name, vm.ID)
 	writeJSON(w, http.StatusOK, vm)
+}
+
+func vmHasRuntimeHandle(vm *types.VM) bool {
+	return vm != nil && vm.Runtime != nil && (vm.Runtime.PID != 0 || vm.Runtime.ExternalID != "")
 }
 
 // handleVMPauseByPath handles POST /vms/{id}/pause using path parameters

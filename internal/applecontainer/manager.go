@@ -437,8 +437,10 @@ func (m *Manager) Stop(vm *types.VM, timeoutSeconds int) error {
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 10
 	}
-	_, err := m.runCommand("stop", "--time", strconv.Itoa(timeoutSeconds), name)
-	return err
+	if _, err := m.runCommand("stop", "--time", strconv.Itoa(timeoutSeconds), name); err != nil {
+		return err
+	}
+	return m.waitForContainerStopped(name, time.Duration(timeoutSeconds)*time.Second)
 }
 
 // Kill kills a VM forcefully.
@@ -450,7 +452,27 @@ func (m *Manager) Kill(vm *types.VM) error {
 	if _, err := m.runCommand("kill", name); err != nil {
 		return err
 	}
-	return nil
+	return m.waitForContainerStopped(name, 5*time.Second)
+}
+
+func (m *Manager) waitForContainerStopped(name string, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = time.Second
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		inspect, exists, err := m.inspectContainer(name)
+		if err != nil {
+			return err
+		}
+		if !exists || inspect.Status != "running" {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("apple container %q still running after %s", name, timeout)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // Delete deletes the stopped container backing a VM.

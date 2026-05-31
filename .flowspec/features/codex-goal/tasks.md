@@ -72,7 +72,6 @@
 - [x] T041 Add Flowspec runtime capability design artifact and ADR
 - [x] T042 Fix PR #65 Copilot feedback for exec timeout, network validation, resume, snapshots, and matching pause behavior
 - [x] T043 Validate focused tests, `mage ci`, tray smoke, and live Apple-container probe
-- [ ] T044 Validate replacement PR CI after PR creation
 
 ## Dependencies
 

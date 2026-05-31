@@ -8,7 +8,7 @@
 - For VM execution, that daemon must run on Linux with read/write `/dev/kvm`.
 - macOS or Windows with Go installed to build from this checkout.
 
-The default local API URL is `http://127.0.0.1:18080`, which matches the documented SSH/Vagrant tunnel examples.
+The default local API URL is `http://127.0.0.1:18080`, which matches the documented SSH/Vagrant tunnel examples. `NANOFUSE_TRAY_API_URL` overrides `NANOFUSE_API_URL` for the tray launcher.
 
 ## macOS One-Liner
 
@@ -16,10 +16,15 @@ The default local API URL is `http://127.0.0.1:18080`, which matches the documen
 NANOFUSE_API_URL="${NANOFUSE_API_URL:-http://127.0.0.1:18080}" ./scripts/run-tray-macos.sh
 ```
 
-Equivalent explicit build and launch:
+The script builds `bin/nanofuse-tray`, starts it in the background, prints the PID, and writes logs to `${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}`. If a tray process is already running, the script prints the existing PID and exits without replacing it.
+
+Useful variants:
 
 ```bash
-go build -o bin/nanofuse-tray ./cmd/nanofuse-tray && ./bin/nanofuse-tray --api-url "${NANOFUSE_API_URL:-http://127.0.0.1:18080}"
+./scripts/run-tray-macos.sh --restart
+./scripts/run-tray-macos.sh --foreground
+./scripts/run-tray-macos.sh --smoke --timeout 2s
+./scripts/run-tray-macos.sh --api-url http://127.0.0.1:18080 --restart
 ```
 
 ## Windows One-Liner
@@ -41,7 +46,7 @@ if (-not $env:NANOFUSE_API_URL) { $env:NANOFUSE_API_URL = "http://127.0.0.1:1808
 Smoke mode uses the same Nanofuse API client and exits without starting a desktop tray loop:
 
 ```bash
-./bin/nanofuse-tray --smoke --api-url "${NANOFUSE_API_URL:-http://127.0.0.1:18080}"
+./scripts/run-tray-macos.sh --smoke --timeout 2s --api-url "${NANOFUSE_API_URL:-http://127.0.0.1:18080}"
 ```
 
 Windows:
@@ -75,3 +80,6 @@ Validated on 2026-05-31 from this Mac:
 - `GOOS=windows GOARCH=amd64 go build -ldflags='-H=windowsgui' -o /tmp/nanofuse-tray.exe ./cmd/nanofuse-tray`
 - `./bin/nanofuse-tray --smoke --api-url http://127.0.0.1:19080` against a local fake Nanofuse API
 - bounded macOS tray launch against the same local fake API
+- `bash -n scripts/run-tray-macos.sh`
+- `./scripts/run-tray-macos.sh`
+- `./scripts/run-tray-macos.sh --help`

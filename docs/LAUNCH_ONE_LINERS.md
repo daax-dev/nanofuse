@@ -147,10 +147,17 @@ One-line build and launch from the repo root:
 NANOFUSE_API_URL="${NANOFUSE_API_URL:-http://127.0.0.1:18080}" ./scripts/run-tray-macos.sh
 ```
 
+The script prints the build/launch result, starts the menu bar app in the background, writes logs to `${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}`, and reports the PID. If an existing tray process is running, it reports that PID and exits. Use `--restart` to replace it or `--foreground` to keep it attached to the terminal:
+
+```bash
+./scripts/run-tray-macos.sh --api-url http://127.0.0.1:18080 --restart
+./scripts/run-tray-macos.sh --api-url http://127.0.0.1:18080 --foreground
+```
+
 Smoke test without opening the menu bar app:
 
 ```bash
-go build -o bin/nanofuse-tray ./cmd/nanofuse-tray && ./bin/nanofuse-tray --smoke --api-url "${NANOFUSE_API_URL:-http://127.0.0.1:18080}"
+./scripts/run-tray-macos.sh --smoke --timeout 2s --api-url "${NANOFUSE_API_URL:-http://127.0.0.1:18080}"
 ```
 
 ## Windows PowerShell Client

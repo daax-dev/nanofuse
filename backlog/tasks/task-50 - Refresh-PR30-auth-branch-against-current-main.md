@@ -1,10 +1,10 @@
 ---
 id: TASK-50
 title: Refresh PR30 auth branch against current main
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-30 23:18'
-updated_date: '2026-05-31 00:04'
+updated_date: '2026-05-31 00:07'
 labels:
   - pr30
   - auth
@@ -15,6 +15,7 @@ references:
   - /Users/jasonpoley/prj/dx/src/nanofuse-pr30
   - 'https://github.com/daax-dev/nanofuse/pull/30'
   - 'https://github.com/daax-dev/nanofuse/pull/48'
+  - 'https://github.com/daax-dev/nanofuse/pull/49'
 documentation:
   - api/README.md
   - config.dev.yaml
@@ -63,10 +64,12 @@ Replacement hardening completed: closed PR #30 Copilot threads were stale/outdat
 Fresh Copilot review on replacement PR #48 identified plaintext auth errors, global slog audit logging, and missing CA path context. Scope revised to return standard JSON errors, route audit events through internal/logging.Logger, and include the CA path in parse errors.
 
 Reopened on 2026-05-30 after replacement PR #48 was closed without merge. Current origin/main now includes PR #47, so the same branch must absorb current main without history rewrite, make the PR48 auth fixes unambiguous for a fresh replacement PR, rerun local gates, push, and open a new PR from fix/issues-2-3-4-v2.
+
+Follow-up replacement PR opened as #49 from the same branch after merging current main and adding explicit mTLS denial/client-CA helper coverage.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Replacement PR open: https://github.com/daax-dev/nanofuse/pull/48. Closed PR #30 Copilot threads were audited and found stale/outdated against old commit f21a353. Fresh PR #48 Copilot feedback was addressed by returning standard JSON 401 errors, routing auth audit events through internal/logging.Logger instead of global slog, and including the client CA path in parse errors. Current branch hardening adds explicit spoofed X-SPIFFE-ID rejection/ignore coverage, TCP mTLS config validation tests, API docs, audit docs, and JSONL decisions auth-002/auth-003. Validation passed after the fresh fix: go test ./internal/api ./internal/config ./internal/types; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci. mage ci printed existing non-fatal gosec-not-found and macOS linker warnings.
+Replacement PR open: https://github.com/daax-dev/nanofuse/pull/49. Closed PR #48 was not merged, so fix/issues-2-3-4-v2 was updated with current origin/main via a normal merge commit, then hardened with explicit mTLS denial and client CA loading helpers. The branch still scopes auth to TCP mTLS SPIFFE URI SAN identity, rejects/ignores spoofed X-SPIFFE-ID, routes audit events through internal/logging.Logger, returns JSON 401 errors, and includes configured CA paths in read/parse errors. Validation passed: go test ./internal/api ./internal/config ./internal/types; jq -c . .logs/decisions/auth.jsonl; git diff --check; mage ci. mage ci printed existing non-fatal gosec-not-found, no-tag git describe, and macOS linker warnings.
 <!-- SECTION:FINAL_SUMMARY:END -->

@@ -4,7 +4,7 @@ title: Refresh PR30 auth branch against current main
 status: Done
 assignee: []
 created_date: '2026-05-30 23:18'
-updated_date: '2026-05-31 00:11'
+updated_date: '2026-05-31 00:16'
 labels:
   - pr30
   - auth
@@ -12,9 +12,6 @@ labels:
   - replacement-pr
 dependencies: []
 references:
-  - fix/issues-2-3-4-v2
-  - 'https://github.com/daax-dev/nanofuse/pull/30'
-  - 'https://github.com/daax-dev/nanofuse/pull/48'
   - 'https://github.com/daax-dev/nanofuse/pull/49'
 documentation:
   - api/README.md
@@ -68,6 +65,8 @@ Reopened on 2026-05-30 after replacement PR #48 was closed without merge. Curren
 Follow-up replacement PR opened as #49 from the same branch after merging current main and adding explicit mTLS denial/client-CA helper coverage.
 
 Fresh Copilot review on PR #49 identified an inaccurate README sentence about no-cert clients receiving JSON 401 after TLS RequireAndVerifyClientCert, and a non-portable absolute worktree path in task references. The README now distinguishes TLS handshake failure from middleware JSON 401 responses, and references use the branch name plus public PR URLs.
+
+TASK-50 references were further shortened to only the replacement PR URL so the stale multi-line Copilot anchor over the old references block no longer tracks an unrelated public URL line.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

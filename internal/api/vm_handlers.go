@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"github.com/daax-dev/nanofuse/internal/types"
 	"github.com/google/uuid"
 )
+
+var errNetworkSetupDisabled = errors.New("network setup disabled; use network mode none or enable network.setup")
 
 // handleListVMs lists all VMs
 func (s *Server) handleListVMs(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +322,7 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 		return nil
 	}
 	if !s.config.Network.Setup {
-		return fmt.Errorf("network setup disabled; use network mode none or enable network.setup")
+		return errNetworkSetupDisabled
 	}
 
 	// Allocate IP address
@@ -383,6 +386,19 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 	}
 
 	return nil
+}
+
+func writeNetworkSetupError(w http.ResponseWriter, err error, networkMode string) bool {
+	if !errors.Is(err, errNetworkSetupDisabled) {
+		return false
+	}
+
+	types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, errNetworkSetupDisabled.Error(), map[string]interface{}{
+		"network_mode":         networkMode,
+		"network_setup":        false,
+		"allowed_network_mode": "none",
+	})
+	return true
 }
 
 // registerSPIREWorkload handles SPIRE workload registration for a new VM.
@@ -478,6 +494,9 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 	if err := s.setupVMNetworking(vmID, &config); err != nil {
 		if cleanupErr := cleanupVMStorage(s.config.Storage.DataDir, vmID); cleanupErr != nil {
 			s.logger.Printf("WARN: Failed to cleanup VM storage after network setup failure: %v", cleanupErr)
+		}
+		if writeNetworkSetupError(w, err, config.Network.Mode) {
+			return
 		}
 		s.logger.Printf("ERROR: Network setup failed: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, err.Error(), nil)

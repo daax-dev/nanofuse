@@ -61,24 +61,25 @@ func main() {
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		// Check for client.ClientError (API errors with exit codes)
 		if cerr, ok := err.(*client.ClientError); ok {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", cerr.Error())
+			if rootCmd.SilenceErrors {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", cerr.Error())
+			}
 			os.Exit(cerr.ExitCode())
 		}
 		// Check for clierrors.CLIError (user-friendly errors with exit codes)
 		if cliErr, ok := err.(*clierrors.CLIError); ok {
-			cliErr.Format(cliUseColor())
+			if rootCmd.SilenceErrors {
+				cliErr.Format(cliUseColor())
+			}
 			os.Exit(cliErr.ExitCode)
 		}
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 var rootCmd = &cobra.Command{
-	Use:           "nanofuse",
-	Short:         "NanoFuse - Firecracker microVM manager",
-	SilenceUsage:  true,
-	SilenceErrors: true,
+	Use:   "nanofuse",
+	Short: "NanoFuse - Firecracker microVM manager",
 	Long: `NanoFuse is a command-line tool for managing Firecracker-based microVMs.
 It provides simple commands for VM lifecycle management, snapshots, and image handling.`,
 	Version: version,
@@ -612,10 +613,10 @@ Examples:
 
 		// Return error if validation failed (sets exit code to 1)
 		if !result.Passed {
-			return &clierrors.CLIError{
+			return formattedCLIError(&clierrors.CLIError{
 				Message:  "Image validation failed",
 				ExitCode: 1,
-			}
+			})
 		}
 
 		return nil
@@ -1533,7 +1534,13 @@ func handleAPIErrorWithResource(err error, operation string, resource string) er
 	cliErr := clierrors.FromError(err, operation, resourceOrSocket)
 
 	// Always return CLIError for consistent type handling
-	return cliErr
+	return formattedCLIError(cliErr)
+}
+
+func formattedCLIError(err *clierrors.CLIError) error {
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+	return err
 }
 
 func isTerminal() bool {

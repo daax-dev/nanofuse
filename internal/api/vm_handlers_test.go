@@ -1,10 +1,15 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/daax-dev/nanofuse/internal/config"
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
@@ -178,5 +183,72 @@ func TestCleanupVMStorageRemovesVMDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(vmDir); !os.IsNotExist(err) {
 		t.Fatalf("VM storage still exists or stat failed: %v", err)
+	}
+}
+
+func TestSetupVMNetworkingAllowsNoneWhenNetworkSetupDisabled(t *testing.T) {
+	server := &Server{
+		config: &config.Config{
+			Network: config.NetworkConfig{Setup: false},
+		},
+	}
+	vmConfig := types.VMConfig{
+		Network: types.NetworkConfig{Mode: "none"},
+	}
+
+	if err := server.setupVMNetworking("vm-123", &vmConfig); err != nil {
+		t.Fatalf("setupVMNetworking() error = %v", err)
+	}
+}
+
+func TestSetupVMNetworkingRejectsManagedModeWhenNetworkSetupDisabled(t *testing.T) {
+	server := &Server{
+		config: &config.Config{
+			Network: config.NetworkConfig{Setup: false},
+		},
+	}
+	vmConfig := types.VMConfig{
+		Network: types.NetworkConfig{Mode: "nat"},
+	}
+
+	err := server.setupVMNetworking("vm-123", &vmConfig)
+	if err == nil {
+		t.Fatal("expected setupVMNetworking() to reject managed networking")
+	}
+	if !errors.Is(err, errNetworkSetupDisabled) {
+		t.Fatalf("setupVMNetworking() error = %q", err)
+	}
+}
+
+func TestWriteNetworkSetupErrorUsesInvalidConfig(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	if !writeNetworkSetupError(rec, errNetworkSetupDisabled, "nat") {
+		t.Fatal("expected network setup error to be handled")
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	var apiErr types.APIError
+	if err := json.NewDecoder(rec.Body).Decode(&apiErr); err != nil {
+		t.Fatalf("decode API error: %v", err)
+	}
+	if apiErr.Error.Code != types.ErrInvalidConfig {
+		t.Fatalf("error code = %s, want %s", apiErr.Error.Code, types.ErrInvalidConfig)
+	}
+	if apiErr.Error.Details["network_mode"] != "nat" {
+		t.Fatalf("network_mode detail = %v, want nat", apiErr.Error.Details["network_mode"])
+	}
+	if apiErr.Error.Details["network_setup"] != false {
+		t.Fatalf("network_setup detail = %v, want false", apiErr.Error.Details["network_setup"])
+	}
+}
+
+func TestWriteNetworkSetupErrorIgnoresOtherErrors(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	if writeNetworkSetupError(rec, errors.New("other network failure"), "nat") {
+		t.Fatal("expected unrelated error to remain unhandled")
 	}
 }

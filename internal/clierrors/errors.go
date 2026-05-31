@@ -171,18 +171,31 @@ func WrapSnapshotNotFound(snapshotID string, operation string) *CLIError {
 }
 
 // WrapDaemonNotRunning creates a CLIError when the nanofused daemon is not reachable.
-func WrapDaemonNotRunning(socketPath string) *CLIError {
+func WrapDaemonNotRunning(endpoint string) *CLIError {
+	suggestion := "Start the nanofused service: sudo systemctl start nanofused"
+	reason := "The nanofused daemon is not running or the socket is inaccessible"
+	docRef := "sudo systemctl status nanofused"
+	if isHTTPAPIEndpoint(endpoint) {
+		suggestion = "Verify the API URL, SSH tunnel, or remote nanofused daemon"
+		reason = "The nanofused API endpoint is not reachable"
+		docRef = "nanofuse --api-url " + endpoint + " health"
+	}
+
 	return &CLIError{
 		Message:    "Cannot connect to nanofused API",
-		Suggestion: "Start the nanofused service: sudo systemctl start nanofused",
+		Suggestion: suggestion,
 		Context: &ErrorContext{
 			Operation: "connect to API",
-			Resource:  socketPath,
-			Reason:    "The nanofused daemon is not running or the socket is inaccessible",
+			Resource:  endpoint,
+			Reason:    reason,
 		},
-		DocRef:   "sudo systemctl status nanofused",
+		DocRef:   docRef,
 		ExitCode: 3,
 	}
+}
+
+func isHTTPAPIEndpoint(endpoint string) bool {
+	return strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://")
 }
 
 // WrapInvalidImageRef creates a CLIError for an invalid image reference.

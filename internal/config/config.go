@@ -15,6 +15,7 @@ type Config struct {
 	Limits      LimitsConfig      `yaml:"limits"`
 	Registry    RegistryConfig    `yaml:"registry"`
 	Logging     LoggingConfig     `yaml:"logging"`
+	Network     NetworkConfig     `yaml:"network"`
 	SPIRE       SPIREConfig       `yaml:"spire"`
 	Auth        AuthConfig        `yaml:"auth"`
 }
@@ -101,6 +102,11 @@ type LoggingConfig struct {
 	ConsoleLogMaxBackups int    `yaml:"console_log_max_backups"`
 }
 
+// NetworkConfig represents daemon-managed host network setup.
+type NetworkConfig struct {
+	Setup bool `yaml:"setup"` // Create bridge/NAT at daemon startup.
+}
+
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
@@ -134,6 +140,9 @@ func DefaultConfig() *Config {
 			FilePath:             "/var/log/nanofuse/nanofused.log",
 			ConsoleLogMaxSizeMB:  10,
 			ConsoleLogMaxBackups: 3,
+		},
+		Network: NetworkConfig{
+			Setup: true,
 		},
 		SPIRE: SPIREConfig{
 			Enabled:       false,                                // Disabled by default

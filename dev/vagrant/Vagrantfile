@@ -1,5 +1,5 @@
 # -*- mode: ruby -*-
-# nanofuse dev/test VM — Ubuntu 24.04 with nested KVM + Firecracker
+# nanofuse dev/test VM - Ubuntu 24.04 with nested KVM + Firecracker
 #
 # Gives automation full sudo in a disposable VM to:
 #   - Build nanofuse from source (Go + mage)
@@ -18,6 +18,11 @@
 #   vagrant ssh -c "sudo ..."    # run commands from host
 #   vagrant destroy -f            # tear down and start fresh
 #   vagrant provision             # re-run setup + verify without rebuild
+#
+# Firecracker requires /dev/kvm in the Linux guest. On macOS arm64,
+# Parallels can only satisfy the closed loop when the host and provider expose
+# nested virtualization to the guest. If Apple reports nested virtualization
+# unsupported, this Vagrant environment is a client/API preflight only.
 
 # Resolve nanofuse source: in-repo or external
 SCRIPT_DIR = File.dirname(File.expand_path(__FILE__))
@@ -38,6 +43,26 @@ NANOFUSE_ROOT = if ENV["NANOFUSE_SRC"]
 puts "nanofuse source: #{NANOFUSE_ROOT}"
 PARALLELS_NESTED = ENV["NANOFUSE_PARALLELS_NESTED"] == "1" ? "on" : "off"
 API_HOST_PORT = Integer(ENV.fetch("NANOFUSE_API_HOST_PORT", "18080"))
+
+def apple_silicon_nested_virtualization_status
+  return "not-darwin-arm64" unless RUBY_PLATFORM.include?("darwin") && `uname -m`.strip == "arm64"
+  return "unknown" unless system("command -v swift >/dev/null 2>&1")
+
+  output = `swift -e 'import Virtualization; print(VZGenericPlatformConfiguration.isNestedVirtualizationSupported)' 2>/dev/null`.strip
+  return output if ["true", "false"].include?(output)
+
+  "unknown"
+end
+
+APPLE_NESTED_STATUS = apple_silicon_nested_virtualization_status
+if APPLE_NESTED_STATUS == "false" && PARALLELS_NESTED == "on"
+  abort "Apple Virtualization reports nested virtualization unsupported on this macOS arm64 host.\n" \
+        "Parallels cannot expose /dev/kvm here, so Firecracker closed-loop testing cannot run locally.\n" \
+        "Unset NANOFUSE_PARALLELS_NESTED for client/API preflight only, or use a Linux/KVM host."
+elsif APPLE_NESTED_STATUS == "false"
+  STDERR.puts "Apple Virtualization reports nested virtualization unsupported on this macOS arm64 host; " \
+              "Parallels will not expose /dev/kvm, so Firecracker closed-loop testing cannot pass locally."
+end
 
 Vagrant.configure("2") do |config|
   config.vm.box = "bento/ubuntu-24.04"

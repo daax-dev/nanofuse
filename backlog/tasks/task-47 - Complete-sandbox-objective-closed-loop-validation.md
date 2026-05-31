@@ -1,11 +1,11 @@
 ---
 id: TASK-47
 title: Complete sandbox objective closed-loop validation
-status: In Progress
+status: Done
 assignee:
   - codex
 created_date: '2026-05-30 20:05'
-updated_date: '2026-05-31 00:00'
+updated_date: '2026-05-31 10:40'
 labels:
   - sandbox
   - microvm
@@ -79,6 +79,8 @@ Deliver the repository objective from objective.md on the current branch only. N
 2026-05-31: Task reopened because the previous completion record did not use daax-dev/vagrant-skill as the required harness and did not ship the requested tray/menu app. Current correction scope is vagrant-skill validation, tray/menu app implementation, retest, docs, and PR update on the same branch.
 
 2026-05-31: Added `cmd/nanofuse-tray`, `internal/trayapp`, macOS/Windows launch scripts, and `docs/TRAY_APP.md`. Local macOS tests/build/smoke/bounded launch passed. Windows tray executable cross-built. vagrant-skill verify passed with KVM skipped, focused tray smoke passed inside the VM, and synced vagrant-skill `mage ci` passed. The local Parallels guest still reports `KVM_MISSING`, so no local Firecracker boot is claimed.
+
+2026-05-31: Merged current `origin/main` into `codex-goal`, resolved conflicts, reran local `mage ci`, reran `mage ci` inside the synced `daax-dev/vagrant-skill` Parallels VM, reran tray smoke inside the VM, and opened replacement PR https://github.com/daax-dev/nanofuse/pull/55.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -87,4 +89,6 @@ Deliver the repository objective from objective.md on the current branch only. N
 Completed sandbox objective validation work on branch `codex-goal` and opened ready-for-review PR https://github.com/daax-dev/nanofuse/pull/46. Implemented per-VM writable rootfs materialization and cleanup, typed egress policy support with iptables default-deny/proxy-only enforcement, API/client schema updates, corrected platform/runtime goals, Vagrant closed-loop tooling, and JSONL decision/reference/validation logs. Local `mage ci` passed; shell/Vagrantfile syntax and Vagrant validation passed where possible. Local Parallels validation cannot execute Firecracker because `/dev/kvm` is not exposed, and enabling Parallels nested virtualization prevents the VM from starting on this host.
 
 Follow-up on 2026-05-30: PR #46 now also includes the explicit API run path required by the operator: GET /capabilities, Mac/Windows API client docs, corrected OpenAPI examples, Vagrant host port forwarding for the guest API, sandbox API comparison, tray/menu-app requirements, and Flowspec artifact path corrections. Local Parallels Vagrant remains KVM-unavailable at /dev/kvm not found.
+
+Follow-up on 2026-05-31: Replacement PR https://github.com/daax-dev/nanofuse/pull/55 contains the real tray/menu app, one-line launch scripts, vagrant-skill validation, post-merge conflict resolution from `origin/main`, and refreshed JSONL validation evidence. Local and Vagrant `mage ci` passed after the merge. The local Apple Silicon Parallels VM remains usable for repo/API/tray validation but not Firecracker execution because `/dev/kvm` is absent.
 <!-- SECTION:FINAL_SUMMARY:END -->

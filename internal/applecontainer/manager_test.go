@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daax-dev/nanofuse/internal/config"
 	"github.com/daax-dev/nanofuse/internal/types"
@@ -137,6 +138,23 @@ func TestExecReturnsNonZeroExitCodeWithoutTransportError(t *testing.T) {
 	}
 	if result.Stderr != "missing\n" {
 		t.Fatalf("stderr = %q, want missing", result.Stderr)
+	}
+}
+
+func TestExecContainerCommandReturnsDeadlineExceededBeforeExitError(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("/bin/sh is required for timeout signal regression test")
+	}
+	manager := NewManager(config.AppleContainerRuntimeConfig{BinaryPath: "/bin/sh"}, t.TempDir())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, _, _, err := manager.execContainerCommand(ctx, "-c", "sleep 2")
+	if err == nil {
+		t.Fatal("expected execContainerCommand() to return timeout error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("execContainerCommand() error = %v, want deadline exceeded", err)
 	}
 }
 

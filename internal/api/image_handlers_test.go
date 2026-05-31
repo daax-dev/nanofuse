@@ -83,6 +83,9 @@ type runtimeImageProviderStub struct {
 	err         error
 	killErr     error
 	deleteErr   error
+	pauseErr    error
+	resumeErr   error
+	snapshotErr error
 	execResult  *types.VMExecResult
 	execErr     error
 	killCalls   int
@@ -124,11 +127,13 @@ func (r *runtimeImageProviderStub) Delete(*types.VM) error {
 	return r.deleteErr
 }
 
-func (r *runtimeImageProviderStub) Pause(*types.VM) error { return nil }
+func (r *runtimeImageProviderStub) Pause(*types.VM) error { return r.pauseErr }
 
-func (r *runtimeImageProviderStub) Resume(*types.VM) error { return nil }
+func (r *runtimeImageProviderStub) Resume(*types.VM) error { return r.resumeErr }
 
-func (r *runtimeImageProviderStub) CreateSnapshot(*types.VM, string, string) error { return nil }
+func (r *runtimeImageProviderStub) CreateSnapshot(*types.VM, string, string) error {
+	return r.snapshotErr
+}
 
 func (r *runtimeImageProviderStub) GetConsoleLogs(*types.VM, int) ([]byte, error) { return nil, nil }
 

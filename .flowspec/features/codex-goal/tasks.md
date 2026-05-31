@@ -67,6 +67,13 @@
 - [x] T039 Document local commands for ports, exec/SSH, multiple VMs, and image enablement
 - [x] T040 Validate focused tests, `mage ci`, and macOS Apple-container exec/ports closed loop
 
+## Phase 9: PR Feedback and Design Artifacts
+
+- [x] T041 Add Flowspec runtime capability design artifact and ADR
+- [x] T042 Fix PR #65 Copilot feedback for exec timeout, network validation, resume, snapshots, and matching pause behavior
+- [x] T043 Validate focused tests, `mage ci`, tray smoke, and live Apple-container probe
+- [ ] T044 Validate replacement PR CI after PR creation
+
 ## Dependencies
 
 - T001-T005 block implementation.
@@ -77,3 +84,4 @@
 - T026-T030 depend on T018 and T021 because the macOS runtime is managed through the same API and tray launch path.
 - T031-T036 run after all code and docs are complete.
 - T037-T040 run on the same branch after TASK-51 and must complete before a replacement PR is opened.
+- T041-T043 run on the same branch after PR #65 is closed and must complete before a replacement PR is opened.

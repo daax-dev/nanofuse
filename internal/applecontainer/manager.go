@@ -86,6 +86,9 @@ func (m *Manager) execContainerCommand(ctx context.Context, args ...string) ([]b
 		exitCode = cmd.ProcessState.ExitCode()
 	}
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return stdout.Bytes(), stderr.Bytes(), exitCode, ctxErr
+		}
 		if _, ok := err.(*exec.ExitError); ok {
 			return stdout.Bytes(), stderr.Bytes(), exitCode, nil
 		}
@@ -539,17 +542,17 @@ func (m *Manager) Delete(vm *types.VM) error {
 
 // Pause is not exposed by Apple container 0.4.1.
 func (m *Manager) Pause(vm *types.VM) error {
-	return fmt.Errorf("pause is not supported by the apple container runtime")
+	return fmt.Errorf("%w: pause is not supported by the apple container runtime", vmm.ErrUnsupportedOperation)
 }
 
 // Resume is not exposed by Apple container 0.4.1.
 func (m *Manager) Resume(vm *types.VM) error {
-	return fmt.Errorf("resume is not supported by the apple container runtime")
+	return fmt.Errorf("%w: resume is not supported by the apple container runtime", vmm.ErrUnsupportedOperation)
 }
 
 // CreateSnapshot is not exposed by Apple container 0.4.1.
 func (m *Manager) CreateSnapshot(vm *types.VM, snapshotPath, memPath string) error {
-	return fmt.Errorf("snapshots are not supported by the apple container runtime")
+	return fmt.Errorf("%w: snapshots are not supported by the apple container runtime", vmm.ErrUnsupportedOperation)
 }
 
 // GetConsoleLogs returns container stdio logs.

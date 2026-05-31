@@ -21,6 +21,7 @@ import (
 var (
 	errNetworkSetupDisabled           = errors.New("network setup disabled; use network mode none or enable network.setup")
 	errRuntimeEgressPolicyUnsupported = errors.New("runtime-managed networking does not support nanofuse egress_policy")
+	errRuntimeNetworkModeUnsupported  = errors.New("runtime-managed networking does not support network mode none")
 )
 
 const (
@@ -343,13 +344,16 @@ func (s *Server) validateVMResourceLimits(config types.VMConfig) error {
 
 // setupVMNetworking configures networking for a VM
 func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
-	if config.Network.Mode == "none" {
-		return nil
-	}
 	if selectedRuntimeDriver(s.config) != "firecracker" {
+		if config.Network.Mode == "none" {
+			return errRuntimeNetworkModeUnsupported
+		}
 		if config.Network.EgressPolicy != nil && config.Network.EgressPolicy.Enabled {
 			return errRuntimeEgressPolicyUnsupported
 		}
+		return nil
+	}
+	if config.Network.Mode == "none" {
 		return nil
 	}
 	if !s.config.Network.Setup {
@@ -421,13 +425,20 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 
 func writeNetworkSetupError(w http.ResponseWriter, err error, networkMode string) bool {
 	if !errors.Is(err, errNetworkSetupDisabled) {
-		if !errors.Is(err, errRuntimeEgressPolicyUnsupported) {
-			return false
+		if errors.Is(err, errRuntimeNetworkModeUnsupported) {
+			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, errRuntimeNetworkModeUnsupported.Error(), map[string]interface{}{
+				"network_mode":         networkMode,
+				"allowed_network_mode": "nat",
+			})
+			return true
 		}
-		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, errRuntimeEgressPolicyUnsupported.Error(), map[string]interface{}{
-			"network_mode": networkMode,
-		})
-		return true
+		if errors.Is(err, errRuntimeEgressPolicyUnsupported) {
+			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, errRuntimeEgressPolicyUnsupported.Error(), map[string]interface{}{
+				"network_mode": networkMode,
+			})
+			return true
+		}
+		return false
 	}
 
 	types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, errNetworkSetupDisabled.Error(), map[string]interface{}{
@@ -1024,9 +1035,12 @@ func (s *Server) handleVMPauseByPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.runtimeManager.Pause(vm); err != nil {
-		s.logger.Printf("ERROR: Failed to pause VM: %v", err)
 		vm.State = types.StateRunning
 		_ = s.db.UpdateVM(vm)
+		if writeRuntimeUnsupportedError(w, "VM pause", err, map[string]interface{}{"vm_id": vm.ID}) {
+			return
+		}
+		s.logger.Printf("ERROR: Failed to pause VM: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
 			fmt.Sprintf("Failed to pause VM: %v", err), nil)
 		return
@@ -1092,9 +1106,12 @@ func (s *Server) handleVMResumeByPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.runtimeManager.Resume(vm); err != nil {
-		s.logger.Printf("ERROR: Failed to resume VM: %v", err)
 		vm.State = types.StatePaused
 		_ = s.db.UpdateVM(vm)
+		if writeRuntimeUnsupportedError(w, "VM resume", err, map[string]interface{}{"vm_id": vm.ID}) {
+			return
+		}
+		s.logger.Printf("ERROR: Failed to resume VM: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
 			fmt.Sprintf("Failed to resume VM: %v", err), nil)
 		return
@@ -1239,6 +1256,9 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, context.DeadlineExceeded) {
 			types.WriteError(w, http.StatusGatewayTimeout, types.ErrServiceUnavailable,
 				"VM exec timed out", map[string]interface{}{"vm_id": vm.ID, "timeout_seconds": timeoutSeconds})
+			return
+		}
+		if writeRuntimeUnsupportedError(w, "VM exec", err, map[string]interface{}{"vm_id": vm.ID}) {
 			return
 		}
 		s.logger.Printf("ERROR: Failed to exec in VM: %v", err)

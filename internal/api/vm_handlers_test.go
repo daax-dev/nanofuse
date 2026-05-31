@@ -226,6 +226,26 @@ func TestSetupVMNetworkingRejectsManagedModeWhenNetworkSetupDisabled(t *testing.
 	}
 }
 
+func TestSetupVMNetworkingRejectsNoneForRuntimeManagedNetworking(t *testing.T) {
+	server := &Server{
+		config: &config.Config{
+			Runtime: config.RuntimeConfig{Driver: "apple_container"},
+			Network: config.NetworkConfig{Setup: false},
+		},
+	}
+	vmConfig := types.VMConfig{
+		Network: types.NetworkConfig{Mode: "none"},
+	}
+
+	err := server.setupVMNetworking("vm-123", &vmConfig)
+	if err == nil {
+		t.Fatal("expected setupVMNetworking() to reject network none for runtime-managed networking")
+	}
+	if !errors.Is(err, errRuntimeNetworkModeUnsupported) {
+		t.Fatalf("setupVMNetworking() error = %q", err)
+	}
+}
+
 func TestWriteNetworkSetupErrorUsesInvalidConfig(t *testing.T) {
 	rec := httptest.NewRecorder()
 
@@ -248,6 +268,31 @@ func TestWriteNetworkSetupErrorUsesInvalidConfig(t *testing.T) {
 	}
 	if apiErr.Error.Details["network_setup"] != false {
 		t.Fatalf("network_setup detail = %v, want false", apiErr.Error.Details["network_setup"])
+	}
+}
+
+func TestWriteNetworkSetupErrorUsesInvalidConfigForRuntimeManagedNetworkNone(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	if !writeNetworkSetupError(rec, errRuntimeNetworkModeUnsupported, "none") {
+		t.Fatal("expected runtime network mode error to be handled")
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	var apiErr types.APIError
+	if err := json.NewDecoder(rec.Body).Decode(&apiErr); err != nil {
+		t.Fatalf("decode API error: %v", err)
+	}
+	if apiErr.Error.Code != types.ErrInvalidConfig {
+		t.Fatalf("error code = %s, want %s", apiErr.Error.Code, types.ErrInvalidConfig)
+	}
+	if apiErr.Error.Details["network_mode"] != "none" {
+		t.Fatalf("network_mode detail = %v, want none", apiErr.Error.Details["network_mode"])
+	}
+	if apiErr.Error.Details["allowed_network_mode"] != "nat" {
+		t.Fatalf("allowed_network_mode detail = %v, want nat", apiErr.Error.Details["allowed_network_mode"])
 	}
 }
 

@@ -111,6 +111,12 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, vm
 
 	// Create snapshot via Firecracker
 	if err := s.runtimeManager.CreateSnapshot(vm, snapPath, memPath); err != nil {
+		if cleanupErr := os.RemoveAll(snapshotDir); cleanupErr != nil {
+			s.logger.Printf("WARN: Failed to cleanup snapshot directory after runtime failure: %v", cleanupErr)
+		}
+		if writeRuntimeUnsupportedError(w, "VM snapshots", err, map[string]interface{}{"vm_id": vm.ID}) {
+			return
+		}
 		s.logger.Printf("ERROR: Failed to create snapshot: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
 			fmt.Sprintf("Failed to create snapshot: %v", err), nil)

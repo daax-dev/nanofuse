@@ -486,7 +486,9 @@ func (m *Manager) Delete(vm *types.VM) error {
 	} else if !exists {
 		return nil
 	} else if inspect.Status == "running" {
-		_ = m.Kill(&types.VM{ID: vm.ID, Runtime: &types.VMRuntime{ExternalID: name}})
+		if err := m.Kill(&types.VM{ID: vm.ID, Runtime: &types.VMRuntime{ExternalID: name}}); err != nil {
+			return fmt.Errorf("failed to kill running apple container %q before delete: %w", name, err)
+		}
 	}
 	if _, err := m.runCommand("delete", name); err != nil {
 		return err

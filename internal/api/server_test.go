@@ -1,9 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"runtime"
 	"testing"
 	"time"
@@ -171,6 +175,48 @@ func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAppleContainerSystemRunningUsesTimeout(t *testing.T) {
+	oldCommand := appleContainerSystemStatusCommand
+	t.Cleanup(func() {
+		appleContainerSystemStatusCommand = oldCommand
+	})
+
+	t.Setenv("NANOFUSE_TEST_APPLE_CONTAINER_STATUS", "running")
+	called := false
+	appleContainerSystemStatusCommand = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+		called = true
+		if name != "/fake/container" {
+			t.Fatalf("command name = %q, want fake container path", name)
+		}
+		if len(arg) != 2 || arg[0] != "system" || arg[1] != "status" {
+			t.Fatalf("command args = %#v, want system status", arg)
+		}
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("expected apple container status command to receive a deadline")
+		}
+		testBinary, err := os.Executable()
+		if err != nil {
+			t.Fatalf("os.Executable: %v", err)
+		}
+		return exec.CommandContext(ctx, testBinary, "-test.run=TestAppleContainerSystemStatusHelper", "--")
+	}
+
+	if !appleContainerSystemRunning("/fake/container") {
+		t.Fatal("expected appleContainerSystemRunning to parse running helper output")
+	}
+	if !called {
+		t.Fatal("expected status command to be called")
+	}
+}
+
+func TestAppleContainerSystemStatusHelper(t *testing.T) {
+	if os.Getenv("NANOFUSE_TEST_APPLE_CONTAINER_STATUS") == "" {
+		return
+	}
+	fmt.Println("apiserver is running")
+	os.Exit(0)
 }
 
 func TestCapabilitiesEndpointMethodNotAllowed(t *testing.T) {

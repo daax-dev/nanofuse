@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -12,6 +13,10 @@ import (
 	"github.com/daax-dev/nanofuse/internal/applecontainer"
 	"github.com/daax-dev/nanofuse/internal/types"
 )
+
+const appleContainerSystemStatusTimeout = 2 * time.Second
+
+var appleContainerSystemStatusCommand = exec.CommandContext
 
 // handleHealth handles the health check endpoint (GET /health)
 // Method validation is handled by the router using Go 1.22+ patterns
@@ -115,7 +120,10 @@ func appleContainerNativeReady(goos string, available, running, autoStart bool) 
 }
 
 func appleContainerSystemRunning(path string) bool {
-	cmd := exec.Command(path, "system", "status")
+	ctx, cancel := context.WithTimeout(context.Background(), appleContainerSystemStatusTimeout)
+	defer cancel()
+
+	cmd := appleContainerSystemStatusCommand(ctx, path, "system", "status")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return false

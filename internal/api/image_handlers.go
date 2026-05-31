@@ -226,6 +226,9 @@ func (s *Server) executePullJob(jobID, imageRef string) {
 	}()
 
 	if provider, ok := s.runtimeManager.(vmm.ImageProvider); ok {
+		close(progressChan)
+		<-progressDone
+
 		image, err := provider.ResolveImage(imageRef)
 		if err != nil {
 			s.logger.Error("[job:%s] Runtime pull failed after %v: %v", jobID[:8], time.Since(startTime), err)

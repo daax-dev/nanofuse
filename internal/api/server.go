@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	goruntime "runtime"
 	"syscall"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/applecontainer"
 	"github.com/daax-dev/nanofuse/internal/config"
 	"github.com/daax-dev/nanofuse/internal/firecracker"
 	"github.com/daax-dev/nanofuse/internal/logging"
@@ -20,13 +22,14 @@ import (
 	"github.com/daax-dev/nanofuse/internal/registry"
 	"github.com/daax-dev/nanofuse/internal/spire"
 	"github.com/daax-dev/nanofuse/internal/storage"
+	"github.com/daax-dev/nanofuse/internal/vmm"
 )
 
 // Server represents the API server
 type Server struct {
 	config           *config.Config
 	db               *storage.DB
-	fcManager        *firecracker.Manager
+	runtimeManager   vmm.Manager
 	registryClient   *registry.Client
 	ipam             *network.IPAM
 	logger           *logging.Logger
@@ -67,7 +70,7 @@ func loadExistingAllocations(db *storage.DB, ipam *network.IPAM, logger *logging
 }
 
 // initializeInfrastructure initializes database and managers
-func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*storage.DB, *firecracker.Manager, *registry.Client, error) {
+func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*storage.DB, vmm.Manager, *registry.Client, error) {
 	// Create data directory
 	if err := os.MkdirAll(cfg.Storage.DataDir, 0755); err != nil {
 		return nil, nil, nil, err
@@ -81,21 +84,27 @@ func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*stor
 
 	logger.Info("Database initialized: %s", cfg.Storage.Database)
 
-	// Initialize Firecracker manager
-	fcManager := firecracker.NewManager(cfg.Firecracker.BinaryPath, cfg.Storage.DataDir)
+	runtimeManager, err := newRuntimeManager(cfg, logger)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	// Configure SPIRE vsock proxy if enabled
 	if cfg.SPIRE.Enabled && cfg.SPIRE.VsockCID >= 3 {
-		if err := fcManager.SetSPIREConfig(&firecracker.SPIREProxyConfig{
-			Enabled:     true,
-			VsockCID:    cfg.SPIRE.VsockCID,
-			VsockPort:   cfg.SPIRE.VsockPort,
-			AgentSocket: cfg.SPIRE.AgentSocket,
-		}); err != nil {
-			return nil, nil, nil, fmt.Errorf("invalid SPIRE config: %w", err)
+		if fcManager, ok := runtimeManager.(*firecracker.Manager); ok {
+			if err := fcManager.SetSPIREConfig(&firecracker.SPIREProxyConfig{
+				Enabled:     true,
+				VsockCID:    cfg.SPIRE.VsockCID,
+				VsockPort:   cfg.SPIRE.VsockPort,
+				AgentSocket: cfg.SPIRE.AgentSocket,
+			}); err != nil {
+				return nil, nil, nil, fmt.Errorf("invalid SPIRE config: %w", err)
+			}
+			logger.Info("SPIRE vsock proxy enabled: CID=%d, Port=%d, AgentSocket=%s",
+				cfg.SPIRE.VsockCID, cfg.SPIRE.VsockPort, cfg.SPIRE.AgentSocket)
+		} else {
+			logger.Warn("SPIRE vsock proxy requested but runtime %q does not support Firecracker vsock", selectedRuntimeDriver(cfg))
 		}
-		logger.Info("SPIRE vsock proxy enabled: CID=%d, Port=%d, AgentSocket=%s",
-			cfg.SPIRE.VsockCID, cfg.SPIRE.VsockPort, cfg.SPIRE.AgentSocket)
 	}
 
 	// Initialize registry client with logging and timeouts
@@ -105,7 +114,31 @@ func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*stor
 		LayerTimeout: time.Duration(cfg.Registry.LayerTimeoutSecs) * time.Second,
 	})
 
-	return db, fcManager, registryClient, nil
+	return db, runtimeManager, registryClient, nil
+}
+
+func selectedRuntimeDriver(cfg *config.Config) string {
+	if cfg.Runtime.Driver == "auto" || cfg.Runtime.Driver == "" {
+		if goruntime.GOOS == "darwin" {
+			return applecontainer.DriverName
+		}
+		return "firecracker"
+	}
+	return cfg.Runtime.Driver
+}
+
+func newRuntimeManager(cfg *config.Config, logger *logging.Logger) (vmm.Manager, error) {
+	driver := selectedRuntimeDriver(cfg)
+	switch driver {
+	case "firecracker":
+		logger.Info("Runtime driver: firecracker")
+		return firecracker.NewManager(cfg.Firecracker.BinaryPath, cfg.Storage.DataDir), nil
+	case applecontainer.DriverName:
+		logger.Info("Runtime driver: apple_container")
+		return applecontainer.NewManager(cfg.Runtime.AppleContainer, cfg.Storage.DataDir), nil
+	default:
+		return nil, fmt.Errorf("unsupported runtime driver %q", driver)
+	}
 }
 
 // setupNetworkInfrastructure sets up bridge and NAT
@@ -324,17 +357,19 @@ func startServer(cfg *config.Config) error {
 	}
 
 	// Initialize infrastructure
-	db, fcManager, registryClient, err := initializeInfrastructure(cfg, logger)
+	db, runtimeManager, registryClient, err := initializeInfrastructure(cfg, logger)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
 	// Setup network when host networking is managed by nanofused.
-	if cfg.Network.Setup {
+	if cfg.Network.Setup && selectedRuntimeDriver(cfg) == "firecracker" {
 		if err := setupNetworkInfrastructure(logger); err != nil {
 			return err
 		}
+	} else if selectedRuntimeDriver(cfg) != "firecracker" {
+		logger.Warn("Network infrastructure setup skipped for runtime %q; runtime-managed networking is used", selectedRuntimeDriver(cfg))
 	} else {
 		logger.Warn("Network infrastructure setup disabled by config; only network.mode=none VMs can start without preconfigured networking")
 	}
@@ -374,7 +409,7 @@ func startServer(cfg *config.Config) error {
 	server := &Server{
 		config:           cfg,
 		db:               db,
-		fcManager:        fcManager,
+		runtimeManager:   runtimeManager,
 		registryClient:   registryClient,
 		ipam:             ipam,
 		logger:           logger,
@@ -385,7 +420,7 @@ func startServer(cfg *config.Config) error {
 
 	// Set up process exit handler to reap zombies and update VM state
 	// This is critical for preventing zombie processes when VMs exit
-	fcManager.SetProcessExitHandler(server.handleVMProcessExit)
+	runtimeManager.SetProcessExitHandler(server.handleVMProcessExit)
 
 	// Setup HTTP routes and server
 	mux := setupHTTPRouter(server)

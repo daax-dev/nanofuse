@@ -85,7 +85,9 @@ type DiskConfig struct {
 // VMRuntime represents VM runtime information
 type VMRuntime struct {
 	PID         int         `json:"pid"`
-	SocketPath  string      `json:"socket_path"`
+	Driver      string      `json:"driver,omitempty"`
+	ExternalID  string      `json:"external_id,omitempty"`
+	SocketPath  string      `json:"socket_path,omitempty"`
 	ConsolePath string      `json:"console_path"`
 	NetworkInfo NetworkInfo `json:"network_info,omitempty"`
 }
@@ -169,12 +171,17 @@ type HostCapabilities struct {
 
 // RuntimeCapabilities describes the microVM runtime available to nanofused.
 type RuntimeCapabilities struct {
-	NativeRuntime        bool   `json:"native_runtime"`
-	FirecrackerBinary    string `json:"firecracker_binary"`
-	FirecrackerAvailable bool   `json:"firecracker_available"`
-	RootRequired         bool   `json:"root_required"`
-	NetworkSetupRequired bool   `json:"network_setup_required"`
-	Message              string `json:"message"`
+	NativeRuntime                    bool   `json:"native_runtime"`
+	Driver                           string `json:"driver,omitempty"`
+	FirecrackerBinary                string `json:"firecracker_binary"`
+	FirecrackerAvailable             bool   `json:"firecracker_available"`
+	AppleContainerBinary             string `json:"apple_container_binary,omitempty"`
+	AppleContainerAvailable          bool   `json:"apple_container_available,omitempty"`
+	AppleContainerRunning            bool   `json:"apple_container_running,omitempty"`
+	VirtualizationFrameworkSupported bool   `json:"virtualization_framework_supported,omitempty"`
+	RootRequired                     bool   `json:"root_required"`
+	NetworkSetupRequired             bool   `json:"network_setup_required"`
+	Message                          string `json:"message"`
 }
 
 // APITransportCapabilities describes how clients can reach the daemon.

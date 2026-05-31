@@ -189,6 +189,7 @@ func TestCleanupVMStorageRemovesVMDirectory(t *testing.T) {
 func TestSetupVMNetworkingAllowsNoneWhenNetworkSetupDisabled(t *testing.T) {
 	server := &Server{
 		config: &config.Config{
+			Runtime: config.RuntimeConfig{Driver: "firecracker"},
 			Network: config.NetworkConfig{Setup: false},
 		},
 	}
@@ -204,6 +205,7 @@ func TestSetupVMNetworkingAllowsNoneWhenNetworkSetupDisabled(t *testing.T) {
 func TestSetupVMNetworkingRejectsManagedModeWhenNetworkSetupDisabled(t *testing.T) {
 	server := &Server{
 		config: &config.Config{
+			Runtime: config.RuntimeConfig{Driver: "firecracker"},
 			Network: config.NetworkConfig{Setup: false},
 		},
 	}

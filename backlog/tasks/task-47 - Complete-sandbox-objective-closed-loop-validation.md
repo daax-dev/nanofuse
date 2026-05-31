@@ -89,6 +89,10 @@ Deliver the repository objective from objective.md on the current branch only. N
 2026-05-31: Fixed the macOS tray launcher so `./scripts/run-tray-macos.sh` no longer appears to do nothing. It now prints build/start status, reports existing `nanofuse-tray` PIDs, supports `--restart`, `--foreground`, `--smoke`, and `--timeout`, and documents the background log path.
 
 2026-05-31: Addressed PR #56 Copilot review threads. Overlapping tray refreshes now discard stale results before applying UI/action state, and kill/delete confirmation titles expire after the confirmation window instead of remaining visually stale.
+
+2026-05-31: Corrected the platform model after operator feedback. Added a macOS-native runtime backend using Apple `container` and Virtualization.framework, wired it behind a shared runtime manager interface, added `runtime.driver=apple_container` config and `/capabilities` reporting, and updated `scripts/run-tray-macos.sh --start-api` to start a local Apple-container-backed `nanofused` daemon through launchd. Closed-loop macOS validation created an API VM from `alpine:3.20`, started it, executed `uname -a` inside the runtime container showing Linux `6.12.28` on `aarch64`, stopped it, deleted it, and confirmed no matching `nf-*` runtime container remained.
+
+2026-05-31: PR #56 branch update includes the macOS native runtime correction, Go 1.25 Vagrant/release alignment, and final validation evidence. Local `mage ci` passed, vagrant-skill `mage ci` passed in a fresh Parallels Ubuntu arm64 VM with Go 1.25.2, and final macOS Apple-container API lifecycle passed after the launcher bind-address fix.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -101,4 +105,8 @@ Follow-up on 2026-05-30: PR #46 now also includes the explicit API run path requ
 Follow-up on 2026-05-31: Replacement PR https://github.com/daax-dev/nanofuse/pull/56 contains the real tray/menu app, one-line launch scripts, vagrant-skill validation, post-merge conflict resolution from `origin/main`, and refreshed JSONL validation evidence. Local and Vagrant `mage ci` passed after the merge. The local Apple Silicon Parallels VM remains usable for repo/API/tray validation but not Firecracker execution because `/dev/kvm` is absent.
 
 PR #56 carries the PR #55 and PR #56 Copilot fixes: runtime-capability action gating in the tray app, fail-fast Windows build launcher behavior, stale refresh protection, and visual expiry for kill/delete confirmation. The tray app now includes the missing create/start-from-image workflow. The Mac launch point is `scripts/run-tray-macos.sh`; it prints visible status, detects existing tray processes, and supports `--restart`/`--foreground` for predictable operator control. The implementation is `cmd/nanofuse-tray` plus `internal/trayapp`.
+
+Follow-up on 2026-05-31: The branch now includes local macOS execution instead of only a Mac API-client path. `scripts/run-tray-macos.sh --start-api --restart` starts `nanofused` with `runtime.driver=apple_container` and launches the tray app. The validated macOS path uses Apple `container` and Virtualization.framework to run OCI images as local Linux microVMs. Linux remains the Firecracker/KVM path. Windows remains a tray/API client path.
+
+Follow-up on 2026-05-31: PR #56 was updated on the same `codex-goal` branch with the macOS-native Apple-container runtime, final closed-loop validation logs, Go 1.25 harness fixes, and docs that now launch locally on Mac instead of treating Mac as SSH-only.
 <!-- SECTION:FINAL_SUMMARY:END -->

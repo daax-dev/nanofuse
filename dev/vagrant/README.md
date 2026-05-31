@@ -10,7 +10,7 @@ On this Apple M2 Max host, Apple Virtualization reports nested virtualization un
 
 With KVM available, the guest includes:
 
-- **Go 1.24.3** + mage build system
+- **Go 1.25.2** + mage build system
 - **Firecracker 1.7.0** + jailer
 - **Docker** (for base image builds)
 - **nanofuse** built from source (CLI + daemon + register-local-image)

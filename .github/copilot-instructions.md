@@ -29,7 +29,7 @@ Purpose: Firecracker-based microVM platform for running untrusted code in secure
 ---
 
 ## Stack
-- Runtime: Go 1.24 (CI pins `1.24`; `go.mod` declares `go 1.24.3`). Module path: `github.com/daax-dev/nanofuse`.
+- Runtime: Go 1.25 (CI pins `1.25`; `go.mod` declares `go 1.25.0`). Module path: `github.com/daax-dev/nanofuse`.
 - Build tool: mage (`magefile.go`). Package manager: Go modules (`go.mod` / `go.sum`, readonly mode).
 - Test framework: `go test` (stdlib testing) with `-race`; gdt for declarative scenario tests.
 - Persistence: SQLite (`mattn/go-sqlite3`) + local filesystem data dir. Backend: stdlib `net/http`. CLI: cobra.

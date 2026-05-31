@@ -23,12 +23,12 @@ VM_NAME=nanofuse-vagrant-skill-test PROJECT_SRC=/path/to/nanofuse vagrant ssh -c
 Expected behavior:
 
 - Linux/KVM hosts proceed through Firecracker, daemon, and VM boot validation.
-- macOS/Windows hosts proceed only if their Vagrant/VM provider exposes Linux KVM to the guest.
+- macOS Vagrant/Linux guest validation proceeds only if the VM provider exposes Linux KVM to the guest.
 - Unsupported providers fail before VM boot with the exact missing capability.
 
 `dev/vagrant` remains a secondary repo-local harness. The required harness for this objective is `daax-dev/vagrant-skill`.
 
-## API Client Path
+## Linux/KVM API Path
 
 ```bash
 sudo ./bin/nanofused -config config.dev.yaml -tcp 127.0.0.1:8080
@@ -37,13 +37,34 @@ curl http://127.0.0.1:8080/capabilities
 NANOFUSE_API_URL=http://127.0.0.1:8080 nanofuse health
 ```
 
-## Tray Client Path
+## macOS Local Runtime Path
 
 macOS:
 
 ```bash
-NANOFUSE_API_URL="${NANOFUSE_API_URL:-http://127.0.0.1:18080}" ./scripts/run-tray-macos.sh
+./scripts/run-tray-macos.sh --start-api --restart
+./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s
+curl http://127.0.0.1:18080/capabilities
 ```
+
+Create and start a local Apple-container VM:
+
+```bash
+API=http://127.0.0.1:18080
+VM_ID="$(curl -fsS -X POST "$API/vms" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"mac-api-alpine","image":"alpine:3.20","config":{"vcpus":1,"memory_mib":256,"network":{"mode":"none"}}}' \
+  | jq -r '.vm.id')"
+curl -fsS -X POST "$API/vms/$VM_ID/start"
+CONTAINER_ID="$(curl -fsS "$API/vms/$VM_ID" | jq -r '.vm.runtime.external_id')"
+container exec "$CONTAINER_ID" uname -a
+curl -fsS -X POST "$API/vms/$VM_ID/stop" -H "Content-Type: application/json" -d '{"timeout_seconds":10}'
+curl -fsS -X DELETE "$API/vms/$VM_ID"
+```
+
+Expected runtime driver: `apple_container`.
+
+## Windows Client Path
 
 Windows:
 

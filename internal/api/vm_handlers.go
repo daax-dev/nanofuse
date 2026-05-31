@@ -14,10 +14,14 @@ import (
 
 	"github.com/daax-dev/nanofuse/internal/network"
 	"github.com/daax-dev/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/vmm"
 	"github.com/google/uuid"
 )
 
-var errNetworkSetupDisabled = errors.New("network setup disabled; use network mode none or enable network.setup")
+var (
+	errNetworkSetupDisabled           = errors.New("network setup disabled; use network mode none or enable network.setup")
+	errRuntimeEgressPolicyUnsupported = errors.New("runtime-managed networking does not support nanofuse egress_policy")
+)
 
 // handleListVMs lists all VMs
 func (s *Server) handleListVMs(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +64,7 @@ func (s *Server) handleListVMs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-// validateAndResolveImage validates image field and returns image from DB
+// validateAndResolveImage validates image field and returns image from DB or runtime image provider.
 func (s *Server) validateAndResolveImage(imageRef string) (*types.Image, string, error) {
 	var image *types.Image
 	var err error
@@ -80,7 +84,20 @@ func (s *Server) validateAndResolveImage(imageRef string) (*types.Image, string,
 	}
 
 	if image == nil {
-		return nil, "", fmt.Errorf("image not found: %s", imageRef)
+		if provider, ok := s.runtimeManager.(vmm.ImageProvider); ok {
+			image, err = provider.ResolveImage(imageRef)
+			if err != nil {
+				return nil, "", fmt.Errorf("image not found: %s: %w", imageRef, err)
+			}
+			if image != nil {
+				if err := s.db.UpsertImage(image); err != nil {
+					return nil, "", fmt.Errorf("database error: %w", err)
+				}
+			}
+		}
+		if image == nil {
+			return nil, "", fmt.Errorf("image not found: %s", imageRef)
+		}
 	}
 
 	return image, image.Digest, nil
@@ -95,14 +112,16 @@ func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfi
 		Network: types.NetworkConfig{
 			Mode: "nat",
 		},
-		Disks: []types.DiskConfig{
+	}
+	if image.RootfsPath != "" {
+		config.Disks = []types.DiskConfig{
 			{
 				DriveID:      "rootfs",
 				PathOnHost:   image.RootfsPath,
 				IsReadOnly:   false,
 				IsRootDevice: true,
 			},
-		},
+		}
 	}
 
 	// Apply user config overrides
@@ -321,6 +340,12 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 	if config.Network.Mode == "none" {
 		return nil
 	}
+	if selectedRuntimeDriver(s.config) != "firecracker" {
+		if config.Network.EgressPolicy != nil && config.Network.EgressPolicy.Enabled {
+			return errRuntimeEgressPolicyUnsupported
+		}
+		return nil
+	}
 	if !s.config.Network.Setup {
 		return errNetworkSetupDisabled
 	}
@@ -390,7 +415,13 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 
 func writeNetworkSetupError(w http.ResponseWriter, err error, networkMode string) bool {
 	if !errors.Is(err, errNetworkSetupDisabled) {
-		return false
+		if !errors.Is(err, errRuntimeEgressPolicyUnsupported) {
+			return false
+		}
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, errRuntimeEgressPolicyUnsupported.Error(), map[string]interface{}{
+			"network_mode": networkMode,
+		})
+		return true
 	}
 
 	types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, errNetworkSetupDisabled.Error(), map[string]interface{}{
@@ -593,9 +624,12 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request, vmID str
 
 	// Stop VM if running
 	if vm.State == types.StateRunning || vm.State == types.StatePaused {
-		if err := s.fcManager.Kill(vm); err != nil {
+		if err := s.runtimeManager.Kill(vm); err != nil {
 			s.logger.Printf("WARN: Failed to kill VM: %v", err)
 		}
+	}
+	if err := s.runtimeManager.Delete(vm); err != nil {
+		s.logger.Printf("WARN: Failed to delete VM runtime resources: %v", err)
 	}
 
 	// Cleanup SPIRE workload entry if registered
@@ -620,18 +654,18 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request, vmID str
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// startFirecrackerAndSetupNetwork starts Firecracker and sets up port forwards
-func (s *Server) startFirecrackerAndSetupNetwork(vm *types.VM, image *types.Image) error {
-	// Start Firecracker
-	if err := s.fcManager.Start(vm, image); err != nil {
-		return fmt.Errorf("failed to start Firecracker: %w", err)
+// startRuntimeAndSetupNetwork starts the configured runtime and sets up Linux host port forwards when needed.
+func (s *Server) startRuntimeAndSetupNetwork(vm *types.VM, image *types.Image) error {
+	if err := s.runtimeManager.Start(vm, image); err != nil {
+		return fmt.Errorf("failed to start runtime: %w", err)
 	}
 
-	// Setup port forwards if configured
-	if len(vm.Config.Network.PortForwards) > 0 {
+	// Firecracker uses host iptables for port forwards. Runtime-managed backends
+	// translate port forwards before launch.
+	if selectedRuntimeDriver(s.config) == "firecracker" && len(vm.Config.Network.PortForwards) > 0 {
 		s.logger.Printf("INFO: Setting up %d port forward(s) for VM %s", len(vm.Config.Network.PortForwards), vm.Name)
 		if err := network.SetupPortForwards(vm.Config.Network.IPAddress, vm.Config.Network.PortForwards); err != nil {
-			_ = s.fcManager.Kill(vm) // Cleanup
+			_ = s.runtimeManager.Kill(vm) // Cleanup
 			return fmt.Errorf("failed to setup port forwards: %w", err)
 		}
 		for _, pf := range vm.Config.Network.PortForwards {
@@ -661,8 +695,8 @@ func (s *Server) performVMStart(vm *types.VM) error {
 		return fmt.Errorf("failed to get image")
 	}
 
-	// Start Firecracker and setup network
-	if err := s.startFirecrackerAndSetupNetwork(vm, image); err != nil {
+	// Start runtime and setup network
+	if err := s.startRuntimeAndSetupNetwork(vm, image); err != nil {
 		s.logger.Printf("ERROR: %v", err)
 		vm.State = types.StateFailed
 		_ = s.db.UpdateVM(vm)
@@ -681,12 +715,12 @@ func (s *Server) performVMStart(vm *types.VM) error {
 // stopVMAndCleanup stops Firecracker and cleans up port forwards
 func (s *Server) stopVMAndCleanup(vm *types.VM, timeout int) error {
 	// Stop VM
-	if err := s.fcManager.Stop(vm, timeout); err != nil {
+	if err := s.runtimeManager.Stop(vm, timeout); err != nil {
 		return fmt.Errorf("failed to stop VM: %w", err)
 	}
 
-	// Cleanup port forwards if configured
-	if len(vm.Config.Network.PortForwards) > 0 {
+	// Cleanup Linux host port forwards if configured.
+	if selectedRuntimeDriver(s.config) == "firecracker" && len(vm.Config.Network.PortForwards) > 0 {
 		s.logger.Printf("INFO: Cleaning up %d port forward(s) for VM %s", len(vm.Config.Network.PortForwards), vm.Name)
 		if err := network.CleanupPortForwards(vm.Config.Network.IPAddress, vm.Config.Network.PortForwards); err != nil {
 			s.logger.Printf("WARN: Failed to cleanup port forwards: %v", err)
@@ -902,7 +936,7 @@ func (s *Server) handleVMKillByPath(w http.ResponseWriter, r *http.Request) {
 
 	// Kill VM
 	if vm.Runtime != nil && vm.Runtime.PID != 0 {
-		if err := s.fcManager.Kill(vm); err != nil {
+		if err := s.runtimeManager.Kill(vm); err != nil {
 			s.logger.Printf("WARN: Failed to kill VM: %v", err)
 		}
 	}
@@ -966,7 +1000,7 @@ func (s *Server) handleVMPauseByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.fcManager.Pause(vm); err != nil {
+	if err := s.runtimeManager.Pause(vm); err != nil {
 		s.logger.Printf("ERROR: Failed to pause VM: %v", err)
 		vm.State = types.StateRunning
 		_ = s.db.UpdateVM(vm)
@@ -1034,7 +1068,7 @@ func (s *Server) handleVMResumeByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.fcManager.Resume(vm); err != nil {
+	if err := s.runtimeManager.Resume(vm); err != nil {
 		s.logger.Printf("ERROR: Failed to resume VM: %v", err)
 		vm.State = types.StatePaused
 		_ = s.db.UpdateVM(vm)
@@ -1095,7 +1129,7 @@ func (s *Server) handleVMLogsByPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get console logs
-	logs, err := s.fcManager.GetConsoleLogs(vm, tailLines)
+	logs, err := s.runtimeManager.GetConsoleLogs(vm, tailLines)
 	if err != nil {
 		s.logger.Printf("ERROR: Failed to get console logs: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to get console logs", nil)
@@ -1169,7 +1203,7 @@ func (s *Server) handleVMProcessExit(vmID string, exitCode *int, err error) {
 // cleanupVMNetwork cleans up network resources for a VM
 func (s *Server) cleanupVMNetwork(vm *types.VM) {
 	// Clean up TAP device
-	if err := s.fcManager.CleanupNetwork(vm); err != nil {
+	if err := s.runtimeManager.CleanupNetwork(vm); err != nil {
 		s.logger.Printf("WARN: Failed to cleanup network for VM %s: %v", vm.ID, err)
 	}
 

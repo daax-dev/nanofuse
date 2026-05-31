@@ -20,7 +20,7 @@ warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 # ─── Versions ────────────────────────────────────────────────────────────────
-GO_VERSION="1.24.3"
+GO_VERSION="1.25.2"
 FIRECRACKER_VERSION="1.7.0"
 
 ARCH=$(uname -m)
@@ -128,7 +128,7 @@ install_go() {
 
     info "Installing Go v${GO_VERSION}..."
     local go_tarball="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
-    local go_base_url="https://go.dev/dl"
+    local go_base_url="https://dl.google.com/go"
     local tmpdir
     tmpdir="$(mktemp -d)"
 
@@ -136,7 +136,9 @@ install_go() {
     curl -fsSL "${go_base_url}/${go_tarball}.sha256" -o "${tmpdir}/${go_tarball}.sha256"
 
     info "Verifying Go tarball checksum..."
-    (cd "${tmpdir}" && sha256sum -c "${go_tarball}.sha256")
+    local expected_sha
+    expected_sha="$(cat "${tmpdir}/${go_tarball}.sha256")"
+    (cd "${tmpdir}" && printf "%s  %s\n" "${expected_sha}" "${go_tarball}" | sha256sum -c -)
 
     info "Extracting Go to /usr/local..."
     tar -C /usr/local -xzf "${tmpdir}/${go_tarball}"

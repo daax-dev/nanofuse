@@ -105,7 +105,9 @@ type DiskConfig struct {
 // VMRuntime represents VM runtime information
 type VMRuntime struct {
 	PID         int                 `json:"pid"`
-	SocketPath  string              `json:"socket_path"`
+	Driver      string              `json:"driver,omitempty"`
+	ExternalID  string              `json:"external_id,omitempty"`
+	SocketPath  string              `json:"socket_path,omitempty"`
 	ConsolePath string              `json:"console_path"`
 	NetworkInfo *NetworkRuntimeInfo `json:"network_info,omitempty"`
 }

@@ -676,6 +676,7 @@ components:
       type: object
       required:
         - native_runtime
+        - driver
         - firecracker_binary
         - firecracker_available
         - root_required
@@ -684,23 +685,40 @@ components:
       properties:
         native_runtime:
           type: boolean
-          description: True only when this daemon host can run Firecracker microVMs directly.
+          description: True when this daemon host can run the selected local microVM runtime.
           example: true
+        driver:
+          type: string
+          enum: [firecracker, apple_container]
+          example: apple_container
         firecracker_binary:
           type: string
           example: /usr/local/bin/firecracker
         firecracker_available:
           type: boolean
           example: true
+        apple_container_binary:
+          type: string
+          example: /usr/local/bin/container
+        apple_container_available:
+          type: boolean
+          example: true
+        apple_container_running:
+          type: boolean
+          example: true
+        virtualization_framework_supported:
+          type: boolean
+          description: True when the macOS Apple-container runtime can use the local Virtualization.framework path.
+          example: true
         root_required:
           type: boolean
-          example: true
+          example: false
         network_setup_required:
           type: boolean
-          example: true
+          example: false
         message:
           type: string
-          example: Linux KVM and Firecracker are available for local microVM execution
+          example: Apple container and Virtualization.framework are available for local macOS Linux microVM execution
 
     APITransportCapabilities:
       type: object
@@ -974,15 +992,23 @@ components:
       type: object
       required:
         - pid
-        - socket_path
         - console_path
       properties:
         pid:
           type: integer
-          description: Firecracker process ID
+          description: Runtime process ID when the backend exposes one; zero for runtime-managed VM services.
           example: 12345
+        driver:
+          type: string
+          enum: [firecracker, apple_container]
+          example: apple_container
+        external_id:
+          type: string
+          description: Runtime-owned VM/container identifier for non-Firecracker backends.
+          example: nf-550e8400e29b41d4a7164466
         socket_path:
           type: string
+          description: Firecracker API socket path when the Firecracker backend is used.
           example: /var/lib/nanofuse/vms/550e8400.../firecracker.sock
         console_path:
           type: string

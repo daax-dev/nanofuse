@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/applecontainer"
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
@@ -37,19 +40,36 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 	socketPath := ""
 	tcpBind := ""
 	firecrackerBinary := ""
+	driver := ""
+	appleContainerBinary := ""
 	if s.config != nil {
 		socketPath = s.config.API.Socket
 		tcpBind = s.config.API.TCPBind
 		firecrackerBinary = s.config.Firecracker.BinaryPath
+		driver = selectedRuntimeDriver(s.config)
+		appleContainerBinary = s.config.Runtime.AppleContainer.BinaryPath
 	}
 
 	kvmExists, kvmReadWrite, kvmErr := inspectKVMDevice("/dev/kvm")
 	firecrackerAvailable := executableAvailable(firecrackerBinary)
-	nativeRuntime := runtime.GOOS == "linux" && kvmReadWrite && firecrackerAvailable
+	appleContainerAvailable := executableAvailable(appleContainerBinary)
+	appleContainerRunning := false
+	if driver == applecontainer.DriverName && appleContainerAvailable {
+		appleContainerRunning = appleContainerSystemRunning(appleContainerBinary)
+	}
+	virtualizationSupported := runtime.GOOS == "darwin" && appleContainerAvailable
+	nativeRuntime := (driver == "firecracker" && runtime.GOOS == "linux" && kvmReadWrite && firecrackerAvailable) ||
+		(driver == applecontainer.DriverName && runtime.GOOS == "darwin" && appleContainerAvailable)
 
 	message := "Linux KVM and Firecracker are available for local microVM execution"
+	if driver == applecontainer.DriverName && nativeRuntime {
+		message = "Apple container and Virtualization.framework are available for local macOS Linux microVM execution"
+		if !appleContainerRunning {
+			message = "Apple container is installed for local macOS Linux microVM execution; service will be started on demand"
+		}
+	}
 	if !nativeRuntime {
-		message = "Nanofuse microVM execution requires a Linux host with read/write /dev/kvm and a Firecracker binary; use this daemon as the runtime host and connect to it over the API from macOS or Windows"
+		message = "Nanofuse microVM execution requires Linux/KVM with Firecracker or macOS with Apple container and Virtualization.framework"
 	}
 
 	return types.CapabilitiesResponse{
@@ -64,18 +84,32 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 			KVMError:     kvmErr,
 		},
 		Runtime: types.RuntimeCapabilities{
-			NativeRuntime:        nativeRuntime,
-			FirecrackerBinary:    firecrackerBinary,
-			FirecrackerAvailable: firecrackerAvailable,
-			RootRequired:         true,
-			NetworkSetupRequired: true,
-			Message:              message,
+			NativeRuntime:                    nativeRuntime,
+			Driver:                           driver,
+			FirecrackerBinary:                firecrackerBinary,
+			FirecrackerAvailable:             firecrackerAvailable,
+			AppleContainerBinary:             appleContainerBinary,
+			AppleContainerAvailable:          appleContainerAvailable,
+			AppleContainerRunning:            appleContainerRunning,
+			VirtualizationFrameworkSupported: virtualizationSupported,
+			RootRequired:                     driver == "firecracker",
+			NetworkSetupRequired:             driver == "firecracker",
+			Message:                          message,
 		},
 		API: types.APITransportCapabilities{
 			UnixSocket: socketPath,
 			TCPBind:    tcpBind,
 		},
 	}
+}
+
+func appleContainerSystemRunning(path string) bool {
+	cmd := exec.Command(path, "system", "status")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "apiserver is running")
 }
 
 func inspectKVMDevice(path string) (bool, bool, string) {

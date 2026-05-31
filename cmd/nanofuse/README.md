@@ -100,7 +100,7 @@ nanofuse vm delete web-vm
 Remote clients can configure the API with environment variables:
 
 ```bash
-export NANOFUSE_API_URL="http://linux-kvm-host:8080"
+export NANOFUSE_API_URL="http://linux-or-mac-runtime-host:8080"
 export NANOFUSE_TIMEOUT="30s"
 nanofuse health
 ```

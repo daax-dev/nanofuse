@@ -9,7 +9,8 @@
 This validation covers the `objective.md` sandbox requirements on the current branch:
 
 - Linux/KVM microVM execution path.
-- macOS and Windows operator paths through the `nanofused` API on a Linux/KVM execution environment.
+- macOS local microVM execution path through Apple `container` and Virtualization.framework.
+- Windows operator path through the `nanofused` API on a reachable Linux or macOS execution environment.
 - OCI/container-to-rootfs wrapping path.
 - Per-VM persistent filesystem state.
 - Short-running and long-running lifecycle behavior.
@@ -19,12 +20,11 @@ This validation covers the `objective.md` sandbox requirements on the current br
 
 ## Current Host Finding
 
-The current host is macOS arm64 and has no `/dev/kvm`. Firecracker cannot run natively on this host. Vagrant is installed with the Parallels provider. Closed-loop validation must therefore either:
+The current host is macOS arm64 and has no `/dev/kvm`. Firecracker cannot run natively on this host. Vagrant is installed with the Parallels provider. The local Parallels Ubuntu guest does not expose `/dev/kvm`, so it is not a Firecracker boot host.
 
-1. Run in a Vagrant guest/provider that exposes Linux KVM, or
-2. Fail before VM boot with an explicit `/dev/kvm` capability error.
+The macOS local runtime path uses Apple `container` plus Virtualization.framework instead of nested KVM. It was validated by creating a VM through `nanofused`, starting it through the API, executing `uname -a` inside the Apple-container VM, stopping it through the API, deleting it through the API, and confirming no `nf-*` runtime container remained.
 
-The runnable API requirement is satisfied by `nanofused` on the Linux/KVM runtime host. macOS and Windows hosts run as clients using `NANOFUSE_API_URL`, `--api-url`, curl, PowerShell, or the planned tray app. See `docs/API_QUICK_START.md` and `docs/MAC_WINDOWS_CLIENTS.md`.
+The runnable API requirement is satisfied by `nanofused` on Linux/KVM and by `nanofused` with `runtime.driver=apple_container` on macOS. Windows hosts run as clients using `NANOFUSE_API_URL`, `--api-url`, curl, PowerShell, or the tray app. See `docs/API_QUICK_START.md` and `docs/MAC_WINDOWS_CLIENTS.md`.
 
 ## Validation Commands
 
@@ -59,6 +59,27 @@ The Vagrant script performs:
 - `nanofused` restart and health check.
 - Firecracker/image verification through `verify.sh`.
 
+macOS local runtime:
+
+```bash
+./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s --api-url http://127.0.0.1:18080
+```
+
+API lifecycle:
+
+```bash
+API=http://127.0.0.1:18080
+VM_ID="$(curl -fsS -X POST "$API/vms" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"mac-api-alpine","image":"alpine:3.20","config":{"vcpus":1,"memory_mib":256,"network":{"mode":"none"}}}' \
+  | jq -r '.vm.id')"
+curl -fsS -X POST "$API/vms/$VM_ID/start"
+CONTAINER_ID="$(curl -fsS "$API/vms/$VM_ID" | jq -r '.vm.runtime.external_id')"
+container exec "$CONTAINER_ID" uname -a
+curl -fsS -X POST "$API/vms/$VM_ID/stop" -H "Content-Type: application/json" -d '{"timeout_seconds":10}'
+curl -fsS -X DELETE "$API/vms/$VM_ID"
+```
+
 Local Vagrant result on 2026-05-30:
 
 - Provider: `vagrant-parallels` with `bento/ubuntu-24.04` arm64.
@@ -68,6 +89,17 @@ Local Vagrant result on 2026-05-30:
 - A second attempt enabling Parallels nested virtualization reached `prlctl start` and failed before guest boot with `Unable to start the virtual machine`.
 - Guest-side `mage ci`, daemon health/capabilities, and Firecracker boot verification did not run because Firecracker cannot execute without guest KVM.
 - The Parallels VM was halted after the latest KVM-unavailable run.
+
+Local macOS runtime result on 2026-05-31:
+
+- Host: macOS arm64 with Apple `container` 0.4.1.
+- `container system start --enable-kernel-install` successfully started the Apple-container service.
+- `container run --rm alpine:3.20 uname -a` returned Linux `6.12.28` on `aarch64`.
+- `./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s` passed against `http://127.0.0.1:18080`.
+- `POST /vms` and `POST /vms/{id}/start` launched `alpine:3.20` through `runtime.driver=apple_container`.
+- `container exec <external_id> uname -a` returned Linux `6.12.28` on `aarch64`.
+- `POST /vms/{id}/stop` returned `stopped`.
+- `DELETE /vms/{id}` returned HTTP 204 and runtime cleanup left no matching `nf-*` container.
 
 The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-2026-05-30.log` and `.logs/validation/vagrant-closed-loop-2026-05-30-nested.log` in the local working tree. The committed validation record is `.logs/validation/sandbox-objective.jsonl`.
 
@@ -79,7 +111,7 @@ The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-20
 | Restricted egress | Unit tests verify default-deny chain creation, DNS allow, proxy-only behavior, direct upstream suppression in proxy-only mode, and cleanup commands. |
 | Container wrapping | Existing Docker/Podman extraction and layer composer paths remain the container-to-rootfs mechanism; Vagrant validation checks build prerequisites where supported. |
 | Secrets/identity | SPIFFE/vsock path remains identity-only. Raw secret broker and Vault exchange are not implemented in this PR. |
-| Cross-platform support | Documentation now separates Linux/KVM runtime support from macOS/Windows operator paths. |
+| Cross-platform support | Documentation now separates Linux/KVM Firecracker, macOS Apple-container runtime, and Windows API/tray client support. |
 | API-driven operation | `GET /capabilities` reports host/runtime readiness, CLI env vars support remote API configuration, and Vagrant forwards host `127.0.0.1:18080` to guest API port `8080`. |
 
 ## Known Gaps
@@ -89,3 +121,4 @@ The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-20
 - L7 egress proxy and credential injection are planned sidecar integration, not embedded in `nanofused`.
 - Guest-side SPIFFE SVID client is still required for end-to-end identity retrieval inside the VM.
 - macOS arm64 Parallels validation depends on whether the provider exposes Linux KVM to the guest; unsupported providers must be reported as KVM-unavailable, not treated as pass.
+- macOS Apple-container runtime does not yet support Nanofuse egress policy enforcement, pause/resume, or snapshots. Those remain Firecracker/Linux-path capabilities or future backend work.

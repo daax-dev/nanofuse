@@ -18,11 +18,12 @@ import (
 	"time"
 
 	"github.com/daax-dev/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/vmm"
 )
 
 // ProcessExitHandler is called when a VM process exits
 // vmID is the VM identifier, exitCode is the process exit code (nil if signal killed)
-type ProcessExitHandler func(vmID string, exitCode *int, err error)
+type ProcessExitHandler = vmm.ProcessExitHandler
 
 // SPIREProxyConfig contains SPIRE-related vsock proxy configuration
 type SPIREProxyConfig struct {
@@ -435,6 +436,11 @@ func (m *Manager) Kill(vm *types.VM) error {
 		return fmt.Errorf("failed to send SIGKILL: %w", err)
 	}
 
+	return nil
+}
+
+// Delete performs runtime-specific deletion after VM metadata cleanup.
+func (m *Manager) Delete(vm *types.VM) error {
 	return nil
 }
 

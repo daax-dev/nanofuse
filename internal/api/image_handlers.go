@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daax-dev/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/vmm"
 	"github.com/google/uuid"
 )
 
@@ -23,6 +24,14 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to list images", nil)
 		return
 	}
+	if provider, ok := s.runtimeManager.(vmm.ImageProvider); ok {
+		runtimeImages, runtimeErr := provider.ListImages()
+		if runtimeErr != nil {
+			s.logger.Warn("Failed to list runtime images: %v", runtimeErr)
+		} else {
+			images = mergeRuntimeImages(images, runtimeImages)
+		}
+	}
 
 	response := types.ListImagesResponse{
 		Images: make([]types.Image, 0, len(images)),
@@ -34,6 +43,35 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+func mergeRuntimeImages(dbImages, runtimeImages []*types.Image) []*types.Image {
+	seen := make(map[string]struct{}, len(dbImages)+len(runtimeImages))
+	merged := make([]*types.Image, 0, len(dbImages)+len(runtimeImages))
+	for _, image := range dbImages {
+		key := image.Digest
+		if key == "" && len(image.Tags) > 0 {
+			key = image.Tags[0]
+		}
+		if key != "" {
+			seen[key] = struct{}{}
+		}
+		merged = append(merged, image)
+	}
+	for _, image := range runtimeImages {
+		key := image.Digest
+		if key == "" && len(image.Tags) > 0 {
+			key = image.Tags[0]
+		}
+		if key != "" {
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+		merged = append(merged, image)
+	}
+	return merged
 }
 
 // handleGetImage gets a specific image
@@ -186,6 +224,43 @@ func (s *Server) executePullJob(jobID, imageRef string) {
 		}
 		s.logger.Debug("[job:%s] Progress channel closed", jobID[:8])
 	}()
+
+	if provider, ok := s.runtimeManager.(vmm.ImageProvider); ok {
+		image, err := provider.ResolveImage(imageRef)
+		if err != nil {
+			s.logger.Error("[job:%s] Runtime pull failed after %v: %v", jobID[:8], time.Since(startTime), err)
+			job.State = types.PullJobFailed
+			errMsg := err.Error()
+			job.Error = &errMsg
+			now := time.Now()
+			job.CompletedAt = &now
+			if updateErr := s.db.UpdatePullJob(job); updateErr != nil {
+				s.logger.Error("[job:%s] Failed to update job state to failed: %v", jobID[:8], updateErr)
+			}
+			return
+		}
+		if err := s.db.UpsertImage(image); err != nil {
+			s.logger.Error("[job:%s] Failed to save runtime image to database: %v", jobID[:8], err)
+			job.State = types.PullJobFailed
+			errMsg := fmt.Sprintf("Failed to save image: %v", err)
+			job.Error = &errMsg
+			now := time.Now()
+			job.CompletedAt = &now
+			if updateErr := s.db.UpdatePullJob(job); updateErr != nil {
+				s.logger.Error("[job:%s] Failed to update job state to failed: %v", jobID[:8], updateErr)
+			}
+			return
+		}
+		job.State = types.PullJobCompleted
+		job.ResultDigest = &image.Digest
+		now := time.Now()
+		job.CompletedAt = &now
+		if err := s.db.UpdatePullJob(job); err != nil {
+			s.logger.Error("[job:%s] Failed to update job state to completed: %v", jobID[:8], err)
+		}
+		s.logger.Info("[job:%s] Runtime pull job completed in %v: %s -> %s", jobID[:8], time.Since(startTime), imageRef, image.Digest)
+		return
+	}
 
 	// Pull image with a proper timeout context
 	// Use the configured pull timeout from the registry client

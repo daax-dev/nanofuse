@@ -79,10 +79,10 @@ func newSnapshotHandlerTestServer(t *testing.T, db *storage.DB) *Server {
 	}
 
 	return &Server{
-		db:        db,
-		fcManager: firecracker.NewManager("/usr/bin/firecracker", t.TempDir()),
-		logger:    logger,
-		startTime: time.Now(),
+		db:             db,
+		runtimeManager: firecracker.NewManager("/usr/bin/firecracker", t.TempDir()),
+		logger:         logger,
+		startTime:      time.Now(),
 	}
 }
 

@@ -21,7 +21,7 @@ Complete guide to building NanoFuse, debugging with VS Code, and working with Fi
 ### Prerequisites
 
 - **Linux host** with KVM support (`/dev/kvm`)
-- **Go 1.24+** installed
+- **Go 1.25+** installed
 - **Docker** for building images
 - **Firecracker** binary (optional, needed for VM testing)
 - **VS Code** with Go extension (optional, for debugging)

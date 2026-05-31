@@ -927,9 +927,41 @@ func (s *Server) handleVMPauseByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement pause via Firecracker API
-	s.logger.Printf("WARN: Pause not yet implemented for VM %s", vm.Name)
-	types.WriteError(w, http.StatusNotImplemented, types.ErrInternalError, "Pause operation not yet implemented", nil)
+	if err := s.db.AcquireLock(vm.ID, "pause"); err != nil {
+		types.WriteError(w, http.StatusConflict, types.ErrVMLocked, "VM is locked by another operation", nil)
+		return
+	}
+	defer func() {
+		if err := s.db.ReleaseLock(vm.ID); err != nil {
+			s.logger.Printf("WARN: Failed to release lock: %v", err)
+		}
+	}()
+
+	vm.State = types.StatePausing
+	if err := s.db.UpdateVM(vm); err != nil {
+		s.logger.Printf("ERROR: Failed to update VM: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to update VM state", nil)
+		return
+	}
+
+	if err := s.fcManager.Pause(vm); err != nil {
+		s.logger.Printf("ERROR: Failed to pause VM: %v", err)
+		vm.State = types.StateRunning
+		_ = s.db.UpdateVM(vm)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			fmt.Sprintf("Failed to pause VM: %v", err), nil)
+		return
+	}
+
+	vm.State = types.StatePaused
+	if err := s.db.UpdateVM(vm); err != nil {
+		s.logger.Printf("ERROR: Failed to update VM: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to update VM state", nil)
+		return
+	}
+
+	s.logger.Printf("INFO: Paused VM: %s (%s)", vm.Name, vm.ID)
+	writeJSON(w, http.StatusOK, vm)
 }
 
 // handleVMResumeByPath handles POST /vms/{id}/resume using path parameters
@@ -963,9 +995,41 @@ func (s *Server) handleVMResumeByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement resume via Firecracker API
-	s.logger.Printf("WARN: Resume not yet implemented for VM %s", vm.Name)
-	types.WriteError(w, http.StatusNotImplemented, types.ErrInternalError, "Resume operation not yet implemented", nil)
+	if err := s.db.AcquireLock(vm.ID, "resume"); err != nil {
+		types.WriteError(w, http.StatusConflict, types.ErrVMLocked, "VM is locked by another operation", nil)
+		return
+	}
+	defer func() {
+		if err := s.db.ReleaseLock(vm.ID); err != nil {
+			s.logger.Printf("WARN: Failed to release lock: %v", err)
+		}
+	}()
+
+	vm.State = types.StateResuming
+	if err := s.db.UpdateVM(vm); err != nil {
+		s.logger.Printf("ERROR: Failed to update VM: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to update VM state", nil)
+		return
+	}
+
+	if err := s.fcManager.Resume(vm); err != nil {
+		s.logger.Printf("ERROR: Failed to resume VM: %v", err)
+		vm.State = types.StatePaused
+		_ = s.db.UpdateVM(vm)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			fmt.Sprintf("Failed to resume VM: %v", err), nil)
+		return
+	}
+
+	vm.State = types.StateRunning
+	if err := s.db.UpdateVM(vm); err != nil {
+		s.logger.Printf("ERROR: Failed to update VM: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to update VM state", nil)
+		return
+	}
+
+	s.logger.Printf("INFO: Resumed VM: %s (%s)", vm.Name, vm.ID)
+	writeJSON(w, http.StatusOK, vm)
 }
 
 // handleVMLogsByPath handles GET /vms/{id}/logs using path parameters

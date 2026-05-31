@@ -73,10 +73,10 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, vm
 		return
 	}
 
-	// Validate VM state
-	if vm.State != types.StateRunning && vm.State != types.StatePaused {
+	// Firecracker snapshot creation requires the microVM to be paused.
+	if vm.State != types.StatePaused {
 		types.WriteError(w, http.StatusConflict, types.ErrInvalidStateTransition,
-			fmt.Sprintf("Cannot snapshot VM in state '%s'", vm.State),
+			fmt.Sprintf("Cannot snapshot VM in state '%s'; pause the VM first", vm.State),
 			map[string]interface{}{"current_state": vm.State})
 		return
 	}

@@ -1,11 +1,11 @@
 ---
 id: TASK-47
 title: Complete sandbox objective closed-loop validation
-status: Done
+status: In Progress
 assignee:
   - codex
 created_date: '2026-05-30 20:05'
-updated_date: '2026-05-30 21:11'
+updated_date: '2026-05-31 00:00'
 labels:
   - sandbox
   - microvm
@@ -51,6 +51,8 @@ Deliver the repository objective from objective.md on the current branch only. N
 - [x] #10 Decision logs under .logs/ contain JSONL entries for non-trivial decisions.
 - [x] #11 Formatter, linter, and tests including mage ci are run, or every blocked gate is recorded with exact cause.
 - [x] #12 A pull request is opened with problem statement, approach, alternatives, test evidence, and AI producer/validator information.
+- [x] #13 daax-dev/vagrant-skill is used as the required local Vagrant harness for this branch, and the exact KVM/runtime result is recorded.
+- [x] #14 A minimal macOS/Windows tray/menu app exists as an API-only client with a non-GUI smoke mode and documented one-line launch commands.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -62,6 +64,7 @@ Deliver the repository objective from objective.md on the current branch only. N
 4. Update GOALS.md, API/OpenAPI docs, and Vagrant closed-loop validation docs.
 5. Run mage ci and Vagrant closed-loop validation where the host/provider exposes Linux KVM.
 6. Push the branch and open PR #46 with evidence.
+7. Reopen the task for the operator-requested correction: use daax-dev/vagrant-skill explicitly, ship a minimal API-only tray/menu app, retest, and open/update the next PR with truthful evidence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -72,6 +75,10 @@ Deliver the repository objective from objective.md on the current branch only. N
 2026-05-30: Vagrant/Parallels guest boot and rsync succeeded, but provisioning failed at `/dev/kvm not found`. A nested virtualization attempt was also tried; Parallels accepted `--nested-virt on` but the VM then failed to start, so this host cannot execute the Firecracker closed-loop locally.
 
 2026-05-30: Parallels VM created for validation is stopped, not destroyed.
+
+2026-05-31: Task reopened because the previous completion record did not use daax-dev/vagrant-skill as the required harness and did not ship the requested tray/menu app. Current correction scope is vagrant-skill validation, tray/menu app implementation, retest, docs, and PR update on the same branch.
+
+2026-05-31: Added `cmd/nanofuse-tray`, `internal/trayapp`, macOS/Windows launch scripts, and `docs/TRAY_APP.md`. Local macOS tests/build/smoke/bounded launch passed. Windows tray executable cross-built. vagrant-skill verify passed with KVM skipped, focused tray smoke passed inside the VM, and synced vagrant-skill `mage ci` passed. The local Parallels guest still reports `KVM_MISSING`, so no local Firecracker boot is claimed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

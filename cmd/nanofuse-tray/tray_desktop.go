@@ -1,0 +1,324 @@
+//go:build darwin || windows
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/daax-dev/nanofuse/internal/client"
+	"github.com/daax-dev/nanofuse/internal/trayapp"
+	"github.com/getlantern/systray"
+)
+
+const maxMenuRows = 10
+
+type trayUI struct {
+	ctx       context.Context
+	cfg       trayapp.Config
+	api       trayapp.API
+	mu        sync.Mutex
+	status    *trayapp.Status
+	selected  string
+	pending   trayapp.VMAction
+	pendingAt time.Time
+
+	endpointItem *systray.MenuItem
+	statusItem   *systray.MenuItem
+	runtimeItem  *systray.MenuItem
+	selectedItem *systray.MenuItem
+	refreshItem  *systray.MenuItem
+	startItem    *systray.MenuItem
+	stopItem     *systray.MenuItem
+	killItem     *systray.MenuItem
+	deleteItem   *systray.MenuItem
+	vmItems      []*systray.MenuItem
+	imageItems   []*systray.MenuItem
+	quitItem     *systray.MenuItem
+}
+
+func runTray(ctx context.Context, cfg trayapp.Config) error {
+	ui := &trayUI{
+		ctx: ctx,
+		cfg: cfg,
+		api: cfg.NewClient(),
+	}
+	ready := func() { ui.onReady() }
+	exit := func() {}
+
+	go func() {
+		<-ctx.Done()
+		systray.Quit()
+	}()
+
+	systray.Run(ready, exit)
+	return nil
+}
+
+func withTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		timeout = trayapp.DefaultTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func (ui *trayUI) onReady() {
+	systray.SetTitle("NF")
+	systray.SetTooltip("Nanofuse")
+
+	ui.endpointItem = systray.AddMenuItem("Endpoint: "+ui.cfg.Endpoint(), "Configured nanofused API endpoint")
+	ui.endpointItem.Disable()
+	ui.statusItem = systray.AddMenuItem("Status: checking", "Daemon health")
+	ui.statusItem.Disable()
+	ui.runtimeItem = systray.AddMenuItem("Runtime: checking", "Runtime capabilities")
+	ui.runtimeItem.Disable()
+	systray.AddSeparator()
+
+	ui.refreshItem = systray.AddMenuItem("Refresh", "Refresh daemon status, VMs, and images")
+	ui.selectedItem = systray.AddMenuItem("Selected VM: none", "Currently selected VM")
+	ui.selectedItem.Disable()
+	ui.startItem = systray.AddMenuItem("Start Selected VM", "Start the selected VM through the API")
+	ui.stopItem = systray.AddMenuItem("Stop Selected VM", "Stop the selected VM through the API")
+	ui.killItem = systray.AddMenuItem("Kill Selected VM", "Confirm, then force kill the selected VM through the API")
+	ui.deleteItem = systray.AddMenuItem("Delete Selected VM", "Confirm, then delete the selected VM through the API")
+	systray.AddSeparator()
+
+	vmHeader := systray.AddMenuItem("VMs", "Known VMs")
+	vmHeader.Disable()
+	for i := 0; i < maxMenuRows; i++ {
+		item := systray.AddMenuItem(fmt.Sprintf("VM slot %d", i+1), "Select VM")
+		item.Hide()
+		ui.vmItems = append(ui.vmItems, item)
+	}
+	systray.AddSeparator()
+
+	imageHeader := systray.AddMenuItem("Images", "Cached images")
+	imageHeader.Disable()
+	for i := 0; i < maxMenuRows; i++ {
+		item := systray.AddMenuItem(fmt.Sprintf("Image slot %d", i+1), "Cached image")
+		item.Hide()
+		item.Disable()
+		ui.imageItems = append(ui.imageItems, item)
+	}
+	systray.AddSeparator()
+
+	ui.quitItem = systray.AddMenuItem("Quit", "Quit Nanofuse tray")
+
+	ui.updateActionState()
+	ui.listen()
+	ui.refresh()
+}
+
+func (ui *trayUI) listen() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ui.ctx.Done():
+				systray.Quit()
+				return
+			case <-ticker.C:
+				ui.refresh()
+			case <-ui.refreshItem.ClickedCh:
+				ui.refresh()
+			case <-ui.startItem.ClickedCh:
+				ui.runAction(trayapp.VMActionStart)
+			case <-ui.stopItem.ClickedCh:
+				ui.runAction(trayapp.VMActionStop)
+			case <-ui.killItem.ClickedCh:
+				ui.runAction(trayapp.VMActionKill)
+			case <-ui.deleteItem.ClickedCh:
+				ui.runAction(trayapp.VMActionDelete)
+			case <-ui.quitItem.ClickedCh:
+				systray.Quit()
+				return
+			}
+		}
+	}()
+
+	for idx, item := range ui.vmItems {
+		go func(index int, menuItem *systray.MenuItem) {
+			for {
+				select {
+				case <-ui.ctx.Done():
+					return
+				case <-menuItem.ClickedCh:
+					ui.selectVM(index)
+				}
+			}
+		}(idx, item)
+	}
+}
+
+func (ui *trayUI) refresh() {
+	go func() {
+		ctx, cancel := withTimeout(ui.ctx, ui.cfg.Timeout)
+		defer cancel()
+
+		status, err := trayapp.CollectStatus(ctx, ui.api, ui.cfg.Endpoint())
+		ui.mu.Lock()
+		ui.status = status
+		ui.pending = ""
+		ui.pendingAt = time.Time{}
+		ui.mu.Unlock()
+
+		if err != nil {
+			ui.statusItem.SetTitle("Status: error")
+			ui.runtimeItem.SetTitle(limitTitle("Runtime: " + trayapp.RuntimeSummary(status)))
+			ui.updateVMItems(nil)
+			ui.updateImageItems(nil)
+			ui.updateActionState()
+			return
+		}
+
+		ui.statusItem.SetTitle(limitTitle("Status: " + status.Health.Status))
+		ui.runtimeItem.SetTitle(limitTitle("Runtime: " + trayapp.RuntimeSummary(status)))
+		ui.updateVMItems(status.VMs)
+		ui.updateImageItems(status.Images)
+		ui.updateActionState()
+	}()
+}
+
+func (ui *trayUI) updateVMItems(vms []client.VM) {
+	for idx, item := range ui.vmItems {
+		if idx >= len(vms) {
+			item.Hide()
+			continue
+		}
+		vm := vms[idx]
+		item.SetTitle(limitTitle(fmt.Sprintf("%s [%s]", displayVMName(vm), vm.State)))
+		item.SetTooltip(vm.ID)
+		item.Show()
+		item.Enable()
+	}
+}
+
+func (ui *trayUI) updateImageItems(images []client.Image) {
+	for idx, item := range ui.imageItems {
+		if idx >= len(images) {
+			item.Hide()
+			continue
+		}
+		image := images[idx]
+		item.SetTitle(limitTitle(displayImageName(image)))
+		item.SetTooltip(image.Digest)
+		item.Show()
+	}
+}
+
+func (ui *trayUI) selectVM(index int) {
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+
+	if ui.status == nil || index >= len(ui.status.VMs) {
+		return
+	}
+	vm := ui.status.VMs[index]
+	ui.selected = vm.ID
+	ui.pending = ""
+	ui.pendingAt = time.Time{}
+	ui.selectedItem.SetTitle(limitTitle("Selected VM: " + displayVMName(vm)))
+	ui.updateActionStateLocked()
+}
+
+func (ui *trayUI) runAction(action trayapp.VMAction) {
+	ui.mu.Lock()
+	selected := ui.selected
+	if selected == "" {
+		ui.statusItem.SetTitle("Status: select a VM first")
+		ui.mu.Unlock()
+		return
+	}
+	if action == trayapp.VMActionKill || action == trayapp.VMActionDelete {
+		if ui.pending != action || time.Since(ui.pendingAt) > 10*time.Second {
+			ui.pending = action
+			ui.pendingAt = time.Now()
+			ui.setPendingTitleLocked(action)
+			ui.mu.Unlock()
+			return
+		}
+	}
+	ui.pending = ""
+	ui.pendingAt = time.Time{}
+	ui.updateActionStateLocked()
+	ui.mu.Unlock()
+
+	go func() {
+		ctx, cancel := withTimeout(ui.ctx, ui.cfg.Timeout)
+		defer cancel()
+		if _, err := trayapp.ExecuteVMAction(ctx, ui.api, action, selected); err != nil {
+			ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s failed", action)))
+			ui.runtimeItem.SetTitle(limitTitle(err.Error()))
+			return
+		}
+		ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s sent", action)))
+		ui.refresh()
+	}()
+}
+
+func (ui *trayUI) setPendingTitleLocked(action trayapp.VMAction) {
+	switch action {
+	case trayapp.VMActionKill:
+		ui.killItem.SetTitle("Confirm Kill Selected VM")
+	case trayapp.VMActionDelete:
+		ui.deleteItem.SetTitle("Confirm Delete Selected VM")
+	}
+}
+
+func (ui *trayUI) updateActionState() {
+	ui.mu.Lock()
+	defer ui.mu.Unlock()
+	ui.updateActionStateLocked()
+}
+
+func (ui *trayUI) updateActionStateLocked() {
+	ui.startItem.SetTitle("Start Selected VM")
+	ui.stopItem.SetTitle("Stop Selected VM")
+	ui.killItem.SetTitle("Kill Selected VM")
+	ui.deleteItem.SetTitle("Delete Selected VM")
+
+	if ui.selected == "" {
+		ui.startItem.Disable()
+		ui.stopItem.Disable()
+		ui.killItem.Disable()
+		ui.deleteItem.Disable()
+		return
+	}
+	ui.startItem.Enable()
+	ui.stopItem.Enable()
+	ui.killItem.Enable()
+	ui.deleteItem.Enable()
+}
+
+func displayVMName(vm client.VM) string {
+	if vm.Name != "" {
+		return vm.Name
+	}
+	if vm.ID != "" {
+		return vm.ID
+	}
+	return "unnamed"
+}
+
+func displayImageName(image client.Image) string {
+	if len(image.Tags) > 0 {
+		return strings.Join(image.Tags, ",")
+	}
+	if image.Digest != "" {
+		return image.Digest
+	}
+	return "untagged image"
+}
+
+func limitTitle(value string) string {
+	const maxLen = 72
+	value = strings.ReplaceAll(value, "\n", " ")
+	if len(value) <= maxLen {
+		return value
+	}
+	return value[:maxLen-3] + "..."
+}

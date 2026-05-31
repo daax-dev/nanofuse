@@ -35,14 +35,22 @@
 - [ ] T019 Add Mac/Windows API client runbook and fix API examples
 - [ ] T020 Add sandbox API comparison and tray/menu app requirements
 
-## Phase 5: Validation and PR
+## Phase 5: Tray/Menu App
 
-- [ ] T021 Run `go fmt ./...`
-- [ ] T022 Run targeted Go tests for changed packages
-- [ ] T023 Run `mage ci`
-- [ ] T024 Run Vagrant closed-loop validation and record output
-- [ ] T025 Update Backlog acceptance criteria and final summaries
-- [ ] T026 Commit, push, and update PR
+- [x] T021 Add testable tray API status/action package under `internal/trayapp`
+- [x] T022 Add `cmd/nanofuse-tray` macOS/Windows menu app using only the Nanofuse API
+- [x] T023 Add non-GUI tray smoke mode and tests for health, capabilities, VM list, and image list calls
+- [x] T024 Add Mac and Windows one-line launch/build instructions for the tray app
+- [x] T025 Verify the macOS tray binary builds locally and the smoke mode runs against a test API
+
+## Phase 6: Validation and PR
+
+- [x] T026 Run `go fmt ./...`
+- [x] T027 Run targeted Go tests for changed packages
+- [x] T028 Run `mage ci`
+- [x] T029 Run `daax-dev/vagrant-skill` validation and record output
+- [x] T030 Update Backlog acceptance criteria and final summaries
+- [ ] T031 Commit, push, and update PR
 
 ## Dependencies
 
@@ -50,4 +58,5 @@
 - T006-T008 are independent of T009-T013 after shared types are agreed.
 - T014-T017 depend on implementation decisions and validation results.
 - T018-T020 depend on the API boundary decision.
-- T021-T026 run after all code and docs are complete.
+- T021-T025 depend on T018 because the tray app uses the API client boundary.
+- T026-T031 run after all code and docs are complete.

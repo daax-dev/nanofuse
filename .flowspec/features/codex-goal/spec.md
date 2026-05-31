@@ -2,7 +2,7 @@
 
 **Feature Branch**: `codex-goal`
 **Created**: 2026-05-30
-**Status**: Approved
+**Status**: Approved; reopened 2026-05-31 for required vagrant-skill validation and tray/menu app implementation
 **Input**: User description: "provide a microvm with a small security surface area - capable of running on Linux, Windows, Mac. Containers, persistent filesystem, fast and long lifetimes, secrets/identity away from LLM, egress/API/MCP interception/restriction, Vagrant closed-loop testing, API-driven Mac/Windows clients, tray/menu app requirements, and GOALS.md fixes."
 
 ## User Scenarios & Testing
@@ -95,7 +95,22 @@ An operator on macOS or Windows can point a client at a Linux/KVM Nanofuse daemo
 
 1. **Given** a Linux/KVM host running `nanofused`, **When** a macOS or Windows client sets an API URL, **Then** client commands use the remote API instead of a local Unix socket.
 2. **Given** a client connects to the daemon, **When** it requests capabilities, **Then** the response states host OS, architecture, KVM readiness, Firecracker binary status, and available API transports.
-3. **Given** a tray/menu app is implemented later, **When** it manages VMs, **Then** it uses the Nanofuse API boundary and does not bypass `nanofused`.
+3. **Given** the tray/menu app is running, **When** it checks daemon state or manages VMs, **Then** it uses the Nanofuse API boundary and does not bypass `nanofused`.
+
+## User Story 7 - Tray/Menu Management App (Priority: P2)
+
+An operator on macOS or Windows can start a Nanofuse tray/menu app, point it at a Linux/KVM daemon API, inspect daemon health/runtime capabilities, list VMs/images, and trigger basic VM lifecycle actions without shelling into the runtime host.
+
+**Why this priority**: The operator explicitly requires a UI path for managing microVMs and container-derived images from Mac and Windows, and that UI must preserve the API boundary.
+
+**Independent Test**: Run the tray app smoke mode against a local test API and verify it calls `/health`, `/capabilities`, `/vms`, and `/images`; build the GUI binary on macOS and keep Windows instructions build-from-Windows until a Windows runner is available.
+
+**Acceptance Scenarios**:
+
+1. **Given** a reachable `nanofused` API, **When** the tray app starts, **Then** it shows daemon health and runtime capability state.
+2. **Given** VMs exist in the daemon API, **When** the operator opens the VM menu, **Then** the app lists VM state and exposes start, stop, kill, and delete actions through API calls.
+3. **Given** images exist in the daemon API, **When** the operator opens the image menu, **Then** the app lists cached image references and exposes image pull status or refresh behavior through API calls.
+4. **Given** the daemon is unreachable, **When** the tray app starts or refreshes, **Then** it reports the configured endpoint and keeps destructive actions disabled.
 
 ### Edge Cases
 
@@ -123,7 +138,8 @@ An operator on macOS or Windows can point a client at a Linux/KVM Nanofuse daemo
 - **FR-010**: System MUST document supported and unsupported platform paths for Linux, macOS, and Windows without overstating security guarantees.
 - **FR-011**: System MUST expose API capabilities so remote clients can distinguish control-plane reachability from Linux/KVM runtime readiness.
 - **FR-012**: System MUST document Mac and Windows client instructions for running against a Linux/KVM daemon.
-- **FR-013**: System MUST capture tray/menu app requirements as an API-only client until a desktop framework is explicitly selected.
+- **FR-013**: System MUST ship a minimal API-only tray/menu app entry point for macOS and Windows that never touches Firecracker sockets, TAP devices, daemon storage, or host hypervisor tooling directly.
+- **FR-014**: System MUST provide a non-GUI smoke mode for the tray app so API behavior can be tested in CI and Vagrant without relying on desktop interaction.
 
 ### Key Entities
 
@@ -144,3 +160,5 @@ An operator on macOS or Windows can point a client at a Linux/KVM Nanofuse daemo
 - **SC-005**: `mage ci` passes, or any blocker includes the exact command, environment, and failure cause.
 - **SC-006**: API examples and OpenAPI schemas match implemented request fields for image pull and VM creation.
 - **SC-007**: A comparison against current sandbox APIs identifies Nanofuse API gaps without claiming unsupported parity.
+- **SC-008**: The tray/menu app has unit tests or smoke tests proving it uses the Nanofuse API for health, capabilities, VMs, and images.
+- **SC-009**: The required Vagrant evidence uses `daax-dev/vagrant-skill` for this branch, with the exact KVM/runtime result recorded.

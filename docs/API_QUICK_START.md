@@ -6,7 +6,7 @@ Nanofuse is controlled through the `nanofused` REST API daemon. The daemon must 
 
 - Runtime host: Linux with read/write `/dev/kvm`.
 - Runtime privileges: root or equivalent capabilities for TAP, bridge, NAT, and Firecracker.
-- Client host: Linux, macOS, or Windows with `curl`, PowerShell, or the `nanofuse` CLI.
+- Client host: Linux, macOS, or Windows with `curl`, PowerShell, the `nanofuse` CLI, or `nanofuse-tray`.
 
 Native Firecracker execution on macOS or Windows is not supported. Those hosts can still manage VMs through the API when a Linux/KVM daemon is reachable.
 
@@ -98,6 +98,22 @@ ssh -L 18080:127.0.0.1:8080 user@linux-kvm-host
 $env:NANOFUSE_API_URL = "http://127.0.0.1:18080"
 .\nanofuse.exe health
 ```
+
+## Tray Client
+
+macOS:
+
+```bash
+NANOFUSE_API_URL="${NANOFUSE_API_URL:-http://127.0.0.1:18080}" ./scripts/run-tray-macos.sh
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-tray-windows.ps1 -ApiUrl "$env:NANOFUSE_API_URL"
+```
+
+See [Tray App](TRAY_APP.md) for smoke mode and validation evidence.
 
 ## Vagrant API Path
 

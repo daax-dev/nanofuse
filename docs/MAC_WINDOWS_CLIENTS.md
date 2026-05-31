@@ -6,7 +6,7 @@ Nanofuse runtime execution is Linux/KVM. macOS and Windows clients manage a Linu
 
 ```text
 macOS or Windows client
-  -> nanofuse CLI, curl, PowerShell, or tray app
+  -> nanofuse CLI, curl, PowerShell, or nanofuse-tray
   -> HTTP API
   -> Linux/KVM host running nanofused
   -> Firecracker microVMs
@@ -41,6 +41,12 @@ curl "$NANOFUSE_API_URL/capabilities"
 nanofuse vm list
 ```
 
+Tray app:
+
+```bash
+NANOFUSE_API_URL="${NANOFUSE_API_URL:-http://127.0.0.1:18080}" ./scripts/run-tray-macos.sh
+```
+
 ## Windows PowerShell
 
 ```powershell
@@ -50,6 +56,12 @@ $env:NANOFUSE_API_URL = "http://127.0.0.1:18080"
 .\nanofuse.exe health
 Invoke-RestMethod "$env:NANOFUSE_API_URL/capabilities"
 .\nanofuse.exe vm list
+```
+
+Tray app:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-tray-windows.ps1 -ApiUrl "$env:NANOFUSE_API_URL"
 ```
 
 ## Vagrant From a Client Host
@@ -80,6 +92,8 @@ The CLI reads these environment variables:
 
 `--api-url` and `--api-socket` still work and take precedence over environment values.
 
-## Tray App Requirement
+## Tray App
 
-A macOS/Windows tray app should be an API client only. It must not call Firecracker, manipulate TAP devices, edit Nanofuse storage, or shell into the runtime host directly. The required first screen is daemon health/capabilities, followed by VM and image lifecycle controls backed by `api/openapi.yaml`.
+`nanofuse-tray` is implemented as an API client only. It must not call Firecracker, manipulate TAP devices, edit Nanofuse storage, or shell into the runtime host directly. The current app shows daemon health/capabilities, VM list, image list, and VM start/stop/kill/delete actions backed by `api/openapi.yaml`.
+
+See [Tray App](TRAY_APP.md).

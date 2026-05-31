@@ -2,7 +2,7 @@
 
 Nanofuse VM execution runs on a Linux/KVM host. macOS and Windows are API clients only; they do not run Firecracker locally.
 
-There is no tray/menu application in this repo yet. The tray app is a planned API client, not a shipped binary.
+`nanofuse-tray` now ships as a minimal macOS menu bar / Windows tray API client. It manages health, capabilities, VM list, image list, and VM start/stop/kill/delete through `nanofused`.
 
 Primary runtime requirement: Firecracker requires Linux KVM and read/write access to `/dev/kvm`. Apple documents nested virtualization support as available on Macs with M3 chips and later. Parallels documents nested virtualization as not supported on Mac computers with Apple silicon for its current nested Hyper-V path, and the local Parallels VM on this Apple M2 Max does not expose `/dev/kvm`.
 
@@ -15,6 +15,8 @@ Primary runtime requirement: Firecracker requires Linux KVM and read/write acces
 | macOS CLI creates and starts a Firecracker VM through the API | Tested: VM `mac-api-smoke` reached `running` and console logs showed Ubuntu boot |
 | Linux/KVM direct Firecracker boot | Tested on `dublin-wg` with `/dev/kvm`, Firecracker `1.7.0`, kernel `6.1.77`, and Ubuntu rootfs |
 | Linux/KVM rootless API daemon with no VM networking | Tested with `network.setup=false` and VM `network=none` |
+| macOS tray app build, smoke, and bounded launch | Tested locally with `bin/nanofuse-tray` against a fake API on `127.0.0.1:19080` |
+| Windows tray executable build | Cross-built from this Mac with `GOOS=windows GOARCH=amd64` and `-H=windowsgui`; runtime click testing still requires a Windows desktop session |
 | Windows one-liner | Syntax only; not tested in this workspace |
 | Local macOS Parallels Vagrant as Firecracker host | Tested and failed on this Apple M2 Max with Parallels 26.1.1: guest has no `/dev/kvm`; `--nested-virt on` makes the VM fail to start; `--hypervisor-type parallels` is rejected |
 
@@ -137,6 +139,20 @@ Verified status and logs:
 ./bin/nanofuse --api-url http://127.0.0.1:18082 vm logs 04b5c05f-4a45-4a96-a2a6-37cbadb51e58 --tail 80
 ```
 
+## macOS Tray App
+
+One-line build and launch from the repo root:
+
+```bash
+NANOFUSE_API_URL="${NANOFUSE_API_URL:-http://127.0.0.1:18080}" ./scripts/run-tray-macos.sh
+```
+
+Smoke test without opening the menu bar app:
+
+```bash
+go build -o bin/nanofuse-tray ./cmd/nanofuse-tray && ./bin/nanofuse-tray --smoke --api-url "${NANOFUSE_API_URL:-http://127.0.0.1:18080}"
+```
+
 ## Windows PowerShell Client
 
 Run this from Windows PowerShell after replacing `user@linux-kvm-host`:
@@ -146,6 +162,26 @@ Start-Process ssh -ArgumentList '-N','-L','18080:127.0.0.1:8080','user@linux-kvm
 ```
 
 This assumes `ssh.exe` is installed and the Windows `nanofuse.exe` binary is in the current directory.
+
+## Windows Tray App
+
+One-line build and launch from PowerShell in the repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-tray-windows.ps1 -ApiUrl "$env:NANOFUSE_API_URL"
+```
+
+Explicit one-liner:
+
+```powershell
+if (-not $env:NANOFUSE_API_URL) { $env:NANOFUSE_API_URL = "http://127.0.0.1:18080" }; go build -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray; Start-Process .\bin\nanofuse-tray.exe -ArgumentList @("--api-url", $env:NANOFUSE_API_URL)
+```
+
+Smoke test:
+
+```powershell
+.\bin\nanofuse-tray.exe --smoke --api-url $env:NANOFUSE_API_URL
+```
 
 ## Direct TCP Client
 

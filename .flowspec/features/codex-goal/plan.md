@@ -5,14 +5,14 @@
 
 ## Summary
 
-Deliver a truthful, testable slice of the sandbox objective: per-VM writable root disks, typed egress policy enforcement hooks, corrected platform/security documentation, API-driven Mac/Windows client paths, tray-app requirements, and Vagrant closed-loop validation. The platform remains Firecracker-on-Linux/KVM at runtime; macOS and Windows are operator/developer hosts only when they can reach a Linux/KVM execution environment.
+Deliver a truthful, testable slice of the sandbox objective: per-VM writable root disks, typed egress policy enforcement hooks, corrected platform/security documentation, API-driven Mac/Windows client paths, a minimal API-only tray/menu app, and Vagrant closed-loop validation through `daax-dev/vagrant-skill`. The platform remains Firecracker-on-Linux/KVM at runtime; macOS and Windows are operator/developer hosts only when they can reach a Linux/KVM execution environment.
 
 ## Technical Context
 
 **Language/Version**: Go 1.24.3
-**Primary Dependencies**: Go stdlib, cobra, SQLite, Firecracker process/API integration, iptables
+**Primary Dependencies**: Go stdlib, cobra, SQLite, Firecracker process/API integration, iptables, getlantern/systray for the macOS/Windows menu app
 **Storage**: Local filesystem under `storage.data_dir` plus SQLite metadata
-**Testing**: `go test`, `go test -race`, `mage ci`, Vagrant closed-loop validation
+**Testing**: `go test`, `go test -race`, `mage ci`, tray smoke tests, `daax-dev/vagrant-skill` closed-loop validation
 **Target Platform**: Linux with KVM for runtime; macOS/Windows through compatible Linux/KVM guest or remote runner
 **Project Type**: Single Go CLI/daemon project
 **Performance Goals**: Preserve current VM lifecycle path; no new synchronous network calls in VM start path
@@ -58,6 +58,9 @@ cmd/nanofuse/
 ├── main.go
 └── main_test.go
 
+cmd/nanofuse-tray/
+└── main.go
+
 internal/api/
 ├── handlers.go
 ├── server.go
@@ -70,6 +73,10 @@ internal/client/
 ├── client_test.go
 └── types.go
 
+internal/trayapp/
+├── app.go
+└── app_test.go
+
 internal/network/
 ├── egress.go
 └── egress_test.go
@@ -78,14 +85,10 @@ internal/types/
 └── vm.go
 
 dev/vagrant/
-├── README.md
-├── Vagrantfile
-├── setup.sh
-├── verify.sh
-└── closed-loop.sh
+└── existing local harness docs, kept secondary to vagrant-skill for this objective
 ```
 
-**Structure Decision**: VM lifecycle and root disk materialization belong in the daemon API layer because the daemon owns storage and privileged lifecycle. Firewall policy belongs in `internal/network`. Runtime capability reporting belongs in the daemon API because clients and tray apps must gate VM actions without touching host internals. Public request/response shape belongs in `internal/types`, `internal/client`, and `api/openapi.yaml`.
+**Structure Decision**: VM lifecycle and root disk materialization belong in the daemon API layer because the daemon owns storage and privileged lifecycle. Firewall policy belongs in `internal/network`. Runtime capability reporting belongs in the daemon API because clients and tray apps must gate VM actions without touching host internals. Public request/response shape belongs in `internal/types`, `internal/client`, and `api/openapi.yaml`. Tray status/action logic belongs in a testable `internal/trayapp` package; the OS tray loop belongs only in `cmd/nanofuse-tray`.
 
 ## Implementation Notes
 
@@ -96,9 +99,10 @@ dev/vagrant/
 5. Wire egress policy into VM create/delete cleanup without changing default legacy behavior unless a policy is requested.
 6. Update OpenAPI and docs to expose the new policy shape.
 7. Add API capabilities reporting and CLI environment configuration for remote API clients.
-8. Improve Vagrant validation so unsupported providers fail with exact diagnostics instead of ambiguous provisioning errors and forward the guest API to the host.
-9. Document sandbox API differences and tray/menu app requirements without selecting a desktop runtime.
-10. Run targeted tests after each behavior slice, then `mage ci`, then Vagrant.
+8. Use `daax-dev/vagrant-skill` as the required Vagrant harness for this branch; keep `dev/vagrant` as a secondary local harness until it is explicitly replaced.
+9. Implement a minimal Go tray/menu app for macOS and Windows with smoke mode, health/capability refresh, VM/image lists, and basic VM lifecycle API actions.
+10. Document sandbox API differences, tray/menu app run/build instructions, and current validation evidence.
+11. Run targeted tests after each behavior slice, then `mage ci`, then `vagrant-skill` validation.
 
 ## Complexity Tracking
 
@@ -106,3 +110,4 @@ dev/vagrant/
 |-----------|------------|-------------------------------------|
 | Platform support documented as constrained rather than native on every OS | Firecracker requires Linux KVM; current host is macOS arm64 without `/dev/kvm` | Claiming native macOS/Windows support would be false and violates validation rules |
 | First egress slice uses L3/L4/proxy-only instead of full L7 inspection | The proxy implementation lives outside this repo and is not implemented here | Implementing a full TLS proxy here would duplicate the planned `daax-egress` boundary and expand scope unsafely |
+| Tray app uses a minimal Go systray library instead of Electron, Tauri, Wails, Swift, or WinUI | The operator requires a runnable tray/menu API client now on the current branch | Electron/Tauri/Wails add larger repo-wide toolchains; separate native apps create two codebases before the API client behavior is proven |

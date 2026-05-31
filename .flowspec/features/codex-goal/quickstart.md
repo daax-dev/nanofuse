@@ -54,7 +54,7 @@ API=http://127.0.0.1:18080
 VM_NAME="mac-api-alpine-$(date +%s)"
 VM_ID="$(curl -fsS -X POST "$API/vms" \
   -H "Content-Type: application/json" \
-  -d "{\"name\":\"${VM_NAME}\",\"image\":\"alpine:3.20\",\"config\":{\"vcpus\":1,\"memory_mib\":256,\"network\":{\"mode\":\"none\"}}}" \
+  -d "{\"name\":\"${VM_NAME}\",\"image\":\"alpine:3.20\",\"config\":{\"vcpus\":1,\"memory_mib\":256}}" \
   | jq -r '.id')"
 curl -fsS -X POST "$API/vms/$VM_ID/start"
 CONTAINER_ID="$(curl -fsS "$API/vms/$VM_ID" | jq -r '.runtime.external_id')"

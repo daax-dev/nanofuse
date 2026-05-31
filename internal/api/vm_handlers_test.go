@@ -8,8 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/daax-dev/nanofuse/internal/config"
+	"github.com/daax-dev/nanofuse/internal/logging"
+	"github.com/daax-dev/nanofuse/internal/storage"
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
@@ -291,5 +294,66 @@ func TestVMHasRuntimeHandleAcceptsPIDOrExternalID(t *testing.T) {
 				t.Fatalf("vmHasRuntimeHandle() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestHandleDeleteVMKeepsMetadataWhenRuntimeDeleteFails(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("db.Close: %v", err)
+		}
+	}()
+
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+
+	runtimeManager := &runtimeImageProviderStub{deleteErr: errors.New("runtime delete failed")}
+	server := &Server{
+		db:             db,
+		logger:         logger,
+		runtimeManager: runtimeManager,
+	}
+	vm := &types.VM{
+		ID:           "vm-delete-runtime-fail",
+		Name:         "delete-runtime-fail",
+		State:        types.StateStopped,
+		Image:        "docker.io/library/alpine:3.20",
+		ImageDigest:  "sha256:test",
+		Architecture: "arm64",
+		Config: types.VMConfig{
+			VCPUs:     1,
+			MemoryMiB: 256,
+			Network:   types.NetworkConfig{Mode: "nat"},
+		},
+		Runtime:   &types.VMRuntime{Driver: "apple_container", ExternalID: "nf-test"},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := db.CreateVM(vm); err != nil {
+		t.Fatalf("CreateVM: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/vms/"+vm.ID, nil)
+	rec := httptest.NewRecorder()
+	server.handleDeleteVM(rec, req, vm.ID)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	if runtimeManager.deleteCalls != 1 {
+		t.Fatalf("runtime delete calls = %d, want 1", runtimeManager.deleteCalls)
+	}
+	got, err := db.GetVM(vm.ID)
+	if err != nil {
+		t.Fatalf("GetVM: %v", err)
+	}
+	if got == nil {
+		t.Fatal("VM metadata was deleted after runtime cleanup failure")
 	}
 }

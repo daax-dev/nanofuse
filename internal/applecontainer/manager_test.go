@@ -56,7 +56,10 @@ func TestResolveImageParsesAppleContainerInspect(t *testing.T) {
 
 func TestRunArgsMapsVMConfigToAppleContainerCLI(t *testing.T) {
 	manager := NewManager(config.AppleContainerRuntimeConfig{DefaultCommand: "sleep infinity"}, t.TempDir())
-	args := manager.runArgs(testVM(), testImage(), "nf-test")
+	args, err := manager.runArgs(testVM(), testImage(), "nf-test")
+	if err != nil {
+		t.Fatalf("runArgs() error = %v", err)
+	}
 	got := strings.Join(args, " ")
 
 	for _, want := range []string{
@@ -72,6 +75,20 @@ func TestRunArgsMapsVMConfigToAppleContainerCLI(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("args %q missing %q", got, want)
 		}
+	}
+}
+
+func TestRunArgsRejectsNetworkNone(t *testing.T) {
+	manager := NewManager(config.AppleContainerRuntimeConfig{DefaultCommand: "sleep infinity"}, t.TempDir())
+	vm := testVM()
+	vm.Config.Network.Mode = "none"
+
+	_, err := manager.runArgs(vm, testImage(), "nf-test")
+	if err == nil {
+		t.Fatal("expected network none to be rejected")
+	}
+	if !strings.Contains(err.Error(), `network mode "none"`) {
+		t.Fatalf("runArgs() error = %v, want network mode none", err)
 	}
 }
 

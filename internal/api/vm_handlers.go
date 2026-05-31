@@ -625,11 +625,17 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request, vmID str
 	// Stop VM if running
 	if vm.State == types.StateRunning || vm.State == types.StatePaused {
 		if err := s.runtimeManager.Kill(vm); err != nil {
-			s.logger.Printf("WARN: Failed to kill VM: %v", err)
+			s.logger.Printf("ERROR: Failed to kill VM before delete: %v", err)
+			types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+				"Failed to stop VM runtime before delete", map[string]interface{}{"vm_id": vm.ID})
+			return
 		}
 	}
 	if err := s.runtimeManager.Delete(vm); err != nil {
-		s.logger.Printf("WARN: Failed to delete VM runtime resources: %v", err)
+		s.logger.Printf("ERROR: Failed to delete VM runtime resources: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			"Failed to delete VM runtime resources", map[string]interface{}{"vm_id": vm.ID})
+		return
 	}
 
 	// Cleanup SPIRE workload entry if registered

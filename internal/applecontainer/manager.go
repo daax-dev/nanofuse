@@ -306,7 +306,10 @@ func (m *Manager) Start(vm *types.VM, image *types.Image) error {
 			return err
 		}
 	} else if !exists {
-		args := m.runArgs(vm, image, containerName)
+		args, err := m.runArgs(vm, image, containerName)
+		if err != nil {
+			return err
+		}
 		out, err := m.runCommand(args...)
 		_ = appendConsole(consolePath, out)
 		if err != nil {
@@ -330,7 +333,19 @@ func (m *Manager) Start(vm *types.VM, image *types.Image) error {
 	return nil
 }
 
-func (m *Manager) runArgs(vm *types.VM, image *types.Image, containerName string) []string {
+func (m *Manager) runArgs(vm *types.VM, image *types.Image, containerName string) ([]string, error) {
+	networkMode := strings.TrimSpace(vm.Config.Network.Mode)
+	if networkMode == "" {
+		networkMode = "nat"
+	}
+	switch networkMode {
+	case "nat":
+	case "none":
+		return nil, fmt.Errorf("apple container runtime does not support network mode %q", networkMode)
+	default:
+		return nil, fmt.Errorf("apple container runtime does not support network mode %q", networkMode)
+	}
+
 	defaultCommand := strings.Fields(m.defaultCommand)
 	args := make([]string, 0, 13+(2*len(vm.Config.Network.PortForwards))+len(defaultCommand))
 	args = append(args,
@@ -350,7 +365,7 @@ func (m *Manager) runArgs(vm *types.VM, image *types.Image, containerName string
 	}
 	args = append(args, imageReference(image, vm.Image))
 	args = append(args, defaultCommand...)
-	return args
+	return args, nil
 }
 
 func imageReference(image *types.Image, fallback string) string {

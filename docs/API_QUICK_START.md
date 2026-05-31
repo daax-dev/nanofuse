@@ -116,10 +116,11 @@ Create and start an OCI-backed local VM through the API:
 ```bash
 curl -X POST http://127.0.0.1:18080/vms \
   -H "Content-Type: application/json" \
-  -d '{"name":"mac-api-alpine","image":"alpine:3.20","config":{"vcpus":1,"memory_mib":256,"network":{"mode":"none"}}}'
+  -d '{"name":"mac-api-alpine","image":"alpine:3.20","config":{"vcpus":1,"memory_mib":256}}'
 ```
 
 The returned VM has `runtime.driver=apple_container` after `POST /vms/{id}/start`.
+Apple container currently uses its default NAT network; `network.mode=none` is rejected instead of silently launching a networked VM.
 
 Use an SSH tunnel only when targeting a remote Linux/KVM daemon:
 

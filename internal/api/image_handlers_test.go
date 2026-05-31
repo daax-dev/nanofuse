@@ -78,8 +78,12 @@ func pullProgressGoroutineActive() bool {
 }
 
 type runtimeImageProviderStub struct {
-	image *types.Image
-	err   error
+	image       *types.Image
+	err         error
+	killErr     error
+	deleteErr   error
+	killCalls   int
+	deleteCalls int
 }
 
 func (r *runtimeImageProviderStub) ResolveImage(_ string) (*types.Image, error) {
@@ -105,9 +109,15 @@ func (r *runtimeImageProviderStub) Start(*types.VM, *types.Image) error { return
 
 func (r *runtimeImageProviderStub) Stop(*types.VM, int) error { return nil }
 
-func (r *runtimeImageProviderStub) Kill(*types.VM) error { return nil }
+func (r *runtimeImageProviderStub) Kill(*types.VM) error {
+	r.killCalls++
+	return r.killErr
+}
 
-func (r *runtimeImageProviderStub) Delete(*types.VM) error { return nil }
+func (r *runtimeImageProviderStub) Delete(*types.VM) error {
+	r.deleteCalls++
+	return r.deleteErr
+}
 
 func (r *runtimeImageProviderStub) Pause(*types.VM) error { return nil }
 

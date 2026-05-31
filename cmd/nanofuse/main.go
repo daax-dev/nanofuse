@@ -61,19 +61,24 @@ func main() {
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		// Check for client.ClientError (API errors with exit codes)
 		if cerr, ok := err.(*client.ClientError); ok {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", cerr.Error())
 			os.Exit(cerr.ExitCode())
 		}
 		// Check for clierrors.CLIError (user-friendly errors with exit codes)
 		if cliErr, ok := err.(*clierrors.CLIError); ok {
+			cliErr.Format(cliUseColor())
 			os.Exit(cliErr.ExitCode)
 		}
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "nanofuse",
-	Short: "NanoFuse - Firecracker microVM manager",
+	Use:           "nanofuse",
+	Short:         "NanoFuse - Firecracker microVM manager",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Long: `NanoFuse is a command-line tool for managing Firecracker-based microVMs.
 It provides simple commands for VM lifecycle management, snapshots, and image handling.`,
 	Version: version,
@@ -98,10 +103,7 @@ It provides simple commands for VM lifecycle management, snapshots, and image ha
 		}
 
 		// Determine color usage
-		useColor := !noColor && isTerminal()
-		if os.Getenv("NO_COLOR") != "" {
-			useColor = false
-		}
+		useColor := cliUseColor()
 
 		// Create formatter
 		format := "table"
@@ -163,6 +165,13 @@ func envTruthy(value string) bool {
 	default:
 		return false
 	}
+}
+
+func cliUseColor() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	return !noColor && isTerminal()
 }
 
 func init() {
@@ -1501,19 +1510,20 @@ func handleAPIError(err error, operation string) error {
 
 // handleAPIErrorWithResource converts an API error to a user-friendly CLIError with resource context.
 // The resource parameter identifies the resource being operated on (e.g., VM ID, image ref).
-// For connection errors, it uses the global apiSocket for socket path context.
+// For connection errors, it uses the selected API endpoint for context.
 //
 // Returns: Always returns an error whose concrete type is *clierrors.CLIError for consistent error handling.
 // Callers can type-assert to *clierrors.CLIError and use cliErr.ExitCode for process exit codes.
 func handleAPIErrorWithResource(err error, operation string, resource string) error {
-	// Determine color usage
-	useColor := formatter != nil && !noColor && isTerminal()
-
-	// For connection errors, use the socket path from apiSocket
+	// For connection errors, use the selected TCP URL or Unix socket path.
 	// For other errors, use the resource (VM ID, image ref, etc.)
 	resourceOrSocket := resource
 	if clierrors.IsConnectionError(err.Error()) {
-		resourceOrSocket = apiSocket
+		if apiURL != "" {
+			resourceOrSocket = apiURL
+		} else {
+			resourceOrSocket = apiSocket
+		}
 		if resourceOrSocket == "" {
 			resourceOrSocket = "/run/nanofused.sock"
 		}
@@ -1521,9 +1531,6 @@ func handleAPIErrorWithResource(err error, operation string, resource string) er
 
 	// Convert to CLIError with appropriate context
 	cliErr := clierrors.FromError(err, operation, resourceOrSocket)
-
-	// Format and display the error
-	cliErr.Format(useColor)
 
 	// Always return CLIError for consistent type handling
 	return cliErr

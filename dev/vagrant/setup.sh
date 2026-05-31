@@ -45,7 +45,7 @@ info "Checking prerequisites..."
 [[ $EUID -eq 0 ]] || error "Must run as root"
 
 if [[ ! -e /dev/kvm ]]; then
-    error "/dev/kvm not found. Nested KVM required — ensure host has host-passthrough CPU mode."
+    error "/dev/kvm not found. Firecracker requires Linux KVM with read/write /dev/kvm. Use a Linux/KVM host or a provider that exposes nested KVM; this guest cannot boot Firecracker."
 fi
 
 if [[ ! -d /nanofuse ]]; then

@@ -1,8 +1,12 @@
 package main
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/daax-dev/nanofuse/internal/clierrors"
 )
 
 // Basic smoke test to ensure package builds
@@ -114,6 +118,26 @@ func TestApplyClientEnvironmentRejectsInvalidTimeout(t *testing.T) {
 
 	if err := applyClientEnvironment(); err == nil {
 		t.Fatal("expected invalid timeout error")
+	}
+}
+
+func TestHandleAPIErrorUsesAPIURLForTCPConnection(t *testing.T) {
+	resetCLIStateForTest(t)
+	apiURL = "http://127.0.0.1:18080"
+
+	err := handleAPIError(errors.New("Get \"http://127.0.0.1:18080/health\": dial tcp 127.0.0.1:18080: connect: connection refused"), "check API health")
+	cliErr, ok := err.(*clierrors.CLIError)
+	if !ok {
+		t.Fatalf("handleAPIError() = %T, want *clierrors.CLIError", err)
+	}
+	if cliErr.Context == nil {
+		t.Fatal("expected error context")
+	}
+	if cliErr.Context.Resource != apiURL {
+		t.Fatalf("Resource = %q, want %q", cliErr.Context.Resource, apiURL)
+	}
+	if !strings.Contains(cliErr.Suggestion, "SSH tunnel") {
+		t.Fatalf("Suggestion = %q, want SSH tunnel guidance", cliErr.Suggestion)
 	}
 }
 

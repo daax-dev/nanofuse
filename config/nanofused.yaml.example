@@ -24,6 +24,11 @@ firecracker:
   # Optional: Path to jailer binary
   # jailer_path: /usr/local/bin/jailer
 
+network:
+  # Create the nanofuse bridge and NAT rules at daemon startup.
+  # Set false only for explicit no-network validation where VMs use network.mode=none.
+  setup: true
+
 limits:
   # Maximum number of VMs
   max_vms: 50

@@ -318,6 +318,9 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 	if config.Network.Mode == "none" {
 		return nil
 	}
+	if !s.config.Network.Setup {
+		return fmt.Errorf("network setup disabled; use network mode none or enable network.setup")
+	}
 
 	// Allocate IP address
 	ip, err := s.ipam.AllocateIP(vmID)

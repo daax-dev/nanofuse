@@ -329,9 +329,13 @@ func startServer(cfg *config.Config) error {
 	}
 	defer db.Close()
 
-	// Setup network
-	if err := setupNetworkInfrastructure(logger); err != nil {
-		return err
+	// Setup network when host networking is managed by nanofused.
+	if cfg.Network.Setup {
+		if err := setupNetworkInfrastructure(logger); err != nil {
+			return err
+		}
+	} else {
+		logger.Warn("Network infrastructure setup disabled by config; only network.mode=none VMs can start without preconfigured networking")
 	}
 
 	// Initialize IPAM

@@ -1,6 +1,6 @@
 # Nanofuse Project Goals
 
-**Last updated:** 2026-05-30
+**Last updated:** 2026-05-31
 **Status:** Alpha. Core Firecracker lifecycle exists; production sandbox controls are being added and validated.
 
 ## Mission
@@ -91,6 +91,7 @@ Host Linux/KVM
 
 | Document | Description |
 |----------|-------------|
+| [Launch One-Liners](LAUNCH_ONE_LINERS.md) | Tested Mac/Windows client one-liners and local Parallels/KVM result |
 | [Sandbox Objective Validation](building/sandbox-objective-validation.md) | Current validation plan and evidence |
 | [API Quick Start](API_QUICK_START.md) | Runnable Linux/KVM API daemon and client examples |
 | [Mac and Windows Clients](MAC_WINDOWS_CLIENTS.md) | Cross-platform client runbook |

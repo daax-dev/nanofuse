@@ -23,6 +23,9 @@ storage:
 firecracker:
   binary_path: /usr/local/bin/firecracker
 
+network:
+  setup: true
+
 limits:
   max_vms: 10
   max_total_memory_mib: 8192

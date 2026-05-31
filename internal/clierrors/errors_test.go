@@ -190,6 +190,23 @@ func TestWrapDaemonNotRunning(t *testing.T) {
 	}
 }
 
+func TestWrapDaemonNotRunningHTTP(t *testing.T) {
+	err := WrapDaemonNotRunning("http://127.0.0.1:18080")
+
+	if err.Context.Resource != "http://127.0.0.1:18080" {
+		t.Errorf("Resource = %q, want TCP API URL", err.Context.Resource)
+	}
+	if !strings.Contains(err.Suggestion, "SSH tunnel") {
+		t.Errorf("Suggestion should mention SSH tunnel, got: %s", err.Suggestion)
+	}
+	if strings.Contains(err.Suggestion, "systemctl start nanofused") {
+		t.Errorf("TCP suggestion should not use local systemctl-only guidance, got: %s", err.Suggestion)
+	}
+	if !strings.Contains(err.DocRef, "--api-url http://127.0.0.1:18080") {
+		t.Errorf("DocRef should include API URL, got: %s", err.DocRef)
+	}
+}
+
 func TestWrapInvalidImageRef(t *testing.T) {
 	err := WrapInvalidImageRef("invalid:ref:format", "missing repository")
 

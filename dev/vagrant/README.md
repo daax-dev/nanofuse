@@ -6,6 +6,8 @@ Disposable VM with full sudo + nested KVM for end-to-end nanofuse development an
 
 One `vagrant up` gives you a fully provisioned Ubuntu 24.04 VM when the selected provider exposes Linux KVM to the guest. Firecracker requires `/dev/kvm`; macOS/Windows providers that cannot expose KVM are useful for capability preflight only and will fail before any Firecracker VM boot.
 
+On this Apple M2 Max host, Apple Virtualization reports nested virtualization unsupported. Parallels Desktop 26.1.1 accepts `--nested-virt on`, but the VM does not start with that setting. This machine cannot be used as the Firecracker runtime host through Parallels.
+
 With KVM available, the guest includes:
 
 - **Go 1.24.3** + mage build system
@@ -132,7 +134,9 @@ vagrant rsync
 # KVM not available inside VM
 # Ensure the provider exposes Linux KVM to the guest. libvirt uses
 # lv.cpu_mode = "host-passthrough" and lv.nested = true.
-# On Parallels, retry with NANOFUSE_PARALLELS_NESTED=1 vagrant up.
-# If the VM cannot start with that flag, the host/provider cannot run
-# the Firecracker closed loop locally.
+# On macOS arm64, check Apple nested virtualization support:
+# swift -e 'import Virtualization; print(VZGenericPlatformConfiguration.isNestedVirtualizationSupported)'
+# On Parallels, NANOFUSE_PARALLELS_NESTED=1 requests nested virtualization.
+# If Apple reports false or the VM cannot start with that flag, the
+# host/provider cannot run the Firecracker closed loop locally.
 ```

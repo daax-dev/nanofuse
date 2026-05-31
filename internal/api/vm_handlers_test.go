@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/daax-dev/nanofuse/internal/config"
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
@@ -178,5 +179,39 @@ func TestCleanupVMStorageRemovesVMDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(vmDir); !os.IsNotExist(err) {
 		t.Fatalf("VM storage still exists or stat failed: %v", err)
+	}
+}
+
+func TestSetupVMNetworkingAllowsNoneWhenNetworkSetupDisabled(t *testing.T) {
+	server := &Server{
+		config: &config.Config{
+			Network: config.NetworkConfig{Setup: false},
+		},
+	}
+	vmConfig := types.VMConfig{
+		Network: types.NetworkConfig{Mode: "none"},
+	}
+
+	if err := server.setupVMNetworking("vm-123", &vmConfig); err != nil {
+		t.Fatalf("setupVMNetworking() error = %v", err)
+	}
+}
+
+func TestSetupVMNetworkingRejectsManagedModeWhenNetworkSetupDisabled(t *testing.T) {
+	server := &Server{
+		config: &config.Config{
+			Network: config.NetworkConfig{Setup: false},
+		},
+	}
+	vmConfig := types.VMConfig{
+		Network: types.NetworkConfig{Mode: "nat"},
+	}
+
+	err := server.setupVMNetworking("vm-123", &vmConfig)
+	if err == nil {
+		t.Fatal("expected setupVMNetworking() to reject managed networking")
+	}
+	if err.Error() != "network setup disabled; use network mode none or enable network.setup" {
+		t.Fatalf("setupVMNetworking() error = %q", err)
 	}
 }

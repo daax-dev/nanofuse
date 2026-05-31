@@ -327,12 +327,9 @@ func (ui *trayUI) runAction(action trayapp.VMAction) {
 		ui.mu.Unlock()
 		return
 	}
-	if action == trayapp.VMActionKill || action == trayapp.VMActionDelete {
-		if ui.pending != action || time.Since(ui.pendingAt) > confirmationWindow {
-			pendingAt := time.Now()
-			ui.pending = action
-			ui.pendingAt = pendingAt
-			ui.setPendingTitleLocked(action)
+	if needsConfirmation(action) {
+		pendingAt, confirmed := ui.confirmActionLocked(action)
+		if !confirmed {
 			ui.mu.Unlock()
 			ui.expirePending(action, pendingAt)
 			return
@@ -354,6 +351,21 @@ func (ui *trayUI) runAction(action trayapp.VMAction) {
 		ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s sent", action)))
 		ui.refresh()
 	}()
+}
+
+func needsConfirmation(action trayapp.VMAction) bool {
+	return action == trayapp.VMActionKill || action == trayapp.VMActionDelete
+}
+
+func (ui *trayUI) confirmActionLocked(action trayapp.VMAction) (time.Time, bool) {
+	if ui.pending == action && time.Since(ui.pendingAt) <= confirmationWindow {
+		return ui.pendingAt, true
+	}
+	pendingAt := time.Now()
+	ui.pending = action
+	ui.pendingAt = pendingAt
+	ui.setPendingTitleLocked(action)
+	return pendingAt, false
 }
 
 func (ui *trayUI) expirePending(action trayapp.VMAction, pendingAt time.Time) {

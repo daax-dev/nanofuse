@@ -33,8 +33,8 @@
 ## Pull Requests
 - Open a PR only after local validation is complete and the branch is ready for review. Do not pre-create draft PRs.
 - PR title = leading commit subject line.
-- PRs are immutable after creation: do not push, no-op push, amend pushed commits, edit PR title/body/metadata, or otherwise interact with a PR branch after the PR exists. If any change is needed after PR creation, close that PR and create a fresh branch with a fresh PR.
-- Install the repo-local push guard before PR work: `git config core.hooksPath .githooks`. The `.githooks/pre-push` hook calls `scripts/guard-pr-updates.sh` and rejects pushes, including no-op pushes with no ref updates, from any branch that already has a GitHub PR in any state.
+- Open PRs are immutable after creation: do not push, no-op push, amend pushed commits, edit PR title/body/metadata, or otherwise interact with a branch while it has an open PR. If any change is needed after PR creation, close that PR first, reuse the same branch name for fixes, then open a fresh PR.
+- Install the repo-local push guard before PR work: `git config core.hooksPath .githooks`. The `.githooks/pre-push` hook calls `scripts/guard-pr-updates.sh` and rejects pushes, including no-op pushes with no ref updates, from any branch that has an open GitHub PR. Closed PR branches may be reused after the PR is closed.
 - PR body must include:
   - Problem statement.
   - Approach taken and alternatives considered.

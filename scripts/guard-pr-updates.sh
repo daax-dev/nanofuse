@@ -32,7 +32,7 @@ check_branch() {
   if ! prs="$(gh pr list \
     --repo "$repo" \
     --head "$branch" \
-    --state all \
+    --state open \
     --limit 100 \
     --json number,state,title,url \
     --jq '.[] | "#\(.number) \(.state) \(.url) \(.title)"' 2>"$errfile")"; then
@@ -50,9 +50,9 @@ check_branch() {
   if [[ -n "$prs" ]]; then
     {
       echo "nanofuse PR guard: blocked push to '${branch}' on ${remote_name}."
-      echo "A GitHub PR already exists for this branch; PR branches are immutable after creation."
+      echo "An open GitHub PR exists for this branch; open PR branches are immutable."
       echo "$prs"
-      echo "Create a fresh branch and a fresh PR instead."
+      echo "Close the PR before reusing this branch for fixes."
     } >&2
     blocked=1
   fi

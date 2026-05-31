@@ -1526,7 +1526,7 @@ func handleAPIErrorWithResource(err error, operation string, resource string) er
 			resourceOrSocket = apiSocket
 		}
 		if resourceOrSocket == "" {
-			resourceOrSocket = "/run/nanofused.sock"
+			resourceOrSocket = DefaultAPISocketPath
 		}
 	}
 

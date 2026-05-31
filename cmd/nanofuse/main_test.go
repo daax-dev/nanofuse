@@ -141,6 +141,22 @@ func TestHandleAPIErrorUsesAPIURLForTCPConnection(t *testing.T) {
 	}
 }
 
+func TestHandleAPIErrorUsesDefaultSocketWhenEndpointUnset(t *testing.T) {
+	resetCLIStateForTest(t)
+
+	err := handleAPIError(errors.New("dial unix /var/run/nanofused.sock: connect: no such file or directory"), "check API health")
+	cliErr, ok := err.(*clierrors.CLIError)
+	if !ok {
+		t.Fatalf("handleAPIError() = %T, want *clierrors.CLIError", err)
+	}
+	if cliErr.Context == nil {
+		t.Fatal("expected error context")
+	}
+	if cliErr.Context.Resource != DefaultAPISocketPath {
+		t.Fatalf("Resource = %q, want %q", cliErr.Context.Resource, DefaultAPISocketPath)
+	}
+}
+
 func TestRootCommandDoesNotSilenceUsageByDefault(t *testing.T) {
 	resetCLIStateForTest(t)
 

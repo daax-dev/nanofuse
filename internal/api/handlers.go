@@ -182,6 +182,9 @@ func writeRootImages(b *strings.Builder, images []*types.Image, imageErr error) 
 	if imageErr != nil {
 		fmt.Fprintf(b, `<p>Runtime image inventory partially unavailable: %s</p>
 `, html.EscapeString(imageErr.Error()))
+		if len(images) == 0 {
+			return
+		}
 	}
 	if len(images) == 0 {
 		b.WriteString(`<p>No cached or runtime images.</p>

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -160,6 +161,17 @@ func TestRootEndpointDoesNotMaskUnknownPath(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestRootPageImageErrorDoesNotClaimEmptyInventory(t *testing.T) {
+	body := renderRootPage(types.CapabilitiesResponse{}, nil, nil, nil, errors.New("runtime list failed"))
+
+	if !strings.Contains(body, "Runtime image inventory partially unavailable") {
+		t.Fatalf("root body missing image error:\n%s", body)
+	}
+	if strings.Contains(body, "No cached or runtime images.") {
+		t.Fatalf("root body claimed empty image inventory despite image error:\n%s", body)
 	}
 }
 

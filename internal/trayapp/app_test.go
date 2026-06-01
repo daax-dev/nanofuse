@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,9 +12,10 @@ import (
 )
 
 type fakeAPI struct {
-	calls     []string
-	errAt     string
-	createReq *client.CreateVMRequest
+	calls       []string
+	errAt       string
+	createReq   *client.CreateVMRequest
+	stopTimeout int
 }
 
 func (f *fakeAPI) Health(context.Context) (*client.HealthResponse, error) {
@@ -60,6 +62,11 @@ func (f *fakeAPI) ListImages(context.Context) (*client.ListImagesResponse, error
 	}, nil
 }
 
+func (f *fakeAPI) PullImage(_ context.Context, imageRef string) (*client.ImagePullJob, error) {
+	f.calls = append(f.calls, "pull:"+imageRef)
+	return &client.ImagePullJob{ID: "job-1", ImageRef: imageRef, State: "pending"}, nil
+}
+
 func (f *fakeAPI) CreateVM(_ context.Context, req *client.CreateVMRequest) (*client.VM, error) {
 	f.calls = append(f.calls, "create:"+req.Image)
 	f.createReq = req
@@ -71,8 +78,9 @@ func (f *fakeAPI) StartVM(context.Context, string) (*client.VM, error) {
 	return &client.VM{ID: "vm-1", State: "running"}, nil
 }
 
-func (f *fakeAPI) StopVM(context.Context, string, int) (*client.VM, error) {
+func (f *fakeAPI) StopVM(_ context.Context, _ string, timeoutSeconds int) (*client.VM, error) {
 	f.calls = append(f.calls, "stop")
+	f.stopTimeout = timeoutSeconds
 	return &client.VM{ID: "vm-1", State: "stopped"}, nil
 }
 
@@ -167,6 +175,21 @@ func TestExecuteVMActionRejectsMissingVMID(t *testing.T) {
 	}
 }
 
+func TestDefaultTimeoutCoversGracefulStopTimeout(t *testing.T) {
+	api := &fakeAPI{}
+	_, err := ExecuteVMAction(context.Background(), api, VMActionStop, "vm-1")
+	if err != nil {
+		t.Fatalf("ExecuteVMAction() error = %v", err)
+	}
+	if api.stopTimeout != DefaultStopTimeoutSeconds {
+		t.Fatalf("stop timeout = %d, want %d", api.stopTimeout, DefaultStopTimeoutSeconds)
+	}
+	minTimeout := time.Duration(DefaultStopTimeoutSeconds) * time.Second
+	if DefaultTimeout <= minTimeout {
+		t.Fatalf("DefaultTimeout = %s, must exceed graceful stop timeout %s", DefaultTimeout, minTimeout)
+	}
+}
+
 func TestLaunchVMFromImageCreatesAndStartsVM(t *testing.T) {
 	api := &fakeAPI{}
 
@@ -186,6 +209,58 @@ func TestLaunchVMFromImageCreatesAndStartsVM(t *testing.T) {
 	}
 	if api.createReq.Config.Network.Mode != DefaultNetworkMode {
 		t.Fatalf("network mode = %q, want %q", api.createReq.Config.Network.Mode, DefaultNetworkMode)
+	}
+	if api.createReq.Name == "" {
+		t.Fatal("create request name is empty")
+	}
+	if !strings.HasPrefix(api.createReq.Name, DefaultVMNamePrefix+"-nanofuse-ci-latest-") {
+		t.Fatalf("create request name = %q, want readable generated name", api.createReq.Name)
+	}
+	portForwards := api.createReq.Config.Network.PortForwards
+	if len(portForwards) != 1 {
+		t.Fatalf("port forwards = %#v, want one default forward", portForwards)
+	}
+	if portForwards[0].HostPort != DefaultLaunchHostPort {
+		t.Fatalf("host port = %d, want daemon allocation sentinel %d", portForwards[0].HostPort, DefaultLaunchHostPort)
+	}
+	if portForwards[0].VMPort != DefaultPublishedVMPort {
+		t.Fatalf("VM port = %d, want %d", portForwards[0].VMPort, DefaultPublishedVMPort)
+	}
+	if portForwards[0].Protocol != "tcp" {
+		t.Fatalf("protocol = %q, want tcp", portForwards[0].Protocol)
+	}
+}
+
+func TestAddImageStartsPullJob(t *testing.T) {
+	api := &fakeAPI{}
+
+	job, err := AddImage(context.Background(), api, "docker.io/library/ubuntu:24.04")
+	if err != nil {
+		t.Fatalf("AddImage() error = %v", err)
+	}
+	if job.ID != "job-1" {
+		t.Fatalf("job id = %q, want job-1", job.ID)
+	}
+	wantCalls := []string{"pull:docker.io/library/ubuntu:24.04"}
+	if !reflect.DeepEqual(api.calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", api.calls, wantCalls)
+	}
+}
+
+func TestAddImageRejectsMissingImageRef(t *testing.T) {
+	_, err := AddImage(context.Background(), &fakeAPI{}, " ")
+	if err == nil {
+		t.Fatal("AddImage() error = nil")
+	}
+}
+
+func TestGenerateVMNameUsesReadableImageReference(t *testing.T) {
+	name := GenerateVMName("docker.io/library/alpine:3.20")
+	if !strings.HasPrefix(name, DefaultVMNamePrefix+"-alpine-3-20-") {
+		t.Fatalf("GenerateVMName() = %q, want readable alpine prefix", name)
+	}
+	if len(name) > 48 {
+		t.Fatalf("GenerateVMName() length = %d, want <= 48", len(name))
 	}
 }
 
@@ -219,6 +294,38 @@ func TestVMActionReady(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := VMActionReady(tt.status); got != tt.want {
 				t.Fatalf("VMActionReady() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVMActionAllowedUsesVMState(t *testing.T) {
+	activeRuntime := &client.VMRuntime{ExternalID: "nf-test"}
+	tests := []struct {
+		name   string
+		vm     *client.VM
+		action VMAction
+		want   bool
+	}{
+		{name: "missing vm", vm: nil, action: VMActionStart, want: false},
+		{name: "missing id", vm: &client.VM{State: "stopped"}, action: VMActionStart, want: false},
+		{name: "start created", vm: &client.VM{ID: "vm", State: "created"}, action: VMActionStart, want: true},
+		{name: "start stopped", vm: &client.VM{ID: "vm", State: "stopped"}, action: VMActionStart, want: true},
+		{name: "start running disabled", vm: &client.VM{ID: "vm", State: "running", Runtime: activeRuntime}, action: VMActionStart, want: false},
+		{name: "stop running", vm: &client.VM{ID: "vm", State: "running", Runtime: activeRuntime}, action: VMActionStop, want: true},
+		{name: "stop paused", vm: &client.VM{ID: "vm", State: "paused", Runtime: activeRuntime}, action: VMActionStop, want: true},
+		{name: "stop stopped disabled", vm: &client.VM{ID: "vm", State: "stopped"}, action: VMActionStop, want: false},
+		{name: "kill running with runtime", vm: &client.VM{ID: "vm", State: "running", Runtime: activeRuntime}, action: VMActionKill, want: true},
+		{name: "kill running without runtime disabled", vm: &client.VM{ID: "vm", State: "running"}, action: VMActionKill, want: false},
+		{name: "kill stopped disabled", vm: &client.VM{ID: "vm", State: "stopped", Runtime: activeRuntime}, action: VMActionKill, want: false},
+		{name: "delete created", vm: &client.VM{ID: "vm", State: "created"}, action: VMActionDelete, want: true},
+		{name: "delete running", vm: &client.VM{ID: "vm", State: "running", Runtime: activeRuntime}, action: VMActionDelete, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := VMActionAllowed(tt.vm, tt.action); got != tt.want {
+				t.Fatalf("VMActionAllowed() = %v, want %v", got, tt.want)
 			}
 		})
 	}

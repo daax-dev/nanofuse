@@ -1,20 +1,22 @@
 # Mac and Windows Client Runbook
 
-macOS is both a local runtime host and an API/tray client:
+macOS is both a current compatibility runtime host and an API/tray client:
 
-- Local runtime: `nanofused` uses Apple `container` plus Virtualization.framework with `runtime.driver=apple_container`.
+- Compatibility runtime: `nanofused` uses Apple `container` plus Virtualization.framework with `runtime.driver=apple_container`.
 - Remote client: macOS can still manage a Linux/KVM Firecracker daemon over the API.
+
+The product macOS runtime target remains a Nanofuse-owned Apple Virtualization.framework backend. The Apple `container` path is the current compatibility daemon used by the tray/API workflow in this branch.
 
 Windows is currently an API/tray client. It manages a reachable Linux or macOS `nanofused` daemon; local Windows runtime execution is not implemented in this repo.
 
 ## Supported Topologies
 
 ```text
-macOS local runtime
+macOS compatibility runtime
   -> nanofuse CLI, curl, or nanofuse-tray
   -> HTTP API on 127.0.0.1:18080
   -> nanofused runtime.driver=apple_container
-  -> Apple container / Virtualization.framework Linux microVMs
+  -> Apple container compatibility Linux microVMs
 ```
 
 ```text
@@ -32,7 +34,7 @@ Windows client
   -> reachable macOS or Linux nanofused daemon
 ```
 
-## macOS Local Runtime
+## macOS Compatibility Runtime
 
 Start the daemon and menu bar app:
 
@@ -55,7 +57,7 @@ curl "$NANOFUSE_API_URL/capabilities"
 nanofuse vm list
 ```
 
-The expected macOS capability signal is `driver=apple_container`, `native_runtime=true`, `apple_container_available=true`, and `virtualization_framework_supported=true`.
+The expected compatibility capability signal is `driver=apple_container`, `native_runtime=true`, `apple_container_available=true`, and `virtualization_framework_supported=true`.
 
 ## macOS Remote Client
 
@@ -145,6 +147,6 @@ The CLI reads these environment variables:
 
 ## Tray App
 
-`nanofuse-tray` is implemented as an API client. It must not call Firecracker directly, manipulate TAP devices, edit Nanofuse storage outside the daemon, or shell into a runtime host. The current app shows daemon health/capabilities, VM list, image list, create/start from selected image, and VM start/stop/kill/delete actions backed by `api/openapi.yaml`.
+`nanofuse-tray` is implemented as an API client. It must not call Firecracker directly, manipulate TAP devices, edit Nanofuse storage outside the daemon, or shell into a runtime host. The current app shows daemon health/capabilities, VM list, image list, prompt-based launch from an OCI image reference, add-image flow, and per-VM start/stop/kill/delete row actions backed by `api/openapi.yaml`.
 
 See [Tray App](TRAY_APP.md).

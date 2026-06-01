@@ -21,6 +21,7 @@ var (
 func main() {
 	cfg := trayapp.ConfigFromEnv()
 	smoke := flag.Bool("smoke", false, "run API smoke check and exit without starting the tray UI")
+	launchImage := flag.String("launch-image", "", "create and start a VM from this image through the tray launch path, then exit")
 	showVersion := flag.Bool("version", false, "show version information")
 	apiURL := flag.String("api-url", cfg.APIURL, "nanofused API URL, for example http://127.0.0.1:18080")
 	apiSocket := flag.String("api-socket", cfg.APISocket, "nanofused Unix socket path")
@@ -50,6 +51,13 @@ func main() {
 		}
 		return
 	}
+	if *launchImage != "" {
+		if err := runLaunchImage(ctx, cfg, *launchImage); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if err := runTray(ctx, cfg); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -71,5 +79,23 @@ func runSmoke(ctx context.Context, cfg trayapp.Config) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func runLaunchImage(ctx context.Context, cfg trayapp.Config, imageRef string) error {
+	api := cfg.NewClient()
+	launchCtx, cancel := context.WithTimeout(ctx, cfg.Timeout)
+	defer cancel()
+
+	vm, err := trayapp.LaunchVMFromImage(launchCtx, api, imageRef)
+	if err != nil {
+		return err
+	}
+
+	encoded, err := json.MarshalIndent(vm, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode VM: %w", err)
+	}
+	fmt.Println(string(encoded))
 	return nil
 }

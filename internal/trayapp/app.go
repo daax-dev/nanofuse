@@ -2,8 +2,11 @@ package trayapp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,8 +14,9 @@ import (
 )
 
 const (
-	DefaultAPISocketPath = "/var/run/nanofused.sock"
-	DefaultTimeout       = 10 * time.Second
+	DefaultAPISocketPath      = "/var/run/nanofused.sock"
+	DefaultStopTimeoutSeconds = 30
+	DefaultTimeout            = time.Duration(DefaultStopTimeoutSeconds+15) * time.Second
 )
 
 type Config struct {
@@ -38,6 +42,7 @@ type API interface {
 	CreateVM(context.Context, *client.CreateVMRequest) (*client.VM, error)
 	ListVMs(context.Context, string) (*client.ListVMsResponse, error)
 	ListImages(context.Context) (*client.ListImagesResponse, error)
+	PullImage(context.Context, string) (*client.ImagePullJob, error)
 	StartVM(context.Context, string) (*client.VM, error)
 	StopVM(context.Context, string, int) (*client.VM, error)
 	KillVM(context.Context, string) (*client.VM, error)
@@ -54,9 +59,12 @@ const (
 )
 
 const (
-	DefaultVCPUs       = 2
-	DefaultMemoryMiB   = 512
-	DefaultNetworkMode = "nat"
+	DefaultVCPUs           = 2
+	DefaultMemoryMiB       = 512
+	DefaultNetworkMode     = "nat"
+	DefaultLaunchHostPort  = 0
+	DefaultPublishedVMPort = 8080
+	DefaultVMNamePrefix    = "nf"
 )
 
 func ConfigFromEnv() Config {
@@ -150,7 +158,7 @@ func ExecuteVMAction(ctx context.Context, api API, action VMAction, vmID string)
 	case VMActionStart:
 		return api.StartVM(ctx, vmID)
 	case VMActionStop:
-		return api.StopVM(ctx, vmID, 30)
+		return api.StopVM(ctx, vmID, DefaultStopTimeoutSeconds)
 	case VMActionKill:
 		return api.KillVM(ctx, vmID)
 	case VMActionDelete:
@@ -167,12 +175,14 @@ func LaunchVMFromImage(ctx context.Context, api API, imageRef string) (*client.V
 	}
 
 	vm, err := api.CreateVM(ctx, &client.CreateVMRequest{
+		Name:  GenerateVMName(imageRef),
 		Image: imageRef,
 		Config: client.VMConfig{
 			VCPUs:     DefaultVCPUs,
 			MemoryMiB: DefaultMemoryMiB,
 			Network: client.NetworkConfig{
-				Mode: DefaultNetworkMode,
+				Mode:         DefaultNetworkMode,
+				PortForwards: defaultLaunchPortForwards(),
 			},
 		},
 	})
@@ -188,6 +198,85 @@ func LaunchVMFromImage(ctx context.Context, api API, imageRef string) (*client.V
 		return nil, fmt.Errorf("start VM %q: %w", vm.ID, err)
 	}
 	return started, nil
+}
+
+func AddImage(ctx context.Context, api API, imageRef string) (*client.ImagePullJob, error) {
+	imageRef = strings.TrimSpace(imageRef)
+	if imageRef == "" {
+		return nil, fmt.Errorf("image reference is required")
+	}
+	job, err := api.PullImage(ctx, imageRef)
+	if err != nil {
+		return nil, fmt.Errorf("add image %q: %w", imageRef, err)
+	}
+	if job == nil || strings.TrimSpace(job.ID) == "" {
+		return nil, fmt.Errorf("add image %q returned no pull job id", imageRef)
+	}
+	return job, nil
+}
+
+func defaultLaunchPortForwards() []client.PortForward {
+	return []client.PortForward{
+		{
+			HostPort: DefaultLaunchHostPort,
+			VMPort:   DefaultPublishedVMPort,
+			Protocol: "tcp",
+		},
+	}
+}
+
+func GenerateVMName(imageRef string) string {
+	base := sanitizeImageName(imageRef)
+	suffix := randomNameSuffix()
+	return limitName(fmt.Sprintf("%s-%s-%s", DefaultVMNamePrefix, base, suffix), 48)
+}
+
+func sanitizeImageName(imageRef string) string {
+	imageRef = strings.TrimSpace(strings.ToLower(imageRef))
+	if imageRef == "" {
+		return "image"
+	}
+	if digestIndex := strings.LastIndex(imageRef, "@"); digestIndex >= 0 {
+		imageRef = imageRef[:digestIndex]
+	}
+	if slashIndex := strings.LastIndex(imageRef, "/"); slashIndex >= 0 {
+		imageRef = imageRef[slashIndex+1:]
+	}
+
+	var b strings.Builder
+	lastDash := false
+	for _, r := range imageRef {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	base := strings.Trim(b.String(), "-")
+	if base == "" {
+		base = "image"
+	}
+	return limitName(base, 26)
+}
+
+func randomNameSuffix() string {
+	var data [3]byte
+	if _, err := rand.Read(data[:]); err == nil {
+		return hex.EncodeToString(data[:])
+	}
+	return strconv.FormatInt(time.Now().UTC().UnixNano(), 36)
+}
+
+func limitName(value string, maxLen int) string {
+	if len(value) <= maxLen {
+		return value
+	}
+	return strings.Trim(value[:maxLen], "-")
 }
 
 func RuntimeSummary(status *Status) string {
@@ -214,6 +303,39 @@ func VMActionReady(status *Status) bool {
 		status.Error == "" &&
 		status.Capabilities != nil &&
 		status.Capabilities.Runtime.NativeRuntime
+}
+
+func VMActionAllowed(vm *client.VM, action VMAction) bool {
+	if vm == nil || strings.TrimSpace(vm.ID) == "" {
+		return false
+	}
+
+	state := strings.ToLower(strings.TrimSpace(vm.State))
+	switch action {
+	case VMActionStart:
+		return state == "created" || state == "stopped"
+	case VMActionStop:
+		return state == "running" || state == "paused"
+	case VMActionKill:
+		return vmHasRuntimeHandle(vm) && (state == "running" ||
+			state == "starting" ||
+			state == "stopping" ||
+			state == "pausing" ||
+			state == "paused" ||
+			state == "resuming")
+	case VMActionDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func vmHasRuntimeHandle(vm *client.VM) bool {
+	return vm != nil &&
+		vm.Runtime != nil &&
+		(vm.Runtime.PID != 0 ||
+			strings.TrimSpace(vm.Runtime.ExternalID) != "" ||
+			strings.TrimSpace(vm.Runtime.SocketPath) != "")
 }
 
 func firstNonEmpty(values ...string) string {

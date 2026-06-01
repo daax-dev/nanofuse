@@ -174,6 +174,7 @@ func setupHTTPRouter(server *Server) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// Health endpoint
+	mux.HandleFunc("GET /", server.handleRoot)
 	mux.HandleFunc("GET /health", server.handleHealth)
 	mux.HandleFunc("GET /capabilities", server.handleCapabilities)
 

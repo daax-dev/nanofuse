@@ -1,15 +1,15 @@
 # Nanofuse API Quick Start
 
-Nanofuse is controlled through the `nanofused` REST API daemon. Linux runtime hosts use Firecracker with `/dev/kvm`. macOS runtime hosts can use Apple's `container` CLI and Virtualization.framework through `runtime.driver=apple_container`. Windows currently connects as an API/tray client.
+Nanofuse is controlled through the `nanofused` REST API daemon. Linux runtime hosts use Firecracker with `/dev/kvm`. The current macOS tray/API compatibility daemon can use Apple's `container` CLI and Virtualization.framework through `runtime.driver=apple_container`; the target macOS runtime is a Nanofuse-owned Apple Virtualization.framework backend. Windows currently connects as an API/tray client.
 
 ## Requirements
 
 - Linux runtime host: Linux with read/write `/dev/kvm`.
 - Linux runtime privileges: root or equivalent capabilities for TAP, bridge, NAT, and Firecracker.
-- macOS runtime host: Apple silicon with Apple `container` installed and Virtualization.framework support.
+- macOS compatibility daemon: Apple silicon with Apple `container` installed and Virtualization.framework support.
 - Client host: Linux, macOS, or Windows with `curl`, PowerShell, the `nanofuse` CLI, or `nanofuse-tray`.
 
-Native Firecracker execution on macOS or Windows is not supported. macOS uses the Apple-container backend when local execution is required. Windows must manage a reachable Linux or macOS `nanofused` daemon over the API.
+Native Firecracker execution on macOS or Windows is not supported. The current macOS one-liner uses the Apple-container compatibility backend for local tray/API validation. Windows must manage a reachable Linux or macOS `nanofused` daemon over the API.
 
 ## Start a Linux/KVM Daemon
 
@@ -34,7 +34,7 @@ sudo ./bin/nanofused -config config.dev.yaml -tcp 0.0.0.0:8080
 
 The TCP API currently has no built-in authentication or TLS. Do not expose it directly to untrusted networks. Use SSH forwarding, WireGuard, or a reverse proxy with authentication until first-party API auth lands.
 
-## Start a macOS Local Daemon
+## Start a macOS Compatibility Daemon
 
 One-line local daemon plus menu bar startup from the repo root:
 
@@ -87,9 +87,9 @@ Expected health shape:
 }
 ```
 
-`GET /capabilities` reports the daemon OS, architecture, runtime driver, KVM availability, Firecracker binary path, Apple-container status, Virtualization.framework status, and configured API transports. Tray apps and SDKs should use it before enabling VM actions.
+`GET /capabilities` reports the daemon OS, architecture, runtime driver, KVM availability, Firecracker binary path, Apple-container status, Virtualization.framework status, and configured API transports. `GET /` is a browser-readable status page and is part of the macOS launcher smoke check. Tray apps and SDKs should use capabilities before enabling VM actions.
 
-On macOS with the local runtime enabled, expected fields include:
+On macOS with the current compatibility daemon enabled, expected fields include:
 
 ```json
 {
@@ -101,7 +101,7 @@ On macOS with the local runtime enabled, expected fields include:
 }
 ```
 
-## Mac Local Runtime
+## Mac Compatibility Runtime
 
 Point the CLI at the local daemon started by `run-tray-macos.sh`:
 
@@ -166,7 +166,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-tray-windows.ps1 -ApiUrl 
 
 See [Tray App](TRAY_APP.md) for smoke mode and validation evidence.
 
-In the tray menu, select a cached image, then choose `Create and Start VM From Image`. This calls `POST /vms` followed by `POST /vms/{id}/start` against the configured `nanofused` daemon.
+In the tray menu, choose `New MicroVM From Container...` to enter an OCI reference and launch it, or select a cached image and choose `Launch Selected Cached Image`. Both paths call `POST /vms` followed by `POST /vms/{id}/start` against the configured `nanofused` daemon. Tray launches set `host_port: 0`; the daemon allocates the concrete localhost port on the daemon host.
 
 For port visibility, API-backed VM exec, multiple VM launches, and image enablement, see [Operating Local MicroVMs](OPERATING_LOCAL_MICROVMS.md).
 
@@ -193,7 +193,7 @@ curl -X POST http://127.0.0.1:8080/images/pull \
   -d '{"image_ref":"ghcr.io/daax-dev/nanofuse/base:latest"}'
 ```
 
-On macOS with `runtime.driver=apple_container`, OCI image references such as `alpine:3.20` are resolved through Apple `container`; the Firecracker rootfs extraction path is not used for those images.
+On macOS with the current `runtime.driver=apple_container` compatibility daemon, OCI image references such as `alpine:3.20` are resolved through Apple `container`; the Firecracker rootfs extraction path is not used for those images.
 
 Poll the pull job:
 

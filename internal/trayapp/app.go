@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	DefaultAPISocketPath = "/var/run/nanofused.sock"
-	DefaultTimeout       = 10 * time.Second
+	DefaultAPISocketPath      = "/var/run/nanofused.sock"
+	DefaultStopTimeoutSeconds = 30
+	DefaultTimeout            = time.Duration(DefaultStopTimeoutSeconds+15) * time.Second
 )
 
 type Config struct {
@@ -157,7 +158,7 @@ func ExecuteVMAction(ctx context.Context, api API, action VMAction, vmID string)
 	case VMActionStart:
 		return api.StartVM(ctx, vmID)
 	case VMActionStop:
-		return api.StopVM(ctx, vmID, 30)
+		return api.StopVM(ctx, vmID, DefaultStopTimeoutSeconds)
 	case VMActionKill:
 		return api.KillVM(ctx, vmID)
 	case VMActionDelete:

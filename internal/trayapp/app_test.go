@@ -12,9 +12,10 @@ import (
 )
 
 type fakeAPI struct {
-	calls     []string
-	errAt     string
-	createReq *client.CreateVMRequest
+	calls       []string
+	errAt       string
+	createReq   *client.CreateVMRequest
+	stopTimeout int
 }
 
 func (f *fakeAPI) Health(context.Context) (*client.HealthResponse, error) {
@@ -77,8 +78,9 @@ func (f *fakeAPI) StartVM(context.Context, string) (*client.VM, error) {
 	return &client.VM{ID: "vm-1", State: "running"}, nil
 }
 
-func (f *fakeAPI) StopVM(context.Context, string, int) (*client.VM, error) {
+func (f *fakeAPI) StopVM(_ context.Context, _ string, timeoutSeconds int) (*client.VM, error) {
 	f.calls = append(f.calls, "stop")
+	f.stopTimeout = timeoutSeconds
 	return &client.VM{ID: "vm-1", State: "stopped"}, nil
 }
 
@@ -170,6 +172,21 @@ func TestExecuteVMActionRejectsMissingVMID(t *testing.T) {
 	_, err := ExecuteVMAction(context.Background(), &fakeAPI{}, VMActionStart, " ")
 	if err == nil {
 		t.Fatal("ExecuteVMAction() error = nil")
+	}
+}
+
+func TestDefaultTimeoutCoversGracefulStopTimeout(t *testing.T) {
+	api := &fakeAPI{}
+	_, err := ExecuteVMAction(context.Background(), api, VMActionStop, "vm-1")
+	if err != nil {
+		t.Fatalf("ExecuteVMAction() error = %v", err)
+	}
+	if api.stopTimeout != DefaultStopTimeoutSeconds {
+		t.Fatalf("stop timeout = %d, want %d", api.stopTimeout, DefaultStopTimeoutSeconds)
+	}
+	minTimeout := time.Duration(DefaultStopTimeoutSeconds) * time.Second
+	if DefaultTimeout <= minTimeout {
+		t.Fatalf("DefaultTimeout = %s, must exceed graceful stop timeout %s", DefaultTimeout, minTimeout)
 	}
 }
 

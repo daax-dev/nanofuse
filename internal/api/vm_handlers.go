@@ -24,6 +24,19 @@ var (
 	errRuntimeNetworkModeUnsupported  = errors.New("runtime-managed networking does not support network mode none")
 )
 
+type imageNotFoundError struct {
+	imageRef string
+	cause    error
+}
+
+func (e *imageNotFoundError) Error() string {
+	return "image not found"
+}
+
+func (e *imageNotFoundError) Unwrap() error {
+	return e.cause
+}
+
 const (
 	defaultExecTimeoutSeconds = 30
 	maxExecTimeoutSeconds     = 600
@@ -94,7 +107,7 @@ func (s *Server) validateAndResolveImage(imageRef string) (*types.Image, string,
 		if provider, ok := s.runtimeManager.(vmm.ImageProvider); ok {
 			image, err = provider.ResolveImage(imageRef)
 			if err != nil {
-				return nil, "", fmt.Errorf("image not found: %s: %w", imageRef, err)
+				return nil, "", fmt.Errorf("runtime image resolution failed: %w", err)
 			}
 			if image != nil {
 				if err := s.db.UpsertImage(image); err != nil {
@@ -103,7 +116,7 @@ func (s *Server) validateAndResolveImage(imageRef string) (*types.Image, string,
 			}
 		}
 		if image == nil {
-			return nil, "", fmt.Errorf("image not found: %s", imageRef)
+			return nil, "", &imageNotFoundError{imageRef: imageRef}
 		}
 	}
 
@@ -503,7 +516,8 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 	// Validate and resolve image
 	image, imageDigest, err := s.validateAndResolveImage(req.Image)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		var imageMissing *imageNotFoundError
+		if errors.As(err, &imageMissing) {
 			types.WriteError(w, http.StatusNotFound, types.ErrImageNotFound,
 				fmt.Sprintf("Image '%s' not found locally. Pull it first.", req.Image),
 				map[string]interface{}{"image": req.Image})

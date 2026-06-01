@@ -304,6 +304,129 @@ func TestWriteNetworkSetupErrorIgnoresOtherErrors(t *testing.T) {
 	}
 }
 
+func TestValidateAndResolveImageDoesNotTreatRuntimeProviderErrorAsImageMissing(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	providerErr := errors.New("apple container binary not found")
+	server := &Server{
+		db: db,
+		runtimeManager: &runtimeImageProviderStub{
+			err: providerErr,
+		},
+	}
+
+	_, _, err = server.validateAndResolveImage("alpine:3.20")
+	if err == nil {
+		t.Fatal("expected runtime provider error")
+	}
+	var missing *imageNotFoundError
+	if errors.As(err, &missing) {
+		t.Fatalf("provider error was classified as image missing: %v", err)
+	}
+	if !errors.Is(err, providerErr) {
+		t.Fatalf("provider error was not preserved: %v", err)
+	}
+	if !strings.Contains(err.Error(), "runtime image resolution failed") {
+		t.Fatalf("error = %q, want runtime image resolution failure", err.Error())
+	}
+}
+
+func TestValidateAndResolveImageMissingImageUsesTypedStableError(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	server := &Server{db: db}
+
+	_, _, err = server.validateAndResolveImage("missing:not-found-in-error-text")
+	if err == nil {
+		t.Fatal("expected image missing error")
+	}
+	var missing *imageNotFoundError
+	if !errors.As(err, &missing) {
+		t.Fatalf("error = %T %v, want imageNotFoundError", err, err)
+	}
+	if err.Error() != "image not found" {
+		t.Fatalf("error message = %q, want stable image not found", err.Error())
+	}
+	if missing.imageRef != "missing:not-found-in-error-text" {
+		t.Fatalf("image ref = %q, want missing:not-found-in-error-text", missing.imageRef)
+	}
+}
+
+func TestHandleCreateVMRuntimeProviderNotFoundTextReturnsInternalError(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+	server := &Server{
+		db:     db,
+		logger: logger,
+		runtimeManager: &runtimeImageProviderStub{
+			err: errors.New("apple container binary not found"),
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/vms", strings.NewReader(`{"image":"alpine:3.20"}`))
+	rec := httptest.NewRecorder()
+	server.handleCreateVM(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	var apiErr types.APIError
+	if err := json.NewDecoder(rec.Body).Decode(&apiErr); err != nil {
+		t.Fatalf("decode API error: %v", err)
+	}
+	if apiErr.Error.Code != types.ErrInternalError {
+		t.Fatalf("error code = %s, want %s", apiErr.Error.Code, types.ErrInternalError)
+	}
+}
+
+func TestHandleCreateVMMissingImageReturnsImageNotFound(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+	server := &Server{
+		db:     db,
+		logger: logger,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/vms", strings.NewReader(`{"image":"missing:latest"}`))
+	rec := httptest.NewRecorder()
+	server.handleCreateVM(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	var apiErr types.APIError
+	if err := json.NewDecoder(rec.Body).Decode(&apiErr); err != nil {
+		t.Fatalf("decode API error: %v", err)
+	}
+	if apiErr.Error.Code != types.ErrImageNotFound {
+		t.Fatalf("error code = %s, want %s", apiErr.Error.Code, types.ErrImageNotFound)
+	}
+}
+
 func TestVMHasRuntimeHandleAcceptsPIDOrExternalID(t *testing.T) {
 	tests := []struct {
 		name string

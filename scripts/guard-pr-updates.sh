@@ -70,10 +70,10 @@ while read -r local_ref local_oid remote_ref remote_oid; do
   fi
 
   branch=""
-  if [[ "$local_ref" == refs/heads/* ]]; then
-    branch="${local_ref#refs/heads/}"
-  elif [[ "$remote_ref" == refs/heads/* ]]; then
+  if [[ "$remote_ref" == refs/heads/* ]]; then
     branch="${remote_ref#refs/heads/}"
+  elif [[ "$local_ref" == refs/heads/* ]]; then
+    branch="${local_ref#refs/heads/}"
   else
     continue
   fi

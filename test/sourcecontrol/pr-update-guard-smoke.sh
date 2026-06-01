@@ -71,6 +71,14 @@ then
 fi
 
 if PATH="$tmpdir:$PATH" "$guard" origin git@github.com:daax-dev/nanofuse.git <<EOF
+refs/heads/local-work ${local_oid} refs/heads/branch-with-open-pr ${zero_oid}
+EOF
+then
+  echo "expected guard to block refspec push to branch-with-open-pr" >&2
+  exit 1
+fi
+
+if PATH="$tmpdir:$PATH" "$guard" origin git@github.com:daax-dev/nanofuse.git <<EOF
 refs/heads/pr-list-fails ${local_oid} refs/heads/pr-list-fails ${zero_oid}
 EOF
 then

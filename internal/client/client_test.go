@@ -66,6 +66,7 @@ func TestClient_Capabilities(t *testing.T) {
 			},
 			Runtime: RuntimeCapabilities{
 				NativeRuntime:        true,
+				Driver:               "firecracker",
 				FirecrackerBinary:    "/usr/local/bin/firecracker",
 				FirecrackerAvailable: true,
 				RootRequired:         true,
@@ -95,8 +96,42 @@ func TestClient_Capabilities(t *testing.T) {
 		t.Error("expected native runtime to be true")
 	}
 
+	if capabilities.Runtime.Driver != "firecracker" {
+		t.Errorf("expected runtime driver firecracker, got %q", capabilities.Runtime.Driver)
+	}
+
 	if capabilities.API.TCPBind != "0.0.0.0:8080" {
 		t.Errorf("expected TCP bind '0.0.0.0:8080', got '%s'", capabilities.API.TCPBind)
+	}
+}
+
+func TestRuntimeCapabilitiesJSONIncludesRequiredAndFalseDiagnostics(t *testing.T) {
+	payload, err := json.Marshal(RuntimeCapabilities{
+		Driver:  "firecracker",
+		Message: "test",
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if got["driver"] != "firecracker" {
+		t.Fatalf("driver = %#v, want firecracker", got["driver"])
+	}
+	for _, key := range []string{
+		"apple_container_available",
+		"apple_container_running",
+		"virtualization_framework_supported",
+	} {
+		if _, ok := got[key]; !ok {
+			t.Fatalf("%s omitted from JSON payload %s", key, payload)
+		}
+		if _, ok := got[key].(bool); !ok {
+			t.Fatalf("%s = %#v, want bool", key, got[key])
+		}
 	}
 }
 
@@ -218,6 +253,48 @@ func TestClient_CreateVM(t *testing.T) {
 
 	if vm.Config.MemoryMiB != 512 {
 		t.Errorf("expected 512 MiB memory, got %d", vm.Config.MemoryMiB)
+	}
+}
+
+func TestClient_ExecVM(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/vms/vm-123/exec" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST method, got %s", r.Method)
+		}
+
+		var req VMExecRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("failed to decode request: %v", err)
+		}
+		if len(req.Command) != 2 || req.Command[0] != "uname" || req.Command[1] != "-a" {
+			t.Errorf("unexpected command: %#v", req.Command)
+		}
+
+		resp := VMExecResult{
+			Command:   req.Command,
+			ExitCode:  0,
+			Stdout:    "Linux\n",
+			RuntimeID: "nf-test",
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewTCPClient(server.URL, 5*time.Second, false)
+	result, err := client.ExecVM(context.Background(), "vm-123", &VMExecRequest{
+		Command: []string{"uname", "-a"},
+	})
+	if err != nil {
+		t.Fatalf("ExecVM() error = %v", err)
+	}
+	if result.Stdout != "Linux\n" {
+		t.Fatalf("stdout = %q, want Linux", result.Stdout)
+	}
+	if result.RuntimeID != "nf-test" {
+		t.Fatalf("runtime id = %q, want nf-test", result.RuntimeID)
 	}
 }
 

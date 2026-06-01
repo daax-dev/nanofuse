@@ -5,7 +5,7 @@ status: Done
 assignee:
   - codex
 created_date: '2026-05-30 20:05'
-updated_date: '2026-05-30 21:11'
+updated_date: '2026-05-31 10:40'
 labels:
   - sandbox
   - microvm
@@ -49,8 +49,10 @@ Deliver the repository objective from objective.md on the current branch only. N
 - [x] #8 Vagrant/hypervisor closed-loop testing is executed and evidence is recorded, including any host capability constraints encountered.
 - [x] #9 docs/GOALS.md and directly related docs are corrected to match the validated design and implementation state.
 - [x] #10 Decision logs under .logs/ contain JSONL entries for non-trivial decisions.
-- [x] #11 Formatter, linter, and tests including mage ci are run, or every blocked gate is recorded with exact cause.
+- [x] #11 Formatter, linter, and tests including mage ci are run, or every unavailable/failed gate is recorded with exact cause.
 - [x] #12 A pull request is opened with problem statement, approach, alternatives, test evidence, and AI producer/validator information.
+- [x] #13 daax-dev/vagrant-skill is used as the required local Vagrant harness for this branch, and the exact KVM/runtime result is recorded.
+- [x] #14 A minimal macOS/Windows tray/menu app exists as an API-only client with a non-GUI smoke mode and documented one-line launch commands.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -62,6 +64,7 @@ Deliver the repository objective from objective.md on the current branch only. N
 4. Update GOALS.md, API/OpenAPI docs, and Vagrant closed-loop validation docs.
 5. Run mage ci and Vagrant closed-loop validation where the host/provider exposes Linux KVM.
 6. Push the branch and open PR #46 with evidence.
+7. Reopen the task for the operator-requested correction: use daax-dev/vagrant-skill explicitly, ship a minimal API-only tray/menu app, retest, and open/update the next PR with truthful evidence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -72,12 +75,38 @@ Deliver the repository objective from objective.md on the current branch only. N
 2026-05-30: Vagrant/Parallels guest boot and rsync succeeded, but provisioning failed at `/dev/kvm not found`. A nested virtualization attempt was also tried; Parallels accepted `--nested-virt on` but the VM then failed to start, so this host cannot execute the Firecracker closed-loop locally.
 
 2026-05-30: Parallels VM created for validation is stopped, not destroyed.
+
+2026-05-31: Task reopened because the previous completion record did not use daax-dev/vagrant-skill as the required harness and did not ship the requested tray/menu app. Current correction scope is vagrant-skill validation, tray/menu app implementation, retest, docs, and PR update on the same branch.
+
+2026-05-31: Added `cmd/nanofuse-tray`, `internal/trayapp`, macOS/Windows launch scripts, and `docs/TRAY_APP.md`. Local macOS tests/build/smoke/bounded launch passed. Windows tray executable cross-built. vagrant-skill verify passed with KVM skipped, focused tray smoke passed inside the VM, and synced vagrant-skill `mage ci` passed. The local Parallels guest still reports `KVM_MISSING`, so no local Firecracker boot is claimed.
+
+2026-05-31: Merged current `origin/main` into `codex-goal`, resolved conflicts, reran local `mage ci`, reran `mage ci` inside the synced `daax-dev/vagrant-skill` Parallels VM, reran tray smoke inside the VM, and opened replacement PR https://github.com/daax-dev/nanofuse/pull/55.
+
+2026-05-31: Updated PR #55 after Copilot review and operator SlicerVM guidance so the tray app can select a cached container-derived image and create/start a VM through `nanofused`. Local focused tray tests/build/smoke, macOS bounded launch, local `mage ci`, vagrant-skill focused tray smoke, and vagrant-skill `mage ci` passed. PR #55 was later closed without merge.
+
+2026-05-31: Opened replacement PR https://github.com/daax-dev/nanofuse/pull/56 from the same `codex-goal` branch with the two Copilot review fixes and tray image-launch workflow.
+
+2026-05-31: Fixed the macOS tray launcher so `./scripts/run-tray-macos.sh` no longer appears to do nothing. It now prints build/start status, reports existing `nanofuse-tray` PIDs, supports `--restart`, `--foreground`, `--smoke`, and `--timeout`, and documents the background log path.
+
+2026-05-31: Addressed PR #56 Copilot review threads. Overlapping tray refreshes now discard stale results before applying UI/action state, and kill/delete confirmation titles expire after the confirmation window instead of remaining visually stale.
+
+2026-05-31: Corrected the platform model after operator feedback. Added a macOS-native runtime backend using Apple `container` and Virtualization.framework, wired it behind a shared runtime manager interface, added `runtime.driver=apple_container` config and `/capabilities` reporting, and updated `scripts/run-tray-macos.sh --start-api` to start a local Apple-container-backed `nanofused` daemon through launchd. Closed-loop macOS validation created an API VM from `alpine:3.20`, started it, executed `uname -a` inside the runtime container showing Linux `6.12.28` on `aarch64`, stopped it, deleted it, and confirmed no matching `nf-*` runtime container remained.
+
+2026-05-31: PR #56 branch update includes the macOS native runtime correction, Go 1.25 Vagrant/release alignment, and final validation evidence. Local `mage ci` passed, vagrant-skill `mage ci` passed in a fresh Parallels Ubuntu arm64 VM with Go 1.25.2, and final macOS Apple-container API lifecycle passed after the launcher bind-address fix.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Completed sandbox objective validation work on branch `codex-goal` and opened ready-for-review PR https://github.com/daax-dev/nanofuse/pull/46. Implemented per-VM writable rootfs materialization and cleanup, typed egress policy support with iptables default-deny/proxy-only enforcement, API/client schema updates, corrected platform/runtime goals, Vagrant closed-loop tooling, and JSONL decision/reference/validation logs. Local `mage ci` passed; shell/Vagrantfile syntax and Vagrant validation passed where possible. Local Parallels validation is blocked for Firecracker execution because `/dev/kvm` is not exposed, and enabling Parallels nested virtualization prevents the VM from starting on this host.
+Completed sandbox objective validation work on branch `codex-goal` and opened ready-for-review PR https://github.com/daax-dev/nanofuse/pull/46. Implemented per-VM writable rootfs materialization and cleanup, typed egress policy support with iptables default-deny/proxy-only enforcement, API/client schema updates, corrected platform/runtime goals, Vagrant closed-loop tooling, and JSONL decision/reference/validation logs. Local `mage ci` passed; shell/Vagrantfile syntax and Vagrant validation passed where possible. Local Parallels validation cannot execute Firecracker because `/dev/kvm` is not exposed, and enabling Parallels nested virtualization prevents the VM from starting on this host.
 
-Follow-up on 2026-05-30: PR #46 now also includes the explicit API run path required by the operator: GET /capabilities, Mac/Windows API client docs, corrected OpenAPI examples, Vagrant host port forwarding for the guest API, sandbox API comparison, tray/menu-app requirements, and Flowspec artifact path corrections. Local Parallels Vagrant remains blocked at /dev/kvm not found.
+Follow-up on 2026-05-30: PR #46 now also includes the explicit API run path required by the operator: GET /capabilities, Mac/Windows API client docs, corrected OpenAPI examples, Vagrant host port forwarding for the guest API, sandbox API comparison, tray/menu-app requirements, and Flowspec artifact path corrections. Local Parallels Vagrant remains KVM-unavailable at /dev/kvm not found.
+
+Follow-up on 2026-05-31: Replacement PR https://github.com/daax-dev/nanofuse/pull/56 contains the real tray/menu app, one-line launch scripts, vagrant-skill validation, post-merge conflict resolution from `origin/main`, and refreshed JSONL validation evidence. Local and Vagrant `mage ci` passed after the merge. The local Apple Silicon Parallels VM remains usable for repo/API/tray validation but not Firecracker execution because `/dev/kvm` is absent.
+
+PR #56 carries the PR #55 and PR #56 Copilot fixes: runtime-capability action gating in the tray app, fail-fast Windows build launcher behavior, stale refresh protection, and visual expiry for kill/delete confirmation. The tray app now includes the missing create/start-from-image workflow. The Mac launch point is `scripts/run-tray-macos.sh`; it prints visible status, detects existing tray processes, and supports `--restart`/`--foreground` for predictable operator control. The implementation is `cmd/nanofuse-tray` plus `internal/trayapp`.
+
+Follow-up on 2026-05-31: The branch now includes local macOS execution instead of only a Mac API-client path. `scripts/run-tray-macos.sh --start-api --restart` starts `nanofused` with `runtime.driver=apple_container` and launches the tray app. The validated macOS path uses Apple `container` and Virtualization.framework to run OCI images as local Linux microVMs. Linux remains the Firecracker/KVM path. Windows remains a tray/API client path.
+
+Follow-up on 2026-05-31: PR #56 was updated on the same `codex-goal` branch with the macOS-native Apple-container runtime, final closed-loop validation logs, Go 1.25 harness fixes, and docs that now launch locally on Mac instead of treating Mac as SSH-only.
 <!-- SECTION:FINAL_SUMMARY:END -->

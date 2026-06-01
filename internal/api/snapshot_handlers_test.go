@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -12,10 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/config"
 	"github.com/daax-dev/nanofuse/internal/firecracker"
 	"github.com/daax-dev/nanofuse/internal/logging"
 	"github.com/daax-dev/nanofuse/internal/storage"
 	"github.com/daax-dev/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/vmm"
 )
 
 type vmAPICall struct {
@@ -79,10 +82,10 @@ func newSnapshotHandlerTestServer(t *testing.T, db *storage.DB) *Server {
 	}
 
 	return &Server{
-		db:        db,
-		fcManager: firecracker.NewManager("/usr/bin/firecracker", t.TempDir()),
-		logger:    logger,
-		startTime: time.Now(),
+		db:             db,
+		runtimeManager: firecracker.NewManager("/usr/bin/firecracker", t.TempDir()),
+		logger:         logger,
+		startTime:      time.Now(),
 	}
 }
 
@@ -160,6 +163,48 @@ func TestHandleCreateSnapshotRequiresPausedVM(t *testing.T) {
 	}
 }
 
+func TestHandleCreateSnapshotMapsUnsupportedRuntimeTo501(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StatePaused, "")
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+	server := &Server{
+		db: db,
+		config: &config.Config{
+			Storage: config.StorageConfig{DataDir: t.TempDir()},
+		},
+		logger: logger,
+		runtimeManager: &runtimeImageProviderStub{
+			snapshotErr: fmt.Errorf("%w: snapshots are not supported", vmm.ErrUnsupportedOperation),
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vm.ID+"/snapshots", nil)
+	w := httptest.NewRecorder()
+
+	server.handleCreateSnapshot(w, req, vm.ID)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotImplemented, w.Body.String())
+	}
+	var response types.APIError
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Code != types.ErrUnsupportedOperation {
+		t.Fatalf("error code = %s, want %s", response.Error.Code, types.ErrUnsupportedOperation)
+	}
+	if response.Error.Details["operation"] != "VM snapshots" {
+		t.Fatalf("operation detail = %v, want VM snapshots", response.Error.Details["operation"])
+	}
+}
+
 func TestHandleVMPauseCallsFirecrackerAndUpdatesState(t *testing.T) {
 	socketPath, calls := startUnixVMAPIServer(t)
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
@@ -206,6 +251,54 @@ func TestHandleVMPauseCallsFirecrackerAndUpdatesState(t *testing.T) {
 	}
 }
 
+func TestHandleVMPauseMapsUnsupportedRuntimeTo501(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateRunning, "")
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+	server := &Server{
+		db:     db,
+		logger: logger,
+		runtimeManager: &runtimeImageProviderStub{
+			pauseErr: fmt.Errorf("%w: pause is not supported", vmm.ErrUnsupportedOperation),
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vm.ID+"/pause", nil)
+	req.SetPathValue("id", vm.ID)
+	w := httptest.NewRecorder()
+
+	server.handleVMPauseByPath(w, req)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotImplemented, w.Body.String())
+	}
+	var response types.APIError
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Code != types.ErrUnsupportedOperation {
+		t.Fatalf("error code = %s, want %s", response.Error.Code, types.ErrUnsupportedOperation)
+	}
+	if response.Error.Details["operation"] != "VM pause" {
+		t.Fatalf("operation detail = %v, want VM pause", response.Error.Details["operation"])
+	}
+
+	updated, err := db.GetVM(vm.ID)
+	if err != nil {
+		t.Fatalf("GetVM: %v", err)
+	}
+	if updated.State != types.StateRunning {
+		t.Fatalf("VM state = %s, want %s", updated.State, types.StateRunning)
+	}
+}
+
 func TestHandleVMResumeCallsFirecrackerAndUpdatesState(t *testing.T) {
 	socketPath, calls := startUnixVMAPIServer(t)
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
@@ -249,5 +342,53 @@ func TestHandleVMResumeCallsFirecrackerAndUpdatesState(t *testing.T) {
 	}
 	if updated.State != types.StateRunning {
 		t.Fatalf("VM state = %s, want %s", updated.State, types.StateRunning)
+	}
+}
+
+func TestHandleVMResumeMapsUnsupportedRuntimeTo501(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StatePaused, "")
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+	server := &Server{
+		db:     db,
+		logger: logger,
+		runtimeManager: &runtimeImageProviderStub{
+			resumeErr: fmt.Errorf("%w: resume is not supported", vmm.ErrUnsupportedOperation),
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vm.ID+"/resume", nil)
+	req.SetPathValue("id", vm.ID)
+	w := httptest.NewRecorder()
+
+	server.handleVMResumeByPath(w, req)
+
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotImplemented, w.Body.String())
+	}
+	var response types.APIError
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Code != types.ErrUnsupportedOperation {
+		t.Fatalf("error code = %s, want %s", response.Error.Code, types.ErrUnsupportedOperation)
+	}
+	if response.Error.Details["operation"] != "VM resume" {
+		t.Fatalf("operation detail = %v, want VM resume", response.Error.Details["operation"])
+	}
+
+	updated, err := db.GetVM(vm.ID)
+	if err != nil {
+		t.Fatalf("GetVM: %v", err)
+	}
+	if updated.State != types.StatePaused {
+		t.Fatalf("VM state = %s, want %s", updated.State, types.StatePaused)
 	}
 }

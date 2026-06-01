@@ -1,18 +1,74 @@
 # Mac and Windows Client Runbook
 
-Nanofuse runtime execution is Linux/KVM. macOS and Windows clients manage a Linux `nanofused` daemon over the API.
+macOS is both a local runtime host and an API/tray client:
 
-## Supported Topology
+- Local runtime: `nanofused` uses Apple `container` plus Virtualization.framework with `runtime.driver=apple_container`.
+- Remote client: macOS can still manage a Linux/KVM Firecracker daemon over the API.
+
+Windows is currently an API/tray client. It manages a reachable Linux or macOS `nanofused` daemon; local Windows runtime execution is not implemented in this repo.
+
+## Supported Topologies
 
 ```text
-macOS or Windows client
-  -> nanofuse CLI, curl, PowerShell, or tray app
-  -> HTTP API
-  -> Linux/KVM host running nanofused
-  -> Firecracker microVMs
+macOS local runtime
+  -> nanofuse CLI, curl, or nanofuse-tray
+  -> HTTP API on 127.0.0.1:18080
+  -> nanofused runtime.driver=apple_container
+  -> Apple container / Virtualization.framework Linux microVMs
 ```
 
-This is the supported cross-platform model today. Do not treat native macOS or Windows virtualization as the Nanofuse security boundary.
+```text
+Linux runtime
+  -> nanofuse CLI, curl, or nanofuse-tray
+  -> HTTP or Unix socket API
+  -> nanofused runtime.driver=firecracker
+  -> Firecracker microVMs on Linux/KVM
+```
+
+```text
+Windows client
+  -> nanofuse CLI, PowerShell, or nanofuse-tray
+  -> HTTP API
+  -> reachable macOS or Linux nanofused daemon
+```
+
+## macOS Local Runtime
+
+Start the daemon and menu bar app:
+
+```bash
+./scripts/run-tray-macos.sh --start-api --restart
+```
+
+Smoke check:
+
+```bash
+./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s
+```
+
+CLI and API checks:
+
+```bash
+export NANOFUSE_API_URL="http://127.0.0.1:18080"
+nanofuse health
+curl "$NANOFUSE_API_URL/capabilities"
+nanofuse vm list
+```
+
+The expected macOS capability signal is `driver=apple_container`, `native_runtime=true`, `apple_container_available=true`, and `virtualization_framework_supported=true`.
+
+## macOS Remote Client
+
+Use this path when managing a Linux/KVM Firecracker daemon:
+
+```bash
+ssh -L 18080:127.0.0.1:8080 user@linux-kvm-host
+export NANOFUSE_API_URL="http://127.0.0.1:18080"
+
+nanofuse health
+curl "$NANOFUSE_API_URL/capabilities"
+nanofuse vm list
+```
 
 ## Linux/KVM Host
 
@@ -30,17 +86,6 @@ sudo ./bin/nanofused -config config.dev.yaml -tcp 0.0.0.0:8080
 
 Raw TCP has no built-in Nanofuse auth/TLS. Restrict it with host firewall rules, SSH, WireGuard, or an authenticated reverse proxy.
 
-## macOS
-
-```bash
-ssh -L 18080:127.0.0.1:8080 user@linux-kvm-host
-export NANOFUSE_API_URL="http://127.0.0.1:18080"
-
-nanofuse health
-curl "$NANOFUSE_API_URL/capabilities"
-nanofuse vm list
-```
-
 ## Windows PowerShell
 
 ```powershell
@@ -51,6 +96,24 @@ $env:NANOFUSE_API_URL = "http://127.0.0.1:18080"
 Invoke-RestMethod "$env:NANOFUSE_API_URL/capabilities"
 .\nanofuse.exe vm list
 ```
+
+If the daemon is reachable directly on a trusted management network:
+
+```powershell
+$env:NANOFUSE_API_URL = "http://linux-or-mac-runtime-host:8080"
+.\nanofuse.exe health
+.\nanofuse.exe vm list
+```
+
+Tray app:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-tray-windows.ps1 -ApiUrl "$env:NANOFUSE_API_URL"
+```
+
+## Daily Operations
+
+For the exact commands to see published ports, execute commands inside running VMs through the API, launch multiple VMs, and enable more launchable OCI images, see [Operating Local MicroVMs](OPERATING_LOCAL_MICROVMS.md).
 
 ## Vagrant From a Client Host
 
@@ -63,7 +126,7 @@ vagrant ssh -c "sudo systemctl start nanofused"
 curl http://127.0.0.1:18080/health
 ```
 
-This requires a provider that exposes Linux KVM in the guest. On providers that do not expose `/dev/kvm`, the API may be reachable for health checks only if `nanofused` starts; VM execution must fail because Firecracker cannot run.
+This reaches Firecracker execution only when the provider exposes Linux KVM in the guest. On the local Apple Silicon Parallels VM, `/dev/kvm` is absent, so the VM remains useful for Linux build/test validation but not Firecracker boot validation.
 
 ## Client Configuration
 
@@ -80,6 +143,8 @@ The CLI reads these environment variables:
 
 `--api-url` and `--api-socket` still work and take precedence over environment values.
 
-## Tray App Requirement
+## Tray App
 
-A macOS/Windows tray app should be an API client only. It must not call Firecracker, manipulate TAP devices, edit Nanofuse storage, or shell into the runtime host directly. The required first screen is daemon health/capabilities, followed by VM and image lifecycle controls backed by `api/openapi.yaml`.
+`nanofuse-tray` is implemented as an API client. It must not call Firecracker directly, manipulate TAP devices, edit Nanofuse storage outside the daemon, or shell into a runtime host. The current app shows daemon health/capabilities, VM list, image list, create/start from selected image, and VM start/stop/kill/delete actions backed by `api/openapi.yaml`.
+
+See [Tray App](TRAY_APP.md).

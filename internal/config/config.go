@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"gopkg.in/yaml.v3"
 )
@@ -11,6 +12,7 @@ import (
 type Config struct {
 	API         APIConfig         `yaml:"api"`
 	Storage     StorageConfig     `yaml:"storage"`
+	Runtime     RuntimeConfig     `yaml:"runtime"`
 	Firecracker FirecrackerConfig `yaml:"firecracker"`
 	Limits      LimitsConfig      `yaml:"limits"`
 	Registry    RegistryConfig    `yaml:"registry"`
@@ -18,6 +20,20 @@ type Config struct {
 	Network     NetworkConfig     `yaml:"network"`
 	SPIRE       SPIREConfig       `yaml:"spire"`
 	Auth        AuthConfig        `yaml:"auth"`
+}
+
+// RuntimeConfig selects the local microVM runtime backend.
+type RuntimeConfig struct {
+	// Driver may be "auto", "firecracker", or "apple_container".
+	Driver         string                      `yaml:"driver"`
+	AppleContainer AppleContainerRuntimeConfig `yaml:"apple_container,omitempty"`
+}
+
+// AppleContainerRuntimeConfig configures the macOS Apple container backend.
+type AppleContainerRuntimeConfig struct {
+	BinaryPath     string `yaml:"binary_path,omitempty"`
+	AutoStart      bool   `yaml:"auto_start"`
+	DefaultCommand string `yaml:"default_command,omitempty"`
 }
 
 // AuthConfig holds authentication configuration for the daemon.
@@ -119,6 +135,14 @@ func DefaultConfig() *Config {
 			DataDir:  "/var/lib/nanofuse",
 			Database: "/var/lib/nanofuse/nanofuse.db",
 		},
+		Runtime: RuntimeConfig{
+			Driver: "auto",
+			AppleContainer: AppleContainerRuntimeConfig{
+				BinaryPath:     "/usr/local/bin/container",
+				AutoStart:      true,
+				DefaultCommand: "sleep infinity",
+			},
+		},
 		Firecracker: FirecrackerConfig{
 			BinaryPath: "/usr/local/bin/firecracker",
 		},
@@ -194,8 +218,8 @@ func (c *Config) Validate() error {
 	if c.Storage.Database == "" {
 		return fmt.Errorf("storage.database is required")
 	}
-	if c.Firecracker.BinaryPath == "" {
-		return fmt.Errorf("firecracker.binary_path is required")
+	if err := c.validateRuntime(); err != nil {
+		return err
 	}
 	if c.Limits.MaxVMs <= 0 {
 		return fmt.Errorf("limits.max_vms must be positive")
@@ -203,16 +227,74 @@ func (c *Config) Validate() error {
 	if c.Limits.MaxTotalMemoryMiB <= 0 {
 		return fmt.Errorf("limits.max_total_memory_mib must be positive")
 	}
-	if c.Auth.Enabled && c.API.TCPBind != "" {
-		if c.Auth.TLSCertFile == "" {
-			return fmt.Errorf("auth.tls_cert_file is required when auth.enabled is true for TCP listeners")
+	return c.validateAuth()
+}
+
+func (c *Config) validateRuntime() error {
+	if c.Runtime.Driver == "" {
+		c.Runtime.Driver = "auto"
+	}
+	driver, err := runtimeDriverForHost(c.Runtime.Driver, runtime.GOOS)
+	if err != nil {
+		return err
+	}
+	if driver == "firecracker" {
+		if c.Firecracker.BinaryPath == "" {
+			return fmt.Errorf("firecracker.binary_path is required")
 		}
-		if c.Auth.TLSKeyFile == "" {
-			return fmt.Errorf("auth.tls_key_file is required when auth.enabled is true for TCP listeners")
+	}
+	if driver == "apple_container" {
+		if c.Runtime.AppleContainer.BinaryPath == "" {
+			c.Runtime.AppleContainer.BinaryPath = "/usr/local/bin/container"
 		}
-		if c.Auth.ClientCAFile == "" {
-			return fmt.Errorf("auth.client_ca_file is required when auth.enabled is true for TCP listeners")
+		if c.Runtime.AppleContainer.DefaultCommand == "" {
+			c.Runtime.AppleContainer.DefaultCommand = "sleep infinity"
 		}
+	}
+	return nil
+}
+
+func runtimeDriverForHost(driver, goos string) (string, error) {
+	if driver == "" {
+		driver = "auto"
+	}
+	switch driver {
+	case "auto":
+		switch goos {
+		case "darwin":
+			return "apple_container", nil
+		case "linux":
+			return "firecracker", nil
+		default:
+			return "", fmt.Errorf("runtime.driver auto does not support host OS %q; use linux with firecracker or darwin with apple_container", goos)
+		}
+	case "firecracker":
+		if goos != "linux" {
+			return "", fmt.Errorf("runtime.driver firecracker requires linux host, got %q", goos)
+		}
+		return "firecracker", nil
+	case "apple_container":
+		if goos != "darwin" {
+			return "", fmt.Errorf("runtime.driver apple_container requires darwin host, got %q", goos)
+		}
+		return "apple_container", nil
+	default:
+		return "", fmt.Errorf("runtime.driver must be one of auto, firecracker, apple_container")
+	}
+}
+
+func (c *Config) validateAuth() error {
+	if !c.Auth.Enabled || c.API.TCPBind == "" {
+		return nil
+	}
+	if c.Auth.TLSCertFile == "" {
+		return fmt.Errorf("auth.tls_cert_file is required when auth.enabled is true for TCP listeners")
+	}
+	if c.Auth.TLSKeyFile == "" {
+		return fmt.Errorf("auth.tls_key_file is required when auth.enabled is true for TCP listeners")
+	}
+	if c.Auth.ClientCAFile == "" {
+		return fmt.Errorf("auth.client_ca_file is required when auth.enabled is true for TCP listeners")
 	}
 	return nil
 }

@@ -1,13 +1,27 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/applecontainer"
 	"github.com/daax-dev/nanofuse/internal/types"
+)
+
+const (
+	appleContainerSystemStatusTimeout = 2 * time.Second
+	appleVirtualizationProbeTimeout   = 2 * time.Second
+)
+
+var (
+	appleContainerSystemStatusCommand = exec.CommandContext
+	appleVirtualizationSupportCommand = exec.CommandContext
 )
 
 // handleHealth handles the health check endpoint (GET /health)
@@ -37,19 +51,42 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 	socketPath := ""
 	tcpBind := ""
 	firecrackerBinary := ""
+	driver := selectedRuntimeDriver(s.config)
+	appleContainerBinary := ""
+	appleContainerAutoStart := false
 	if s.config != nil {
 		socketPath = s.config.API.Socket
 		tcpBind = s.config.API.TCPBind
 		firecrackerBinary = s.config.Firecracker.BinaryPath
+		appleContainerBinary = s.config.Runtime.AppleContainer.BinaryPath
+		appleContainerAutoStart = s.config.Runtime.AppleContainer.AutoStart
 	}
 
 	kvmExists, kvmReadWrite, kvmErr := inspectKVMDevice("/dev/kvm")
 	firecrackerAvailable := executableAvailable(firecrackerBinary)
-	nativeRuntime := runtime.GOOS == "linux" && kvmReadWrite && firecrackerAvailable
+	appleContainerAvailable := executableAvailable(appleContainerBinary)
+	appleContainerRunning := false
+	if driver == applecontainer.DriverName && appleContainerAvailable {
+		appleContainerRunning = appleContainerSystemRunning(appleContainerBinary)
+	}
+	virtualizationSupported := appleVirtualizationFrameworkSupported(runtime.GOOS)
+	appleContainerReady := driver == applecontainer.DriverName &&
+		appleContainerNativeReady(runtime.GOOS, appleContainerAvailable, virtualizationSupported, appleContainerRunning, appleContainerAutoStart)
+	nativeRuntime := (driver == "firecracker" && runtime.GOOS == "linux" && kvmReadWrite && firecrackerAvailable) ||
+		appleContainerReady
 
 	message := "Linux KVM and Firecracker are available for local microVM execution"
+	if driver == applecontainer.DriverName && appleContainerReady {
+		message = "Apple container and Virtualization.framework are available for local macOS Linux microVM execution"
+		if !appleContainerRunning {
+			message = "Apple container is installed for local macOS Linux microVM execution; service will be started on demand"
+		}
+	}
 	if !nativeRuntime {
-		message = "Nanofuse microVM execution requires a Linux host with read/write /dev/kvm and a Firecracker binary; use this daemon as the runtime host and connect to it over the API from macOS or Windows"
+		message = "Nanofuse microVM execution requires Linux/KVM with Firecracker or macOS with Apple container and Virtualization.framework"
+		if driver == applecontainer.DriverName && runtime.GOOS == "darwin" && appleContainerAvailable && !appleContainerRunning && !appleContainerAutoStart {
+			message = "Apple container is installed but services are stopped and runtime.apple_container.auto_start is false"
+		}
 	}
 
 	return types.CapabilitiesResponse{
@@ -64,18 +101,55 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 			KVMError:     kvmErr,
 		},
 		Runtime: types.RuntimeCapabilities{
-			NativeRuntime:        nativeRuntime,
-			FirecrackerBinary:    firecrackerBinary,
-			FirecrackerAvailable: firecrackerAvailable,
-			RootRequired:         true,
-			NetworkSetupRequired: true,
-			Message:              message,
+			NativeRuntime:                    nativeRuntime,
+			Driver:                           driver,
+			FirecrackerBinary:                firecrackerBinary,
+			FirecrackerAvailable:             firecrackerAvailable,
+			AppleContainerBinary:             appleContainerBinary,
+			AppleContainerAvailable:          appleContainerAvailable,
+			AppleContainerRunning:            appleContainerRunning,
+			VirtualizationFrameworkSupported: virtualizationSupported,
+			RootRequired:                     driver == "firecracker",
+			NetworkSetupRequired:             driver == "firecracker",
+			Message:                          message,
 		},
 		API: types.APITransportCapabilities{
 			UnixSocket: socketPath,
 			TCPBind:    tcpBind,
 		},
 	}
+}
+
+func appleContainerNativeReady(goos string, available, virtualizationSupported, running, autoStart bool) bool {
+	return goos == "darwin" && available && virtualizationSupported && (running || autoStart)
+}
+
+func appleVirtualizationFrameworkSupported(goos string) bool {
+	if goos != "darwin" {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), appleVirtualizationProbeTimeout)
+	defer cancel()
+
+	cmd := appleVirtualizationSupportCommand(ctx, "sysctl", "-n", "kern.hv_support")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "1"
+}
+
+func appleContainerSystemRunning(path string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), appleContainerSystemStatusTimeout)
+	defer cancel()
+
+	cmd := appleContainerSystemStatusCommand(ctx, path, "system", "status")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "apiserver is running")
 }
 
 func inspectKVMDevice(path string) (bool, bool, string) {

@@ -6,7 +6,21 @@
 
 The tray/menu app must be an API client. It must not embed hypervisor control, shell into the runtime host, edit Nanofuse storage directly, or manipulate Firecracker sockets. The app talks to `nanofused` through the REST API described by `api/openapi.yaml`.
 
-This PR captures requirements and API prerequisites only. It does not add Electron, Tauri, Wails, Swift, .NET, or another desktop runtime because that is a repo-wide dependency and packaging decision.
+The current implementation adds a minimal Go tray client at `cmd/nanofuse-tray` using `github.com/getlantern/systray`. This intentionally avoids Electron, Tauri, Wails, Swift, .NET, or another larger desktop runtime until packaging, signing, and installer requirements are selected.
+
+## Implemented Slice
+
+| Capability | Status |
+|------------|--------|
+| macOS menu bar app | Implemented and built locally as `bin/nanofuse-tray`. |
+| Windows tray app | Implemented and cross-built as `nanofuse-tray.exe`; desktop runtime click testing still needs a Windows session. |
+| Health/capabilities | Implemented through `GET /health` and `GET /capabilities`. |
+| VM list | Implemented through `GET /vms`, limited to 25 menu rows and showing state plus port context. |
+| Image list | Implemented through `GET /images`, limited to 25 menu rows. |
+| Create/start VM from image | Implemented through `POST /vms` followed by `POST /vms/{id}/start` for the selected image. |
+| VM start/stop | Implemented through `POST /vms/{id}/start` and `POST /vms/{id}/stop`. |
+| VM kill/delete | Implemented with second-click confirmation through `POST /vms/{id}/kill` and `DELETE /vms/{id}`. |
+| Smoke mode | Implemented with `nanofuse-tray --smoke --api-url ...` for non-GUI validation. |
 
 ## Target Platforms
 
@@ -21,7 +35,7 @@ This PR captures requirements and API prerequisites only. It does not add Electr
 | Connection profiles | Add/edit/select API profiles, including URL, timeout, optional tunnel instructions, and future auth material reference. |
 | Health and capabilities | Show `/health` and `/capabilities`; disable VM actions when `native_runtime` is false or API is unreachable. |
 | VM list | Show VM name, ID, state, image, CPU, memory, uptime, owner/group identity, and last update. |
-| VM actions | Create, start, stop, kill, delete, pause/resume where implemented, and open logs. |
+| VM actions | Create from selected image, start, stop, kill, delete, pause/resume where implemented, and open logs. Current app implements create/start from selected image plus start, stop, kill, and delete for an existing selected VM. |
 | Image list | Show pulled images, tags, architecture, size, labels, and delete where safe. |
 | Image pull | Pull image by reference and poll `/images/jobs/{id}` with progress. |
 | Logs | Tail VM console logs with copy/save controls and no hidden credential display. |
@@ -36,10 +50,11 @@ This PR captures requirements and API prerequisites only. It does not add Electr
 - Do not display guest logs as trusted UI content; render as plain text.
 - Require confirmation for destructive VM/image actions.
 
-## API Requirements Before Implementation
+## Remaining API Requirements
 
 - `GET /capabilities` exists and is used for capability gating.
 - `api/openapi.yaml` is the source of generated client types.
+- `POST /vms/{id}/exec` exists for runtime-backed command execution; interactive SSH still requires guest sshd and a port forward to port 22.
 - Remote API auth profile is designed before any non-localhost default profile ships.
 - VM create supports egress policy selection from the app.
 - Image pull job polling is stable enough for progress UI.
@@ -53,4 +68,4 @@ This PR captures requirements and API prerequisites only. It does not add Electr
 | Electron | Adds Node/Chromium and larger packaging surface. | Fastest ecosystem, largest runtime footprint. |
 | Native Swift + .NET/WinUI | Best native behavior. Two codebases. | Only justified if native UX is more important than shared implementation. |
 
-No stack is selected in this PR.
+The selected current stack is Go plus `getlantern/systray`. This is reversible because API behavior is isolated in `internal/trayapp` and the OS tray loop is isolated in `cmd/nanofuse-tray`.

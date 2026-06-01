@@ -14,10 +14,33 @@ import (
 
 	"github.com/daax-dev/nanofuse/internal/network"
 	"github.com/daax-dev/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/vmm"
 	"github.com/google/uuid"
 )
 
-var errNetworkSetupDisabled = errors.New("network setup disabled; use network mode none or enable network.setup")
+var (
+	errNetworkSetupDisabled           = errors.New("network setup disabled; use network mode none or enable network.setup")
+	errRuntimeEgressPolicyUnsupported = errors.New("runtime-managed networking does not support nanofuse egress_policy")
+	errRuntimeNetworkModeUnsupported  = errors.New("runtime-managed networking does not support network mode none")
+)
+
+type imageNotFoundError struct {
+	imageRef string
+	cause    error
+}
+
+func (e *imageNotFoundError) Error() string {
+	return "image not found"
+}
+
+func (e *imageNotFoundError) Unwrap() error {
+	return e.cause
+}
+
+const (
+	defaultExecTimeoutSeconds = 30
+	maxExecTimeoutSeconds     = 600
+)
 
 // handleListVMs lists all VMs
 func (s *Server) handleListVMs(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +63,7 @@ func (s *Server) handleListVMs(w http.ResponseWriter, r *http.Request) {
 			ImageDigest:  vm.ImageDigest,
 			Architecture: vm.Architecture,
 			Config:       vm.Config,
+			Runtime:      vm.Runtime,
 			CreatedAt:    vm.CreatedAt,
 		}
 
@@ -60,7 +84,7 @@ func (s *Server) handleListVMs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-// validateAndResolveImage validates image field and returns image from DB
+// validateAndResolveImage validates image field and returns image from DB or runtime image provider.
 func (s *Server) validateAndResolveImage(imageRef string) (*types.Image, string, error) {
 	var image *types.Image
 	var err error
@@ -80,7 +104,20 @@ func (s *Server) validateAndResolveImage(imageRef string) (*types.Image, string,
 	}
 
 	if image == nil {
-		return nil, "", fmt.Errorf("image not found: %s", imageRef)
+		if provider, ok := s.runtimeManager.(vmm.ImageProvider); ok {
+			image, err = provider.ResolveImage(imageRef)
+			if err != nil {
+				return nil, "", fmt.Errorf("runtime image resolution failed: %w", err)
+			}
+			if image != nil {
+				if err := s.db.UpsertImage(image); err != nil {
+					return nil, "", fmt.Errorf("database error: %w", err)
+				}
+			}
+		}
+		if image == nil {
+			return nil, "", &imageNotFoundError{imageRef: imageRef}
+		}
 	}
 
 	return image, image.Digest, nil
@@ -95,14 +132,16 @@ func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfi
 		Network: types.NetworkConfig{
 			Mode: "nat",
 		},
-		Disks: []types.DiskConfig{
+	}
+	if image.RootfsPath != "" {
+		config.Disks = []types.DiskConfig{
 			{
 				DriveID:      "rootfs",
 				PathOnHost:   image.RootfsPath,
 				IsReadOnly:   false,
 				IsRootDevice: true,
 			},
-		},
+		}
 	}
 
 	// Apply user config overrides
@@ -318,6 +357,15 @@ func (s *Server) validateVMResourceLimits(config types.VMConfig) error {
 
 // setupVMNetworking configures networking for a VM
 func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
+	if selectedRuntimeDriver(s.config) != "firecracker" {
+		if config.Network.Mode == "none" {
+			return errRuntimeNetworkModeUnsupported
+		}
+		if config.Network.EgressPolicy != nil && config.Network.EgressPolicy.Enabled {
+			return errRuntimeEgressPolicyUnsupported
+		}
+		return nil
+	}
 	if config.Network.Mode == "none" {
 		return nil
 	}
@@ -390,6 +438,19 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 
 func writeNetworkSetupError(w http.ResponseWriter, err error, networkMode string) bool {
 	if !errors.Is(err, errNetworkSetupDisabled) {
+		if errors.Is(err, errRuntimeNetworkModeUnsupported) {
+			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, errRuntimeNetworkModeUnsupported.Error(), map[string]interface{}{
+				"network_mode":         networkMode,
+				"allowed_network_mode": "nat",
+			})
+			return true
+		}
+		if errors.Is(err, errRuntimeEgressPolicyUnsupported) {
+			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, errRuntimeEgressPolicyUnsupported.Error(), map[string]interface{}{
+				"network_mode": networkMode,
+			})
+			return true
+		}
 		return false
 	}
 
@@ -455,7 +516,8 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 	// Validate and resolve image
 	image, imageDigest, err := s.validateAndResolveImage(req.Image)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		var imageMissing *imageNotFoundError
+		if errors.As(err, &imageMissing) {
 			types.WriteError(w, http.StatusNotFound, types.ErrImageNotFound,
 				fmt.Sprintf("Image '%s' not found locally. Pull it first.", req.Image),
 				map[string]interface{}{"image": req.Image})
@@ -592,10 +654,19 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request, vmID str
 	}()
 
 	// Stop VM if running
-	if vm.State == types.StateRunning || vm.State == types.StatePaused {
-		if err := s.fcManager.Kill(vm); err != nil {
-			s.logger.Printf("WARN: Failed to kill VM: %v", err)
+	if (vm.State == types.StateRunning || vm.State == types.StatePaused) && vmHasRuntimeHandle(vm) {
+		if err := s.runtimeManager.Kill(vm); err != nil {
+			s.logger.Printf("ERROR: Failed to kill VM before delete: %v", err)
+			types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+				"Failed to stop VM runtime before delete", map[string]interface{}{"vm_id": vm.ID})
+			return
 		}
+	}
+	if err := s.runtimeManager.Delete(vm); err != nil {
+		s.logger.Printf("ERROR: Failed to delete VM runtime resources: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			"Failed to delete VM runtime resources", map[string]interface{}{"vm_id": vm.ID})
+		return
 	}
 
 	// Cleanup SPIRE workload entry if registered
@@ -620,18 +691,18 @@ func (s *Server) handleDeleteVM(w http.ResponseWriter, r *http.Request, vmID str
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// startFirecrackerAndSetupNetwork starts Firecracker and sets up port forwards
-func (s *Server) startFirecrackerAndSetupNetwork(vm *types.VM, image *types.Image) error {
-	// Start Firecracker
-	if err := s.fcManager.Start(vm, image); err != nil {
-		return fmt.Errorf("failed to start Firecracker: %w", err)
+// startRuntimeAndSetupNetwork starts the configured runtime and sets up Linux host port forwards when needed.
+func (s *Server) startRuntimeAndSetupNetwork(vm *types.VM, image *types.Image) error {
+	if err := s.runtimeManager.Start(vm, image); err != nil {
+		return fmt.Errorf("failed to start runtime: %w", err)
 	}
 
-	// Setup port forwards if configured
-	if len(vm.Config.Network.PortForwards) > 0 {
+	// Firecracker uses host iptables for port forwards. Runtime-managed backends
+	// translate port forwards before launch.
+	if selectedRuntimeDriver(s.config) == "firecracker" && len(vm.Config.Network.PortForwards) > 0 {
 		s.logger.Printf("INFO: Setting up %d port forward(s) for VM %s", len(vm.Config.Network.PortForwards), vm.Name)
 		if err := network.SetupPortForwards(vm.Config.Network.IPAddress, vm.Config.Network.PortForwards); err != nil {
-			_ = s.fcManager.Kill(vm) // Cleanup
+			_ = s.runtimeManager.Kill(vm) // Cleanup
 			return fmt.Errorf("failed to setup port forwards: %w", err)
 		}
 		for _, pf := range vm.Config.Network.PortForwards {
@@ -661,8 +732,8 @@ func (s *Server) performVMStart(vm *types.VM) error {
 		return fmt.Errorf("failed to get image")
 	}
 
-	// Start Firecracker and setup network
-	if err := s.startFirecrackerAndSetupNetwork(vm, image); err != nil {
+	// Start runtime and setup network
+	if err := s.startRuntimeAndSetupNetwork(vm, image); err != nil {
 		s.logger.Printf("ERROR: %v", err)
 		vm.State = types.StateFailed
 		_ = s.db.UpdateVM(vm)
@@ -681,12 +752,12 @@ func (s *Server) performVMStart(vm *types.VM) error {
 // stopVMAndCleanup stops Firecracker and cleans up port forwards
 func (s *Server) stopVMAndCleanup(vm *types.VM, timeout int) error {
 	// Stop VM
-	if err := s.fcManager.Stop(vm, timeout); err != nil {
+	if err := s.runtimeManager.Stop(vm, timeout); err != nil {
 		return fmt.Errorf("failed to stop VM: %w", err)
 	}
 
-	// Cleanup port forwards if configured
-	if len(vm.Config.Network.PortForwards) > 0 {
+	// Cleanup Linux host port forwards if configured.
+	if selectedRuntimeDriver(s.config) == "firecracker" && len(vm.Config.Network.PortForwards) > 0 {
 		s.logger.Printf("INFO: Cleaning up %d port forward(s) for VM %s", len(vm.Config.Network.PortForwards), vm.Name)
 		if err := network.CleanupPortForwards(vm.Config.Network.IPAddress, vm.Config.Network.PortForwards); err != nil {
 			s.logger.Printf("WARN: Failed to cleanup port forwards: %v", err)
@@ -901,8 +972,8 @@ func (s *Server) handleVMKillByPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Kill VM
-	if vm.Runtime != nil && vm.Runtime.PID != 0 {
-		if err := s.fcManager.Kill(vm); err != nil {
+	if vmHasRuntimeHandle(vm) {
+		if err := s.runtimeManager.Kill(vm); err != nil {
 			s.logger.Printf("WARN: Failed to kill VM: %v", err)
 		}
 	}
@@ -916,6 +987,17 @@ func (s *Server) handleVMKillByPath(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Printf("INFO: Killed VM: %s (%s)", vm.Name, vm.ID)
 	writeJSON(w, http.StatusOK, vm)
+}
+
+func vmHasRuntimeHandle(vm *types.VM) bool {
+	return vm != nil && vm.Runtime != nil && (vm.Runtime.PID != 0 || vm.Runtime.ExternalID != "")
+}
+
+func normalizeExecCommand(command []string) []string {
+	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
+		return nil
+	}
+	return append([]string(nil), command...)
 }
 
 // handleVMPauseByPath handles POST /vms/{id}/pause using path parameters
@@ -966,10 +1048,13 @@ func (s *Server) handleVMPauseByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.fcManager.Pause(vm); err != nil {
-		s.logger.Printf("ERROR: Failed to pause VM: %v", err)
+	if err := s.runtimeManager.Pause(vm); err != nil {
 		vm.State = types.StateRunning
 		_ = s.db.UpdateVM(vm)
+		if writeRuntimeUnsupportedError(w, "VM pause", err, map[string]interface{}{"vm_id": vm.ID}) {
+			return
+		}
+		s.logger.Printf("ERROR: Failed to pause VM: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
 			fmt.Sprintf("Failed to pause VM: %v", err), nil)
 		return
@@ -1034,10 +1119,13 @@ func (s *Server) handleVMResumeByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.fcManager.Resume(vm); err != nil {
-		s.logger.Printf("ERROR: Failed to resume VM: %v", err)
+	if err := s.runtimeManager.Resume(vm); err != nil {
 		vm.State = types.StatePaused
 		_ = s.db.UpdateVM(vm)
+		if writeRuntimeUnsupportedError(w, "VM resume", err, map[string]interface{}{"vm_id": vm.ID}) {
+			return
+		}
+		s.logger.Printf("ERROR: Failed to resume VM: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
 			fmt.Sprintf("Failed to resume VM: %v", err), nil)
 		return
@@ -1095,7 +1183,7 @@ func (s *Server) handleVMLogsByPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get console logs
-	logs, err := s.fcManager.GetConsoleLogs(vm, tailLines)
+	logs, err := s.runtimeManager.GetConsoleLogs(vm, tailLines)
 	if err != nil {
 		s.logger.Printf("ERROR: Failed to get console logs: %v", err)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to get console logs", nil)
@@ -1111,6 +1199,89 @@ func (s *Server) handleVMLogsByPath(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write(logs); err != nil { //nolint:gosec // text/plain + nosniff prevents content sniffing
 		s.logger.Printf("WARN: Failed to write logs response: %v", err)
 	}
+}
+
+// handleVMExecByPath handles POST /vms/{id}/exec using path parameters.
+func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
+	vmID := r.PathValue("id")
+	if vmID == "" {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest, "VM ID is required", nil)
+		return
+	}
+
+	var req types.VMExecRequest
+	if err := readJSON(r, &req); err != nil {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest, "Invalid request body", nil)
+		return
+	}
+
+	command := normalizeExecCommand(req.Command)
+	if len(command) == 0 {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest, "command is required", nil)
+		return
+	}
+
+	timeoutSeconds := defaultExecTimeoutSeconds
+	if req.TimeoutSeconds != nil {
+		timeoutSeconds = *req.TimeoutSeconds
+	}
+	if timeoutSeconds <= 0 || timeoutSeconds > maxExecTimeoutSeconds {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+			fmt.Sprintf("timeout_seconds must be between 1 and %d", maxExecTimeoutSeconds), nil)
+		return
+	}
+
+	vm, err := s.db.GetVM(vmID)
+	if err != nil {
+		s.logger.Printf("ERROR: Failed to get VM: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to get VM", nil)
+		return
+	}
+	if vm == nil {
+		types.WriteError(w, http.StatusNotFound, types.ErrVMNotFound,
+			fmt.Sprintf("Virtual machine with ID '%s' does not exist", vmID),
+			map[string]interface{}{"vm_id": vmID})
+		return
+	}
+	if vm.State != types.StateRunning {
+		types.WriteError(w, http.StatusConflict, types.ErrInvalidStateTransition,
+			fmt.Sprintf("Cannot exec in VM in state '%s'", vm.State),
+			map[string]interface{}{"current_state": vm.State})
+		return
+	}
+	if !vmHasRuntimeHandle(vm) {
+		types.WriteError(w, http.StatusConflict, types.ErrInvalidStateTransition,
+			"Cannot exec because VM runtime handle is unavailable", map[string]interface{}{"vm_id": vm.ID})
+		return
+	}
+
+	execer, ok := s.runtimeManager.(vmm.CommandExecutor)
+	if !ok {
+		types.WriteError(w, http.StatusNotImplemented, types.ErrUnsupportedOperation,
+			"Runtime does not support VM exec", map[string]interface{}{"vm_id": vm.ID})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+
+	result, err := execer.Exec(ctx, vm, command)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			types.WriteError(w, http.StatusGatewayTimeout, types.ErrServiceUnavailable,
+				"VM exec timed out", map[string]interface{}{"vm_id": vm.ID, "timeout_seconds": timeoutSeconds})
+			return
+		}
+		if writeRuntimeUnsupportedError(w, "VM exec", err, map[string]interface{}{"vm_id": vm.ID}) {
+			return
+		}
+		s.logger.Printf("ERROR: Failed to exec in VM: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			"Failed to exec in VM", map[string]interface{}{"vm_id": vm.ID})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // handleVMProcessExit handles VM process termination
@@ -1169,7 +1340,7 @@ func (s *Server) handleVMProcessExit(vmID string, exitCode *int, err error) {
 // cleanupVMNetwork cleans up network resources for a VM
 func (s *Server) cleanupVMNetwork(vm *types.VM) {
 	// Clean up TAP device
-	if err := s.fcManager.CleanupNetwork(vm); err != nil {
+	if err := s.runtimeManager.CleanupNetwork(vm); err != nil {
 		s.logger.Printf("WARN: Failed to cleanup network for VM %s: %v", vm.ID, err)
 	}
 

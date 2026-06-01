@@ -85,7 +85,9 @@ type DiskConfig struct {
 // VMRuntime represents VM runtime information
 type VMRuntime struct {
 	PID         int         `json:"pid"`
-	SocketPath  string      `json:"socket_path"`
+	Driver      string      `json:"driver,omitempty"`
+	ExternalID  string      `json:"external_id,omitempty"`
+	SocketPath  string      `json:"socket_path,omitempty"`
 	ConsolePath string      `json:"console_path"`
 	NetworkInfo NetworkInfo `json:"network_info,omitempty"`
 }
@@ -169,12 +171,17 @@ type HostCapabilities struct {
 
 // RuntimeCapabilities describes the microVM runtime available to nanofused.
 type RuntimeCapabilities struct {
-	NativeRuntime        bool   `json:"native_runtime"`
-	FirecrackerBinary    string `json:"firecracker_binary"`
-	FirecrackerAvailable bool   `json:"firecracker_available"`
-	RootRequired         bool   `json:"root_required"`
-	NetworkSetupRequired bool   `json:"network_setup_required"`
-	Message              string `json:"message"`
+	NativeRuntime                    bool   `json:"native_runtime"`
+	Driver                           string `json:"driver"`
+	FirecrackerBinary                string `json:"firecracker_binary"`
+	FirecrackerAvailable             bool   `json:"firecracker_available"`
+	AppleContainerBinary             string `json:"apple_container_binary,omitempty"`
+	AppleContainerAvailable          bool   `json:"apple_container_available"`
+	AppleContainerRunning            bool   `json:"apple_container_running"`
+	VirtualizationFrameworkSupported bool   `json:"virtualization_framework_supported"`
+	RootRequired                     bool   `json:"root_required"`
+	NetworkSetupRequired             bool   `json:"network_setup_required"`
+	Message                          string `json:"message"`
 }
 
 // APITransportCapabilities describes how clients can reach the daemon.
@@ -215,6 +222,21 @@ type ResumeRequest struct {
 // StopRequest represents VM stop request
 type StopRequest struct {
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+}
+
+// VMExecRequest represents a command execution request for a running VM.
+type VMExecRequest struct {
+	Command        []string `json:"command"`
+	TimeoutSeconds *int     `json:"timeout_seconds,omitempty"`
+}
+
+// VMExecResult represents the result of executing a command in a VM.
+type VMExecResult struct {
+	Command   []string `json:"command"`
+	ExitCode  int      `json:"exit_code"`
+	Stdout    string   `json:"stdout"`
+	Stderr    string   `json:"stderr"`
+	RuntimeID string   `json:"runtime_id,omitempty"`
 }
 
 // PullImageRequest represents image pull request

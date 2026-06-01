@@ -81,7 +81,7 @@ func (f *Formatter) PrintVMList(vms []client.VM) error {
 		})
 	}
 
-	table := newPlainTable([]string{"ID", "Name", "State", "Image", "VCPUs", "Memory", "Uptime"})
+	table := newPlainTable([]string{"ID", "Name", "State", "Image", "Ports", "CPU", "Mem", "Uptime"})
 
 	for _, vm := range vms {
 		id := vm.ID
@@ -107,6 +107,7 @@ func (f *Formatter) PrintVMList(vms []client.VM) error {
 			vm.Name,
 			state,
 			image,
+			formatPortForwards(vm.Config.Network.PortForwards),
 			fmt.Sprintf("%d", vm.Config.VCPUs),
 			memory,
 			uptime,
@@ -134,6 +135,16 @@ func (f *Formatter) PrintVM(vm *client.VM) error {
 	fmt.Printf("  vCPUs:         %d\n", vm.Config.VCPUs)
 	fmt.Printf("  Memory:        %d MB\n", vm.Config.MemoryMiB)
 	fmt.Printf("  Network:       %s\n", vm.Config.Network.Mode)
+	if len(vm.Config.Network.PortForwards) > 0 {
+		fmt.Println("  Port Forwards:")
+		for _, pf := range vm.Config.Network.PortForwards {
+			protocol := pf.Protocol
+			if protocol == "" {
+				protocol = "tcp"
+			}
+			fmt.Printf("    127.0.0.1:%d -> vm:%d/%s\n", pf.HostPort, pf.VMPort, protocol)
+		}
+	}
 	if vm.Config.KernelArgs != "" {
 		fmt.Printf("  Kernel Args:   %s\n", vm.Config.KernelArgs)
 	}
@@ -141,7 +152,15 @@ func (f *Formatter) PrintVM(vm *client.VM) error {
 	if vm.Runtime != nil {
 		fmt.Println()
 		fmt.Println("Runtime:")
-		fmt.Printf("  PID:           %d\n", vm.Runtime.PID)
+		if vm.Runtime.Driver != "" {
+			fmt.Printf("  Driver:        %s\n", vm.Runtime.Driver)
+		}
+		if vm.Runtime.ExternalID != "" {
+			fmt.Printf("  Runtime ID:    %s\n", vm.Runtime.ExternalID)
+		}
+		if vm.Runtime.PID != 0 {
+			fmt.Printf("  PID:           %d\n", vm.Runtime.PID)
+		}
 		if vm.UptimeSeconds != nil {
 			uptime := formatDuration(time.Duration(*vm.UptimeSeconds) * time.Second)
 			fmt.Printf("  Uptime:        %s\n", uptime)
@@ -162,6 +181,22 @@ func (f *Formatter) PrintVM(vm *client.VM) error {
 	fmt.Printf("  Last Updated:  %s\n", formatTime(vm.UpdatedAt))
 
 	return nil
+}
+
+func formatPortForwards(portForwards []client.PortForward) string {
+	if len(portForwards) == 0 {
+		return "-"
+	}
+
+	parts := make([]string, 0, len(portForwards))
+	for _, pf := range portForwards {
+		protocol := pf.Protocol
+		if protocol == "" {
+			protocol = "tcp"
+		}
+		parts = append(parts, fmt.Sprintf("127.0.0.1:%d->%d/%s", pf.HostPort, pf.VMPort, protocol))
+	}
+	return strings.Join(parts, ",")
 }
 
 // PrintImageList prints image list

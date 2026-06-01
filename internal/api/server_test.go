@@ -1,9 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"runtime"
 	"testing"
 	"time"
@@ -110,6 +114,213 @@ func TestCapabilitiesEndpoint(t *testing.T) {
 	if response.Runtime.FirecrackerBinary != "/usr/local/bin/firecracker" {
 		t.Errorf("Expected firecracker path from config, got %q", response.Runtime.FirecrackerBinary)
 	}
+}
+
+func TestCapabilitiesEndpointIncludesRuntimeContractFieldsWithoutConfig(t *testing.T) {
+	server := &Server{
+		startTime: time.Now(),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/capabilities", nil)
+	w := httptest.NewRecorder()
+
+	server.handleCapabilities(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	runtimePayload, ok := response["runtime"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("runtime payload missing or wrong type: %#v", response["runtime"])
+	}
+	if got := runtimePayload["driver"]; got != selectedRuntimeDriver(nil) {
+		t.Fatalf("runtime.driver = %#v, want %q", got, selectedRuntimeDriver(nil))
+	}
+	for _, key := range []string{
+		"apple_container_available",
+		"apple_container_running",
+		"virtualization_framework_supported",
+	} {
+		if _, ok := runtimePayload[key]; !ok {
+			t.Fatalf("runtime.%s omitted from capabilities response", key)
+		}
+		if _, ok := runtimePayload[key].(bool); !ok {
+			t.Fatalf("runtime.%s = %#v, want bool", key, runtimePayload[key])
+		}
+	}
+}
+
+func TestAppleContainerNativeReadyRequiresRunningOrAutoStart(t *testing.T) {
+	tests := []struct {
+		name      string
+		goos      string
+		available bool
+		vfSupport bool
+		running   bool
+		autoStart bool
+		want      bool
+	}{
+		{
+			name:      "running service is ready",
+			goos:      "darwin",
+			available: true,
+			vfSupport: true,
+			running:   true,
+			autoStart: false,
+			want:      true,
+		},
+		{
+			name:      "auto start can become ready",
+			goos:      "darwin",
+			available: true,
+			vfSupport: true,
+			running:   false,
+			autoStart: true,
+			want:      true,
+		},
+		{
+			name:      "unsupported virtualization framework is not ready",
+			goos:      "darwin",
+			available: true,
+			vfSupport: false,
+			running:   true,
+			autoStart: true,
+			want:      false,
+		},
+		{
+			name:      "stopped service without auto start is not ready",
+			goos:      "darwin",
+			available: true,
+			vfSupport: true,
+			running:   false,
+			autoStart: false,
+			want:      false,
+		},
+		{
+			name:      "missing CLI is not ready",
+			goos:      "darwin",
+			available: false,
+			vfSupport: true,
+			running:   true,
+			autoStart: true,
+			want:      false,
+		},
+		{
+			name:      "linux does not use apple container readiness",
+			goos:      "linux",
+			available: true,
+			vfSupport: true,
+			running:   true,
+			autoStart: true,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := appleContainerNativeReady(tt.goos, tt.available, tt.vfSupport, tt.running, tt.autoStart)
+			if got != tt.want {
+				t.Fatalf("appleContainerNativeReady() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAppleVirtualizationFrameworkSupportedProbesHypervisorSupport(t *testing.T) {
+	oldCommand := appleVirtualizationSupportCommand
+	t.Cleanup(func() {
+		appleVirtualizationSupportCommand = oldCommand
+	})
+
+	t.Setenv("NANOFUSE_TEST_APPLE_VIRTUALIZATION_SUPPORT", "1")
+	called := false
+	appleVirtualizationSupportCommand = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+		called = true
+		if name != "sysctl" {
+			t.Fatalf("command name = %q, want sysctl", name)
+		}
+		if len(arg) != 2 || arg[0] != "-n" || arg[1] != "kern.hv_support" {
+			t.Fatalf("command args = %#v, want -n kern.hv_support", arg)
+		}
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("expected virtualization support command to receive a deadline")
+		}
+		testBinary, err := os.Executable()
+		if err != nil {
+			t.Fatalf("os.Executable: %v", err)
+		}
+		return exec.CommandContext(ctx, testBinary, "-test.run=TestAppleVirtualizationSupportHelper", "--")
+	}
+
+	if !appleVirtualizationFrameworkSupported("darwin") {
+		t.Fatal("expected darwin host with kern.hv_support=1 to support virtualization framework")
+	}
+	if !called {
+		t.Fatal("expected virtualization support command to be called")
+	}
+
+	called = false
+	if appleVirtualizationFrameworkSupported("linux") {
+		t.Fatal("expected non-darwin host to report virtualization framework unsupported")
+	}
+	if called {
+		t.Fatal("expected non-darwin host to skip virtualization support command")
+	}
+}
+
+func TestAppleVirtualizationSupportHelper(t *testing.T) {
+	if value := os.Getenv("NANOFUSE_TEST_APPLE_VIRTUALIZATION_SUPPORT"); value != "" {
+		fmt.Println(value)
+		os.Exit(0)
+	}
+}
+
+func TestAppleContainerSystemRunningUsesTimeout(t *testing.T) {
+	oldCommand := appleContainerSystemStatusCommand
+	t.Cleanup(func() {
+		appleContainerSystemStatusCommand = oldCommand
+	})
+
+	t.Setenv("NANOFUSE_TEST_APPLE_CONTAINER_STATUS", "running")
+	called := false
+	appleContainerSystemStatusCommand = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+		called = true
+		if name != "/fake/container" {
+			t.Fatalf("command name = %q, want fake container path", name)
+		}
+		if len(arg) != 2 || arg[0] != "system" || arg[1] != "status" {
+			t.Fatalf("command args = %#v, want system status", arg)
+		}
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("expected apple container status command to receive a deadline")
+		}
+		testBinary, err := os.Executable()
+		if err != nil {
+			t.Fatalf("os.Executable: %v", err)
+		}
+		return exec.CommandContext(ctx, testBinary, "-test.run=TestAppleContainerSystemStatusHelper", "--")
+	}
+
+	if !appleContainerSystemRunning("/fake/container") {
+		t.Fatal("expected appleContainerSystemRunning to parse running helper output")
+	}
+	if !called {
+		t.Fatal("expected status command to be called")
+	}
+}
+
+func TestAppleContainerSystemStatusHelper(t *testing.T) {
+	if os.Getenv("NANOFUSE_TEST_APPLE_CONTAINER_STATUS") == "" {
+		return
+	}
+	fmt.Println("apiserver is running")
+	os.Exit(0)
 }
 
 func TestCapabilitiesEndpointMethodNotAllowed(t *testing.T) {

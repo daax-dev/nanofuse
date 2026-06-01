@@ -6,9 +6,9 @@ Only document what is confirmed and deployable today.
 ---
 
 ## Runtime
-- Go 1.24 (CI env `GO_VERSION: '1.24'`; `go.mod` declares `go 1.24.3`).
+- Go 1.25 (CI env `GO_VERSION: '1.25'`; `go.mod` declares `go 1.25.0`).
 - Module path: `github.com/daax-dev/nanofuse`, aligned with the git remote and `README.md` badges/install URLs. Canonical org is `daax-dev` — see sourcecontrol.md.
-- Target platform: Linux host with KVM (`/dev/kvm`), x86_64. Workloads run as Firecracker microVMs.
+- Target platform: Linux host with KVM (`/dev/kvm`) for Firecracker microVMs, plus macOS Apple silicon through Apple `container` and Virtualization.framework.
 
 ## Frameworks
 - Backend: Go stdlib `net/http` (REST API in `internal/api`; contract in `api/openapi.yaml`).

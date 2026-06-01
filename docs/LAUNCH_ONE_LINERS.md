@@ -1,28 +1,98 @@
 # Nanofuse Launch One-Liners
 
-Nanofuse VM execution runs on a Linux/KVM host. macOS and Windows are API clients only; they do not run Firecracker locally.
+Nanofuse now has two local runtime paths:
 
-There is no tray/menu application in this repo yet. The tray app is a planned API client, not a shipped binary.
+- Linux: `nanofused` runs Firecracker on Linux/KVM.
+- macOS: `nanofused` can run OCI images through Apple's `container` CLI, which uses Virtualization.framework on Apple silicon.
 
-Primary runtime requirement: Firecracker requires Linux KVM and read/write access to `/dev/kvm`. Apple documents nested virtualization support as available on Macs with M3 chips and later. Parallels documents nested virtualization as not supported on Mac computers with Apple silicon for its current nested Hyper-V path, and the local Parallels VM on this Apple M2 Max does not expose `/dev/kvm`.
+Windows is currently a client/tray host. It manages a reachable `nanofused` API; it is not a local runtime host in this repo.
+
+`nanofuse-tray` is a macOS menu bar and Windows tray API client. On macOS, `scripts/run-tray-macos.sh --start-api` starts a local Apple-container-backed daemon through launchd, then starts the menu bar app.
 
 ## Tested Status
 
 | Path | Status |
 |------|--------|
-| macOS CLI binary starts | Tested on macOS arm64 |
-| macOS CLI reaches remote Linux/KVM API through SSH tunnel | Tested from this Mac to `dublin-wg` on local port `18082` |
-| macOS CLI creates and starts a Firecracker VM through the API | Tested: VM `mac-api-smoke` reached `running` and console logs showed Ubuntu boot |
-| Linux/KVM direct Firecracker boot | Tested on `dublin-wg` with `/dev/kvm`, Firecracker `1.7.0`, kernel `6.1.77`, and Ubuntu rootfs |
-| Linux/KVM rootless API daemon with no VM networking | Tested with `network.setup=false` and VM `network=none` |
-| Windows one-liner | Syntax only; not tested in this workspace |
-| Local macOS Parallels Vagrant as Firecracker host | Tested and failed on this Apple M2 Max with Parallels 26.1.1: guest has no `/dev/kvm`; `--nested-virt on` makes the VM fail to start; `--hypervisor-type parallels` is rejected |
+| macOS local Apple-container daemon | Tested on this Mac with `runtime.driver=apple_container`; `/capabilities` reports `native_runtime=true`. |
+| macOS API-created VM from OCI image | Tested with `alpine:3.20`; `container exec` inside the API-created VM returned Linux `6.12.28` on `aarch64`. |
+| macOS tray app against local daemon | Tested with `./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s`. |
+| Linux/KVM direct Firecracker boot | Previously tested on a Linux/KVM host with Firecracker `1.7.0`, kernel `6.1.77`, and Ubuntu rootfs. |
+| Linux/KVM rootless API daemon with no VM networking | Tested with `network.setup=false` and VM `network=none`. |
+| Vagrant Linux validation | `daax-dev/vagrant-skill` `mage ci` passes in the local Parallels Ubuntu guest; that guest does not expose `/dev/kvm`, so it is not claimed as a Firecracker boot host. |
+| Windows tray executable build | Cross-built from this Mac with `GOOS=windows GOARCH=amd64` and `-H=windowsgui`; runtime click testing still requires a Windows desktop session. |
+| Windows one-liner | Syntax only in this workspace. |
 
-If the TCP API is down, confirm reachability with `curl http://127.0.0.1:18080/health` or `curl http://linux-kvm-host:8080/health`.
+## macOS Local Runtime and Tray
 
-## Linux/KVM Host
+One-line local startup from the repo root:
 
-Run this on the machine that has Linux, `/dev/kvm`, and Firecracker for the normal privileged daemon:
+```bash
+./scripts/run-tray-macos.sh --start-api --restart
+```
+
+That command builds `bin/nanofused` and `bin/nanofuse-tray`, writes a macOS daemon config under `${NANOFUSE_DATA_DIR:-/tmp/nanofuse-macos}`, starts `nanofused` through launchd with `runtime.driver=apple_container`, then starts the menu bar app through launchd label `com.daax.nanofuse.tray`. Daemon logs go to `${NANOFUSE_API_LOG:-/tmp/nanofused-macos.log}`. Tray logs go to `${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}`. Stop the tray with `launchctl bootout gui/$(id -u)/com.daax.nanofuse.tray`.
+
+Smoke test without opening the menu bar UI:
+
+```bash
+./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s
+```
+
+Confirm API readiness:
+
+```bash
+curl http://127.0.0.1:18080/health
+curl http://127.0.0.1:18080/capabilities
+```
+
+Create, start, inspect, stop, and delete a local macOS-backed Linux VM:
+
+```bash
+API=http://127.0.0.1:18080
+VM_NAME="mac-api-alpine-$(date +%s)"
+VM_ID="$(curl -fsS -X POST "$API/vms" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"${VM_NAME}\",\"image\":\"alpine:3.20\",\"config\":{\"vcpus\":1,\"memory_mib\":256}}" \
+  | jq -r '.id')"
+curl -fsS -X POST "$API/vms/$VM_ID/start" | jq '.runtime'
+CONTAINER_ID="$(curl -fsS "$API/vms/$VM_ID" | jq -r '.runtime.external_id')"
+container exec "$CONTAINER_ID" uname -a
+curl -fsS -X POST "$API/vms/$VM_ID/stop" -H "Content-Type: application/json" -d '{"timeout_seconds":10}' | jq '.state'
+curl -fsS -X DELETE "$API/vms/$VM_ID" -o /dev/null -w "%{http_code}\n"
+```
+
+Expected runtime fields include:
+
+```json
+{
+  "driver": "apple_container",
+  "external_id": "nf-..."
+}
+```
+
+Expected `uname -a` result on the validated host:
+
+```text
+Linux nf-... 6.12.28 #1 SMP Tue May 20 15:19:05 UTC 2025 aarch64 Linux
+```
+
+Useful macOS launcher variants:
+
+```bash
+./scripts/run-tray-macos.sh --start-api --restart --foreground
+./scripts/run-tray-macos.sh --start-api --restart --api-url http://127.0.0.1:18080
+NANOFUSE_DATA_DIR=/tmp/nanofuse-macos-dev ./scripts/run-tray-macos.sh --start-api --restart
+```
+
+Stop launchd-managed local daemon:
+
+```bash
+launchctl bootout "gui/$(id -u)/com.daax.nanofuse.macos-api" 2>/dev/null || true
+```
+
+## Linux/KVM Firecracker Host
+
+Run this on a machine that has Linux, `/dev/kvm`, and Firecracker for the normal daemon:
 
 ```bash
 cd /path/to/nanofuse && ./scripts/ensure-mage.sh && mage build && sudo ./bin/nanofused -config config.dev.yaml -tcp 127.0.0.1:8080
@@ -39,9 +109,53 @@ network:
 
 Then create VMs with `--network none`.
 
-## Local Parallels Result
+## Windows PowerShell Client
 
-This was tested locally on this Mac:
+Run this from Windows PowerShell after replacing `user@linux-kvm-host` or pointing at a reachable macOS/Linux daemon:
+
+```powershell
+Start-Process ssh -ArgumentList '-N','-L','18080:127.0.0.1:8080','user@linux-kvm-host' -WindowStyle Hidden; $env:NANOFUSE_API_URL='http://127.0.0.1:18080'; .\nanofuse.exe health
+```
+
+This assumes `ssh.exe` is installed and the Windows `nanofuse.exe` binary is in the current directory. If the daemon is directly reachable on a trusted management network, set `NANOFUSE_API_URL` directly instead of using SSH.
+
+## Windows Tray App
+
+One-line build and launch from PowerShell in the repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-tray-windows.ps1 -ApiUrl "$env:NANOFUSE_API_URL"
+```
+
+Explicit one-liner:
+
+```powershell
+if (-not $env:NANOFUSE_API_URL) { $env:NANOFUSE_API_URL = "http://127.0.0.1:18080" }; go build -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray; Start-Process .\bin\nanofuse-tray.exe -ArgumentList @("--api-url", $env:NANOFUSE_API_URL)
+```
+
+Smoke test:
+
+```powershell
+.\bin\nanofuse-tray.exe --smoke --api-url $env:NANOFUSE_API_URL
+```
+
+## Remote TCP Client
+
+Use this only on a trusted management network or behind another authenticated transport:
+
+```bash
+NANOFUSE_API_URL=http://linux-or-mac-runtime-host:8080 ./bin/nanofuse health
+```
+
+```powershell
+$env:NANOFUSE_API_URL='http://linux-or-mac-runtime-host:8080'; .\nanofuse.exe health
+```
+
+## Local Parallels/KVM Result
+
+The local Parallels Ubuntu guest remains useful for Linux build/test validation. It is not a local Firecracker runtime host on this Apple Silicon Mac because `/dev/kvm` is not exposed inside the guest.
+
+Host nested virtualization check:
 
 ```bash
 swift -e 'import Virtualization; print(VZGenericPlatformConfiguration.isNestedVirtualizationSupported)'
@@ -65,96 +179,12 @@ Result:
 /dev/kvm-missing
 ```
 
-Trying to enable nested virtualization in the Parallels VM config succeeds, but the VM does not start:
-
-```bash
-prlctl set 8eda22c1-1ee1-4069-94f9-5b5befdb2be8 --nested-virt on
-prlctl start 8eda22c1-1ee1-4069-94f9-5b5befdb2be8
-```
-
-Result:
-
-```text
-Failed to start the VM: Unable to start the virtual machine. The virtual machine cannot be started.
-```
-
-Trying to switch the same Apple Silicon VM to the Parallels hypervisor is rejected:
-
-```bash
-prlctl set 8eda22c1-1ee1-4069-94f9-5b5befdb2be8 --hypervisor-type parallels
-```
-
-Result:
-
-```text
-Unable to commit VM configuration: Unable to start the virtual machine.The virtual machine configuration is invalid.
-```
-
-The current local Parallels VM cannot be the Firecracker runtime host on this Mac. It can still be used for API/client tests that do not boot Firecracker.
+This result does not block macOS local VM execution because the macOS runtime uses Apple `container` plus Virtualization.framework instead of Firecracker/KVM.
 
 Sources:
 
+- Apple `container`: https://github.com/apple/container
+- Apple container documentation: https://apple.github.io/container/documentation/
+- Slicer Mac overview: https://docs.slicervm.com/mac/overview/
 - Firecracker Getting Started: https://github.com/firecracker-microvm/firecracker/blob/main/docs/getting-started.md
-- Apple `isNestedVirtualizationSupported`: https://developer.apple.com/documentation/virtualization/vzgenericplatformconfiguration/isnestedvirtualizationsupported
-- Parallels nested virtualization KB: https://kb.parallels.com/en/116239
-
-## macOS Client
-
-Run this from the Mac after replacing `user@linux-kvm-host`:
-
-```bash
-ssh -fN -L 18080:127.0.0.1:8080 user@linux-kvm-host && NANOFUSE_API_URL=http://127.0.0.1:18080 ./bin/nanofuse health
-```
-
-This one-liner requires SSH key authentication or another non-interactive SSH setup. If SSH prompts for a password or host-key approval, run the tunnel in one terminal instead:
-
-```bash
-ssh -L 18080:127.0.0.1:8080 user@linux-kvm-host
-```
-
-Then run the health check in another terminal:
-
-```bash
-NANOFUSE_API_URL=http://127.0.0.1:18080 ./bin/nanofuse health
-```
-
-Verified working from this Mac to `dublin-wg`:
-
-```bash
-ssh -fN -L 18082:127.0.0.1:18080 dublin-wg && ./bin/nanofuse --api-url http://127.0.0.1:18082 health
-```
-
-Verified VM launch through that API:
-
-```bash
-./bin/nanofuse --api-url http://127.0.0.1:18082 vm run nanofuse-ci:latest mac-api-smoke --network none --vcpus 1 --memory 256 --kernel-args 'console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda rw'
-```
-
-Verified status and logs:
-
-```bash
-./bin/nanofuse --api-url http://127.0.0.1:18082 vm status 04b5c05f-4a45-4a96-a2a6-37cbadb51e58
-./bin/nanofuse --api-url http://127.0.0.1:18082 vm logs 04b5c05f-4a45-4a96-a2a6-37cbadb51e58 --tail 80
-```
-
-## Windows PowerShell Client
-
-Run this from Windows PowerShell after replacing `user@linux-kvm-host`:
-
-```powershell
-Start-Process ssh -ArgumentList '-N','-L','18080:127.0.0.1:8080','user@linux-kvm-host' -WindowStyle Hidden; $env:NANOFUSE_API_URL='http://127.0.0.1:18080'; .\nanofuse.exe health
-```
-
-This assumes `ssh.exe` is installed and the Windows `nanofuse.exe` binary is in the current directory.
-
-## Direct TCP Client
-
-Use this only on a trusted management network or behind another authenticated transport:
-
-```bash
-NANOFUSE_API_URL=http://linux-kvm-host:8080 ./bin/nanofuse health
-```
-
-```powershell
-$env:NANOFUSE_API_URL='http://linux-kvm-host:8080'; .\nanofuse.exe health
-```
+- Apple nested virtualization support API: https://developer.apple.com/documentation/virtualization/vzgenericplatformconfiguration/isnestedvirtualizationsupported

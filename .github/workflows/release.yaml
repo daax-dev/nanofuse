@@ -7,7 +7,7 @@ on:
       # Note: image-v* tags are handled by ci.yaml
 
 env:
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.25'
 
 jobs:
   create-release:
@@ -118,7 +118,7 @@ jobs:
           sudo mage install
           ```
 
-          Requires: Go 1.24+, mage build tool
+          Requires: Go 1.25+, mage build tool
           </details>
 
           ---

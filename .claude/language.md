@@ -15,7 +15,7 @@ For each active language, this file records:
 ## Active Languages
 
 ### Go (primary)
-- Version: 1.24 — CI pins `GO_VERSION: '1.24'` (`.github/workflows/ci.yaml`); `go.mod` declares `go 1.24.3`. Module path `github.com/daax-dev/nanofuse`.
+- Version: 1.25 — CI pins `GO_VERSION: '1.25'` (`.github/workflows/ci.yaml`); `go.mod` declares `go 1.25.0`. Module path `github.com/daax-dev/nanofuse`.
 - Package manager: Go modules (`go.mod` / `go.sum`), `modules-download-mode: readonly`. No vendoring. `go.sum` is committed; Dependabot manages bumps.
 - Formatter: gofmt via `go fmt ./...` (run by `mage lint`). No hand-formatting.
 - Linter: golangci-lint, config `.golangci.yml` — enables `bodyclose`, `gocyclo` (min-complexity 20), `gosec` (G104 excluded), `misspell`, `prealloc`, `revive` (exported-symbol-doc rule disabled). `revive` skipped under `cmd/`; `errcheck`/`gosec` skipped in `_test.go`. Excludes `third_party`, `builtin`, `examples`. Plus `go vet ./...`.

@@ -178,6 +178,15 @@ func (c *Client) GetVMLogs(ctx context.Context, id string, tail int) (string, er
 	return string(body), nil
 }
 
+// ExecVM executes a command in a running VM when the runtime supports it.
+func (c *Client) ExecVM(ctx context.Context, id string, req *VMExecRequest) (*VMExecResult, error) {
+	var result VMExecResult
+	if err := c.post(ctx, "/vms/"+id+"/exec", req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // CreateSnapshot creates a VM snapshot
 func (c *Client) CreateSnapshot(ctx context.Context, vmID string, req *CreateSnapshotRequest) (*Snapshot, error) {
 	var snapshot Snapshot

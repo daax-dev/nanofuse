@@ -643,7 +643,7 @@ const windowId = await desktop.getWindow("chromium")
 ### Prerequisites
 
 - GCP account (primary), AWS (in progress)
-- Go 1.24.7+
+- Go 1.25+
 - Linux host with KVM support
 - Docker
 - Terraform

@@ -8,11 +8,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/daax-dev/nanofuse/internal/config"
+	"github.com/daax-dev/nanofuse/internal/storage"
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
@@ -64,6 +67,99 @@ func TestHealthEndpointMethodNotAllowed(t *testing.T) {
 	// Go 1.22+ ServeMux returns 405 Method Not Allowed for mismatched methods
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("Expected status 405, got %d", w.Code)
+	}
+}
+
+func TestRootEndpointReturnsStatusPage(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("db.Close() error = %v", err)
+		}
+	})
+
+	now := time.Now()
+	if err := db.UpsertImage(&types.Image{
+		Digest:       "sha256:image-root",
+		Tags:         []string{"docker.io/library/alpine:3.20"},
+		Architecture: "arm64",
+		PulledAt:     now,
+	}); err != nil {
+		t.Fatalf("UpsertImage() error = %v", err)
+	}
+	if err := db.CreateVM(&types.VM{
+		ID:           "vm-root",
+		Name:         "root-page",
+		State:        types.StateRunning,
+		Image:        "docker.io/library/alpine:3.20",
+		ImageDigest:  "sha256:image-root",
+		Architecture: "arm64",
+		Config: types.VMConfig{
+			VCPUs:     2,
+			MemoryMiB: 512,
+			Network: types.NetworkConfig{
+				Mode: "nat",
+				PortForwards: []types.PortForward{
+					{HostPort: 19080, VMPort: 8080, Protocol: "tcp"},
+				},
+			},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("CreateVM() error = %v", err)
+	}
+
+	server := &Server{
+		db:        db,
+		config:    &config.Config{Runtime: config.RuntimeConfig{Driver: "apple_container"}},
+		startTime: now,
+	}
+	mux := setupHTTPRouter(server)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if contentType := w.Header().Get("Content-Type"); !strings.Contains(contentType, "text/html") {
+		t.Fatalf("Content-Type = %q, want text/html", contentType)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"Nanofuse",
+		"/health",
+		"/capabilities",
+		"/vms",
+		"root-page",
+		"vm-root",
+		"127.0.0.1:19080 -&gt; vm:8080/tcp",
+		"docker.io/library/alpine:3.20",
+		"bin/nanofuse vm ports",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("root body missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestRootEndpointDoesNotMaskUnknownPath(t *testing.T) {
+	server := &Server{startTime: time.Now()}
+	mux := setupHTTPRouter(server)
+
+	req := httptest.NewRequest(http.MethodGet, "/missing-route", nil)
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
 

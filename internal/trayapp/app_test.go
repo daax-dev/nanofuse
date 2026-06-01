@@ -187,6 +187,19 @@ func TestLaunchVMFromImageCreatesAndStartsVM(t *testing.T) {
 	if api.createReq.Config.Network.Mode != DefaultNetworkMode {
 		t.Fatalf("network mode = %q, want %q", api.createReq.Config.Network.Mode, DefaultNetworkMode)
 	}
+	portForwards := api.createReq.Config.Network.PortForwards
+	if len(portForwards) != 1 {
+		t.Fatalf("port forwards = %#v, want one default forward", portForwards)
+	}
+	if portForwards[0].HostPort <= 0 || portForwards[0].HostPort > 65535 {
+		t.Fatalf("host port = %d, want valid TCP port", portForwards[0].HostPort)
+	}
+	if portForwards[0].VMPort != DefaultPublishedVMPort {
+		t.Fatalf("VM port = %d, want %d", portForwards[0].VMPort, DefaultPublishedVMPort)
+	}
+	if portForwards[0].Protocol != "tcp" {
+		t.Fatalf("protocol = %q, want tcp", portForwards[0].Protocol)
+	}
 }
 
 func TestLaunchVMFromImageRejectsMissingImage(t *testing.T) {
@@ -219,6 +232,38 @@ func TestVMActionReady(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := VMActionReady(tt.status); got != tt.want {
 				t.Fatalf("VMActionReady() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVMActionAllowedUsesVMState(t *testing.T) {
+	activeRuntime := &client.VMRuntime{ExternalID: "nf-test"}
+	tests := []struct {
+		name   string
+		vm     *client.VM
+		action VMAction
+		want   bool
+	}{
+		{name: "missing vm", vm: nil, action: VMActionStart, want: false},
+		{name: "missing id", vm: &client.VM{State: "stopped"}, action: VMActionStart, want: false},
+		{name: "start created", vm: &client.VM{ID: "vm", State: "created"}, action: VMActionStart, want: true},
+		{name: "start stopped", vm: &client.VM{ID: "vm", State: "stopped"}, action: VMActionStart, want: true},
+		{name: "start running disabled", vm: &client.VM{ID: "vm", State: "running", Runtime: activeRuntime}, action: VMActionStart, want: false},
+		{name: "stop running", vm: &client.VM{ID: "vm", State: "running", Runtime: activeRuntime}, action: VMActionStop, want: true},
+		{name: "stop paused", vm: &client.VM{ID: "vm", State: "paused", Runtime: activeRuntime}, action: VMActionStop, want: true},
+		{name: "stop stopped disabled", vm: &client.VM{ID: "vm", State: "stopped"}, action: VMActionStop, want: false},
+		{name: "kill running with runtime", vm: &client.VM{ID: "vm", State: "running", Runtime: activeRuntime}, action: VMActionKill, want: true},
+		{name: "kill running without runtime disabled", vm: &client.VM{ID: "vm", State: "running"}, action: VMActionKill, want: false},
+		{name: "kill stopped disabled", vm: &client.VM{ID: "vm", State: "stopped", Runtime: activeRuntime}, action: VMActionKill, want: false},
+		{name: "delete created", vm: &client.VM{ID: "vm", State: "created"}, action: VMActionDelete, want: true},
+		{name: "delete running", vm: &client.VM{ID: "vm", State: "running", Runtime: activeRuntime}, action: VMActionDelete, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := VMActionAllowed(tt.vm, tt.action); got != tt.want {
+				t.Fatalf("VMActionAllowed() = %v, want %v", got, tt.want)
 			}
 		})
 	}

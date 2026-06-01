@@ -38,12 +38,21 @@ Smoke test without opening the menu bar UI:
 ./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s
 ```
 
+Launch one VM through the same tray create/start path without opening the menu:
+
+```bash
+./scripts/run-tray-macos.sh --start-api --launch-image docker.io/library/alpine:3.20 --timeout 30s
+```
+
 Confirm API readiness:
 
 ```bash
+open http://127.0.0.1:18080/
 curl http://127.0.0.1:18080/health
 curl http://127.0.0.1:18080/capabilities
 ```
+
+The root URL is a browser status page. It shows runtime readiness, VMs, images, and host-to-VM port forwards.
 
 Create, start, inspect, stop, and delete a local macOS-backed Linux VM:
 
@@ -55,6 +64,7 @@ VM_ID="$(curl -fsS -X POST "$API/vms" \
   -d "{\"name\":\"${VM_NAME}\",\"image\":\"alpine:3.20\",\"config\":{\"vcpus\":1,\"memory_mib\":256}}" \
   | jq -r '.id')"
 curl -fsS -X POST "$API/vms/$VM_ID/start" | jq '.runtime'
+curl -fsS "$API/vms" | jq '.vms[] | {id,name,state,ports:.config.network.port_forwards}'
 CONTAINER_ID="$(curl -fsS "$API/vms/$VM_ID" | jq -r '.runtime.external_id')"
 container exec "$CONTAINER_ID" uname -a
 curl -fsS -X POST "$API/vms/$VM_ID/stop" -H "Content-Type: application/json" -d '{"timeout_seconds":10}' | jq '.state'

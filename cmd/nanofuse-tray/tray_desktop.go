@@ -327,6 +327,13 @@ func (ui *trayUI) runAction(action trayapp.VMAction) {
 		ui.mu.Unlock()
 		return
 	}
+	selectedVM := ui.selectedVMLocked()
+	if !trayapp.VMActionAllowed(selectedVM, action) {
+		ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s unavailable for VM state %s", action, selectedVMState(selectedVM))))
+		ui.updateActionStateLocked()
+		ui.mu.Unlock()
+		return
+	}
 	if needsConfirmation(action) {
 		pendingAt, confirmed := ui.confirmActionLocked(action)
 		if !confirmed {
@@ -418,17 +425,51 @@ func (ui *trayUI) updateActionStateLocked() {
 		ui.createItem.Enable()
 	}
 
-	if ui.selected == "" || !trayapp.VMActionReady(ui.status) {
+	selectedVM := ui.selectedVMLocked()
+	if selectedVM == nil {
+		ui.selected = ""
+		ui.selectedItem.SetTitle("Selected VM: none")
+	}
+
+	if selectedVM == nil || !trayapp.VMActionReady(ui.status) {
 		ui.startItem.Disable()
 		ui.stopItem.Disable()
 		ui.killItem.Disable()
 		ui.deleteItem.Disable()
 		return
 	}
-	ui.startItem.Enable()
-	ui.stopItem.Enable()
-	ui.killItem.Enable()
-	ui.deleteItem.Enable()
+	ui.selectedItem.SetTitle(limitTitle("Selected VM: " + displayVMRow(*selectedVM)))
+	setMenuEnabled(ui.startItem, trayapp.VMActionAllowed(selectedVM, trayapp.VMActionStart))
+	setMenuEnabled(ui.stopItem, trayapp.VMActionAllowed(selectedVM, trayapp.VMActionStop))
+	setMenuEnabled(ui.killItem, trayapp.VMActionAllowed(selectedVM, trayapp.VMActionKill))
+	setMenuEnabled(ui.deleteItem, trayapp.VMActionAllowed(selectedVM, trayapp.VMActionDelete))
+}
+
+func (ui *trayUI) selectedVMLocked() *client.VM {
+	if ui.status == nil || ui.selected == "" {
+		return nil
+	}
+	for idx := range ui.status.VMs {
+		if ui.status.VMs[idx].ID == ui.selected {
+			return &ui.status.VMs[idx]
+		}
+	}
+	return nil
+}
+
+func selectedVMState(vm *client.VM) string {
+	if vm == nil || strings.TrimSpace(vm.State) == "" {
+		return "unknown"
+	}
+	return vm.State
+}
+
+func setMenuEnabled(item *systray.MenuItem, enabled bool) {
+	if enabled {
+		item.Enable()
+		return
+	}
+	item.Disable()
 }
 
 func displayVMName(vm client.VM) string {

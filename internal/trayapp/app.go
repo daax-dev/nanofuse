@@ -3,7 +3,9 @@ package trayapp
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,9 +56,10 @@ const (
 )
 
 const (
-	DefaultVCPUs       = 2
-	DefaultMemoryMiB   = 512
-	DefaultNetworkMode = "nat"
+	DefaultVCPUs           = 2
+	DefaultMemoryMiB       = 512
+	DefaultNetworkMode     = "nat"
+	DefaultPublishedVMPort = 8080
 )
 
 func ConfigFromEnv() Config {
@@ -166,13 +169,19 @@ func LaunchVMFromImage(ctx context.Context, api API, imageRef string) (*client.V
 		return nil, fmt.Errorf("image reference is required")
 	}
 
+	portForwards, err := defaultLaunchPortForwards()
+	if err != nil {
+		return nil, fmt.Errorf("allocate host port for image %q: %w", imageRef, err)
+	}
+
 	vm, err := api.CreateVM(ctx, &client.CreateVMRequest{
 		Image: imageRef,
 		Config: client.VMConfig{
 			VCPUs:     DefaultVCPUs,
 			MemoryMiB: DefaultMemoryMiB,
 			Network: client.NetworkConfig{
-				Mode: DefaultNetworkMode,
+				Mode:         DefaultNetworkMode,
+				PortForwards: portForwards,
 			},
 		},
 	})
@@ -188,6 +197,38 @@ func LaunchVMFromImage(ctx context.Context, api API, imageRef string) (*client.V
 		return nil, fmt.Errorf("start VM %q: %w", vm.ID, err)
 	}
 	return started, nil
+}
+
+func defaultLaunchPortForwards() ([]client.PortForward, error) {
+	hostPort, err := availableLocalTCPPort()
+	if err != nil {
+		return nil, err
+	}
+	return []client.PortForward{
+		{
+			HostPort: hostPort,
+			VMPort:   DefaultPublishedVMPort,
+			Protocol: "tcp",
+		},
+	}, nil
+}
+
+func availableLocalTCPPort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+
+	_, portText, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		return 0, err
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return 0, err
+	}
+	return port, nil
 }
 
 func RuntimeSummary(status *Status) string {
@@ -214,6 +255,39 @@ func VMActionReady(status *Status) bool {
 		status.Error == "" &&
 		status.Capabilities != nil &&
 		status.Capabilities.Runtime.NativeRuntime
+}
+
+func VMActionAllowed(vm *client.VM, action VMAction) bool {
+	if vm == nil || strings.TrimSpace(vm.ID) == "" {
+		return false
+	}
+
+	state := strings.ToLower(strings.TrimSpace(vm.State))
+	switch action {
+	case VMActionStart:
+		return state == "created" || state == "stopped"
+	case VMActionStop:
+		return state == "running" || state == "paused"
+	case VMActionKill:
+		return vmHasRuntimeHandle(vm) && (state == "running" ||
+			state == "starting" ||
+			state == "stopping" ||
+			state == "pausing" ||
+			state == "paused" ||
+			state == "resuming")
+	case VMActionDelete:
+		return true
+	default:
+		return false
+	}
+}
+
+func vmHasRuntimeHandle(vm *client.VM) bool {
+	return vm != nil &&
+		vm.Runtime != nil &&
+		(vm.Runtime.PID != 0 ||
+			strings.TrimSpace(vm.Runtime.ExternalID) != "" ||
+			strings.TrimSpace(vm.Runtime.SocketPath) != "")
 }
 
 func firstNonEmpty(values ...string) string {

@@ -24,6 +24,7 @@ Useful variants:
 ```bash
 ./scripts/run-tray-macos.sh --restart
 ./scripts/run-tray-macos.sh --start-api --smoke --timeout 5s
+./scripts/run-tray-macos.sh --start-api --launch-image docker.io/library/alpine:3.20 --timeout 30s
 ./scripts/run-tray-macos.sh --foreground
 ./scripts/run-tray-macos.sh --smoke --timeout 2s
 ./scripts/run-tray-macos.sh --api-url http://127.0.0.1:18080 --restart
@@ -51,6 +52,12 @@ Smoke mode uses the same Nanofuse API client and exits without starting a deskto
 ./scripts/run-tray-macos.sh --smoke --timeout 2s --api-url "${NANOFUSE_API_URL:-http://127.0.0.1:18080}"
 ```
 
+Headless launch mode uses the same create/start helper as the menu item and exits after printing the created VM:
+
+```bash
+./scripts/run-tray-macos.sh --start-api --launch-image docker.io/library/alpine:3.20 --timeout 30s
+```
+
 Windows:
 
 ```powershell
@@ -59,7 +66,9 @@ Windows:
 
 ## Implemented Controls
 
-The current tray app shows the configured endpoint, health, runtime capability summary, up to 25 VMs, and up to 25 cached images. VM rows include state and configured port forwards. Selecting an image enables `Create and Start VM From Image`, which creates a VM from that container-derived Nanofuse image and starts it through the API. On macOS this launches the selected OCI image through Apple's container runtime as a local Linux microVM. Selecting a VM enables start, stop, kill, and delete actions through the REST API. VM actions stay disabled when the daemon is unreachable or `/capabilities` reports `native_runtime=false`. Kill and delete require a second click within 10 seconds.
+The current tray app shows the configured endpoint, health, runtime capability summary, up to 25 VMs, and up to 25 cached images. VM rows include state and configured port forwards. Selecting an image enables `Create and Start VM From Image`, which creates a VM from that container-derived Nanofuse image and starts it through the API. Tray-created VMs publish one generated localhost TCP port to guest `8080` by default, so multiple tray launches can coexist while still exposing a host-reachable service port. On macOS this launches the selected OCI image through Apple's container runtime as a local Linux microVM.
+
+Selecting a VM enables only actions valid for that VM state: start for `created` or `stopped`, stop for `running` or `paused`, kill for active runtime handles, and delete for selected VM rows. VM actions stay disabled when the daemon is unreachable or `/capabilities` reports `native_runtime=false`. Kill and delete require a second click within 10 seconds.
 
 The app uses these endpoints:
 

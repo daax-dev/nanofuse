@@ -13,10 +13,26 @@ Validate the daemon and runtime:
 
 ```bash
 nanofuse health
+open http://127.0.0.1:18080/
 curl "$NANOFUSE_API_URL/capabilities"
 ```
 
-The expected macOS runtime is `driver=apple_container` with `native_runtime=true`.
+The root URL is a browser status page with runtime state, VMs, images, and published port mappings. The expected macOS runtime is `driver=apple_container` with `native_runtime=true`.
+
+## See Running VMs
+
+Use the Nanofuse CLI as the Docker `ps` equivalent:
+
+```bash
+nanofuse vm list
+nanofuse vm status <vm-id-or-name>
+```
+
+API equivalent:
+
+```bash
+curl "$NANOFUSE_API_URL/vms" | jq '.vms[] | {id,name,state,image,ports:.config.network.port_forwards,runtime:.runtime}'
+```
 
 ## See Published Ports
 
@@ -25,11 +41,11 @@ Use the Nanofuse CLI first:
 ```bash
 nanofuse vm ports
 nanofuse vm ports <vm-id-or-name>
-nanofuse vm list
-nanofuse vm status <vm-id-or-name>
 ```
 
 `nanofuse vm ports` shows configured host-to-VM forwards. TCP forwards also get a localhost reachability check.
+
+VMs launched from the tray publish one generated localhost TCP port to guest `8080` by default. CLI/API launches publish only the port forwards requested at creation time, such as `--port-forward 19080:8080`.
 
 Host-level checks:
 
@@ -76,6 +92,14 @@ nanofuse vm ports
 ```
 
 The tray app lists up to 25 VMs with state and port context. Select a VM from the VM list, then use start, stop, kill, or delete.
+
+Start is enabled only for `created` and `stopped` VMs. Stop is enabled only for `running` and `paused` VMs. Kill requires an active runtime handle. Delete remains available for selected VM rows.
+
+Headless tray-path launch for validation:
+
+```bash
+./scripts/run-tray-macos.sh --start-api --launch-image docker.io/library/alpine:3.20 --timeout 30s
+```
 
 ## Enable More Launchable Images
 

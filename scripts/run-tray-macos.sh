@@ -8,6 +8,7 @@ restart=0
 smoke=0
 debug=0
 start_api=0
+launch_image=""
 log_file="${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}"
 api_log_file="${NANOFUSE_API_LOG:-/tmp/nanofused-macos.log}"
 api_pid_file="${NANOFUSE_API_PID_FILE:-/tmp/nanofused-macos.pid}"
@@ -19,7 +20,7 @@ api_bind="${NANOFUSE_API_BIND:-}"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/run-tray-macos.sh [--api-url URL] [--timeout DURATION] [--foreground] [--restart] [--smoke] [--start-api] [--debug]
+Usage: scripts/run-tray-macos.sh [--api-url URL] [--timeout DURATION] [--foreground] [--restart] [--smoke] [--start-api] [--launch-image REF] [--debug]
 
 Builds and launches the Nanofuse macOS menu bar app. With --start-api, it also
 starts a local nanofused daemon using the macOS Apple container microVM runtime.
@@ -31,6 +32,7 @@ Options:
   --restart        stop existing nanofuse-tray processes before launching
   --smoke          run an API smoke check and exit without starting the menu bar app
   --start-api      start local nanofused on macOS using Apple container / Virtualization.framework
+  --launch-image   create and start one VM from an image through the tray launch path, then exit
   --debug          enable API client debug logging
 USAGE
 }
@@ -68,6 +70,14 @@ while [[ $# -gt 0 ]]; do
     --start-api)
       start_api=1
       shift
+      ;;
+    --launch-image)
+      if [[ $# -lt 2 ]]; then
+        echo "missing value for --launch-image" >&2
+        exit 2
+      fi
+      launch_image="$2"
+      shift 2
       ;;
     --debug)
       debug=1
@@ -211,6 +221,11 @@ fi
 if [[ "${smoke}" -eq 1 ]]; then
   echo "Running tray API smoke check against ${api_url}..."
   exec ./bin/nanofuse-tray --smoke "${args[@]}"
+fi
+
+if [[ -n "${launch_image}" ]]; then
+  echo "Launching VM from image ${launch_image} through tray API path against ${api_url}..."
+  exec ./bin/nanofuse-tray --launch-image "${launch_image}" "${args[@]}"
 fi
 
 tray_launchd_target="gui/$(id -u)/${tray_launchd_label}"

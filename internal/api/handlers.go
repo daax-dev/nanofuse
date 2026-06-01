@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"html"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/daax-dev/nanofuse/internal/applecontainer"
 	"github.com/daax-dev/nanofuse/internal/types"
+	"github.com/daax-dev/nanofuse/internal/vmm"
 )
 
 const (
@@ -23,6 +26,231 @@ var (
 	appleContainerSystemStatusCommand = exec.CommandContext
 	appleVirtualizationSupportCommand = exec.CommandContext
 )
+
+// handleRoot returns a browser-readable daemon status page (GET /).
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	capabilities := s.capabilitiesResponse()
+	vms, vmErr := s.rootVMs()
+	images, imageErr := s.rootImages()
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprint(w, renderRootPage(capabilities, vms, vmErr, images, imageErr))
+}
+
+func (s *Server) rootVMs() ([]*types.VM, error) {
+	if s.db == nil {
+		return nil, nil
+	}
+	return s.db.ListVMs("")
+}
+
+func (s *Server) rootImages() ([]*types.Image, error) {
+	var images []*types.Image
+	if s.db != nil {
+		dbImages, err := s.db.ListImages()
+		if err != nil {
+			return nil, err
+		}
+		images = dbImages
+	}
+
+	if provider, ok := s.runtimeManager.(vmm.ImageProvider); ok {
+		runtimeImages, err := provider.ListImages()
+		if err != nil {
+			return images, err
+		}
+		images = mergeRuntimeImages(images, runtimeImages)
+	}
+
+	return images, nil
+}
+
+func renderRootPage(
+	capabilities types.CapabilitiesResponse,
+	vms []*types.VM,
+	vmErr error,
+	images []*types.Image,
+	imageErr error,
+) string {
+	var b strings.Builder
+	b.WriteString(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nanofuse</title>
+<style>
+:root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body { margin: 0; padding: 32px; background: Canvas; color: CanvasText; }
+main { max-width: 1120px; margin: 0 auto; }
+h1 { margin: 0 0 8px; font-size: 32px; }
+h2 { margin-top: 32px; font-size: 20px; }
+a { color: LinkText; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+pre { overflow: auto; padding: 16px; border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas); border-radius: 6px; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid color-mix(in srgb, CanvasText 16%, Canvas); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: 0; }
+.muted { color: color-mix(in srgb, CanvasText 62%, Canvas); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 20px; }
+.panel { border: 1px solid color-mix(in srgb, CanvasText 18%, Canvas); border-radius: 6px; padding: 14px; }
+.label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0; color: color-mix(in srgb, CanvasText 62%, Canvas); }
+.value { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+<h1>Nanofuse</h1>
+<p class="muted">Local microVM API daemon status and launch inventory.</p>
+<p><a href="/health">Health</a> | <a href="/capabilities">Capabilities</a> | <a href="/vms">VMs JSON</a> | <a href="/images">Images JSON</a></p>
+`)
+
+	writeRootRuntime(&b, capabilities)
+	writeRootVMs(&b, vms, vmErr)
+	writeRootImages(&b, images, imageErr)
+	writeRootCommands(&b)
+
+	b.WriteString(`</main>
+</body>
+</html>
+`)
+	return b.String()
+}
+
+func writeRootRuntime(b *strings.Builder, capabilities types.CapabilitiesResponse) {
+	fmt.Fprintf(b, `<h2>Runtime</h2>
+<div class="grid">
+<div class="panel"><span class="label">Driver</span><span class="value">%s</span></div>
+<div class="panel"><span class="label">Native Runtime</span><span class="value">%t</span></div>
+<div class="panel"><span class="label">Apple Container</span><span class="value">installed=%t running=%t virtualization=%t</span></div>
+<div class="panel"><span class="label">Firecracker</span><span class="value">installed=%t kvm=%t</span></div>
+</div>
+<p class="muted">%s</p>
+`,
+		html.EscapeString(capabilities.Runtime.Driver),
+		capabilities.Runtime.NativeRuntime,
+		capabilities.Runtime.AppleContainerAvailable,
+		capabilities.Runtime.AppleContainerRunning,
+		capabilities.Runtime.VirtualizationFrameworkSupported,
+		capabilities.Runtime.FirecrackerAvailable,
+		capabilities.Host.KVMReadWrite,
+		html.EscapeString(capabilities.Runtime.Message),
+	)
+}
+
+func writeRootVMs(b *strings.Builder, vms []*types.VM, vmErr error) {
+	b.WriteString(`<h2>VMs</h2>
+`)
+	if vmErr != nil {
+		fmt.Fprintf(b, `<p>VM inventory unavailable: %s</p>
+`, html.EscapeString(vmErr.Error()))
+		return
+	}
+	if len(vms) == 0 {
+		b.WriteString(`<p>No VMs.</p>
+`)
+		return
+	}
+
+	b.WriteString(`<table>
+<thead><tr><th>Name</th><th>ID</th><th>State</th><th>Image</th><th>Ports</th></tr></thead>
+<tbody>
+`)
+	for _, vm := range vms {
+		fmt.Fprintf(b, "<tr><td>%s</td><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>\n",
+			html.EscapeString(rootVMName(vm)),
+			html.EscapeString(vm.ID),
+			html.EscapeString(string(vm.State)),
+			html.EscapeString(vm.Image),
+			html.EscapeString(rootPortSummary(vm.Config.Network.PortForwards)),
+		)
+	}
+	b.WriteString(`</tbody>
+</table>
+`)
+}
+
+func writeRootImages(b *strings.Builder, images []*types.Image, imageErr error) {
+	b.WriteString(`<h2>Images</h2>
+`)
+	if imageErr != nil {
+		fmt.Fprintf(b, `<p>Runtime image inventory partially unavailable: %s</p>
+`, html.EscapeString(imageErr.Error()))
+	}
+	if len(images) == 0 {
+		b.WriteString(`<p>No cached or runtime images.</p>
+`)
+		return
+	}
+
+	b.WriteString(`<table>
+<thead><tr><th>Reference</th><th>Digest</th><th>Architecture</th></tr></thead>
+<tbody>
+`)
+	for _, image := range images {
+		fmt.Fprintf(b, "<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>\n",
+			html.EscapeString(rootImageName(image)),
+			html.EscapeString(image.Digest),
+			html.EscapeString(image.Architecture),
+		)
+	}
+	b.WriteString(`</tbody>
+</table>
+`)
+}
+
+func writeRootCommands(b *strings.Builder) {
+	b.WriteString(`<h2>CLI</h2>
+<pre>export NANOFUSE_API_URL=http://127.0.0.1:18080
+bin/nanofuse vm list
+bin/nanofuse vm ports
+bin/nanofuse vm exec &lt;vm-id&gt; -- sh -lc 'cat /etc/os-release'</pre>
+`)
+}
+
+func rootVMName(vm *types.VM) string {
+	if vm == nil {
+		return ""
+	}
+	if strings.TrimSpace(vm.Name) != "" {
+		return vm.Name
+	}
+	return vm.ID
+}
+
+func rootImageName(image *types.Image) string {
+	if image == nil {
+		return ""
+	}
+	if len(image.Tags) > 0 {
+		return strings.Join(image.Tags, ", ")
+	}
+	if image.Digest != "" {
+		return image.Digest
+	}
+	return "untagged image"
+}
+
+func rootPortSummary(portForwards []types.PortForward) string {
+	if len(portForwards) == 0 {
+		return "none exposed"
+	}
+	parts := make([]string, 0, len(portForwards))
+	for _, pf := range portForwards {
+		protocol := pf.Protocol
+		if protocol == "" {
+			protocol = "tcp"
+		}
+		parts = append(parts, fmt.Sprintf("127.0.0.1:%d -> vm:%d/%s", pf.HostPort, pf.VMPort, protocol))
+	}
+	return strings.Join(parts, ", ")
+}
 
 // handleHealth handles the health check endpoint (GET /health)
 // Method validation is handled by the router using Go 1.22+ patterns

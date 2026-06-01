@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/logging"
 	"github.com/daax-dev/nanofuse/internal/network"
 	"github.com/daax-dev/nanofuse/internal/types"
 	"github.com/daax-dev/nanofuse/internal/vmm"
@@ -27,6 +29,19 @@ var (
 type imageNotFoundError struct {
 	imageRef string
 	cause    error
+}
+
+type hostPortAllocationError struct {
+	protocol string
+	cause    error
+}
+
+func (e *hostPortAllocationError) Error() string {
+	return fmt.Sprintf("allocate %s host port: %v", e.protocol, e.cause)
+}
+
+func (e *hostPortAllocationError) Unwrap() error {
+	return e.cause
 }
 
 func (e *imageNotFoundError) Error() string {
@@ -178,6 +193,74 @@ func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfi
 	}
 
 	return config
+}
+
+func prepareVMPortForwards(config *types.VMConfig) error {
+	if config == nil || len(config.Network.PortForwards) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(config.Network.PortForwards))
+	for idx := range config.Network.PortForwards {
+		pf := &config.Network.PortForwards[idx]
+		pf.Protocol = strings.ToLower(strings.TrimSpace(pf.Protocol))
+		if pf.Protocol == "" {
+			pf.Protocol = "tcp"
+		}
+		if pf.HostPort == 0 {
+			port, err := availableDaemonHostPort(pf.Protocol)
+			if err != nil {
+				return &hostPortAllocationError{protocol: pf.Protocol, cause: err}
+			}
+			pf.HostPort = port
+		}
+		if err := network.ValidatePortForward(*pf); err != nil {
+			return err
+		}
+
+		key := fmt.Sprintf("%s/%d", pf.Protocol, pf.HostPort)
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("duplicate host port %d/%s", pf.HostPort, pf.Protocol)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+func availableDaemonHostPort(protocol string) (int, error) {
+	switch protocol {
+	case "tcp":
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return 0, err
+		}
+		defer listener.Close()
+		return portFromAddr(listener.Addr())
+	case "udp":
+		conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			return 0, err
+		}
+		defer conn.Close()
+		return portFromAddr(conn.LocalAddr())
+	default:
+		return 0, fmt.Errorf("unsupported protocol %q", protocol)
+	}
+}
+
+func portFromAddr(addr net.Addr) (int, error) {
+	if addr == nil {
+		return 0, fmt.Errorf("listener address is nil")
+	}
+	_, portText, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return 0, err
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return 0, err
+	}
+	return port, nil
 }
 
 func vmStorageDir(dataDir, vmID string) string {
@@ -485,6 +568,58 @@ func (s *Server) registerSPIREWorkload(ctx context.Context, vmID string, req *ty
 	return spiffeID, nil
 }
 
+func (s *Server) resolveImageForCreate(w http.ResponseWriter, imageRef string) (*types.Image, string, bool) {
+	image, imageDigest, err := s.validateAndResolveImage(imageRef)
+	if err == nil {
+		return image, imageDigest, true
+	}
+
+	var imageMissing *imageNotFoundError
+	if errors.As(err, &imageMissing) {
+		types.WriteError(w, http.StatusNotFound, types.ErrImageNotFound,
+			fmt.Sprintf("Image '%s' not found locally. Pull it first.", imageRef),
+			map[string]interface{}{"image": imageRef})
+		return nil, "", false
+	}
+
+	if s.logger != nil {
+		s.logger.Printf("ERROR: Failed to get image: %v", err)
+	}
+	types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to get image", nil)
+	return nil, "", false
+}
+
+func (s *Server) prepareCreateVMConfig(w http.ResponseWriter, image *types.Image, req *types.CreateVMRequest) (types.VMConfig, bool) {
+	config := buildVMConfig(image, req)
+	if err := prepareVMPortForwards(&config); err != nil {
+		writePortForwardPreparationError(w, s.logger, err)
+		return types.VMConfig{}, false
+	}
+
+	if err := s.validateVMResourceLimits(config); err != nil {
+		if s.logger != nil {
+			s.logger.Printf("ERROR: Resource validation failed: %v", err)
+		}
+		types.WriteError(w, http.StatusUnprocessableEntity, types.ErrResourceLimitExceeded, err.Error(), nil)
+		return types.VMConfig{}, false
+	}
+
+	return config, true
+}
+
+func writePortForwardPreparationError(w http.ResponseWriter, logger *logging.Logger, err error) bool {
+	var allocationErr *hostPortAllocationError
+	if errors.As(err, &allocationErr) {
+		if logger != nil {
+			logger.Printf("ERROR: Host port allocation failed: %v", err)
+		}
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to allocate host port", nil)
+		return true
+	}
+	types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, err.Error(), nil)
+	return true
+}
+
 // handleCreateVM creates a new VM
 func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 	var req types.CreateVMRequest
@@ -514,17 +649,8 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate and resolve image
-	image, imageDigest, err := s.validateAndResolveImage(req.Image)
-	if err != nil {
-		var imageMissing *imageNotFoundError
-		if errors.As(err, &imageMissing) {
-			types.WriteError(w, http.StatusNotFound, types.ErrImageNotFound,
-				fmt.Sprintf("Image '%s' not found locally. Pull it first.", req.Image),
-				map[string]interface{}{"image": req.Image})
-		} else {
-			s.logger.Printf("ERROR: Failed to get image: %v", err)
-			types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to get image", nil)
-		}
+	image, imageDigest, ok := s.resolveImageForCreate(w, req.Image)
+	if !ok {
 		return
 	}
 
@@ -536,12 +662,8 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build VM config with defaults and user overrides
-	config := buildVMConfig(image, &req)
-
-	// Validate resource limits
-	if err := s.validateVMResourceLimits(config); err != nil {
-		s.logger.Printf("ERROR: Resource validation failed: %v", err)
-		types.WriteError(w, http.StatusUnprocessableEntity, types.ErrResourceLimitExceeded, err.Error(), nil)
+	config, ok := s.prepareCreateVMConfig(w, image, &req)
+	if !ok {
 		return
 	}
 

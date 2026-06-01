@@ -304,6 +304,88 @@ func TestWriteNetworkSetupErrorIgnoresOtherErrors(t *testing.T) {
 	}
 }
 
+func TestHandleCreateVMAllocatesDaemonHostPort(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+
+	server := &Server{
+		config: &config.Config{
+			Storage: config.StorageConfig{DataDir: t.TempDir()},
+			Runtime: config.RuntimeConfig{Driver: "apple_container"},
+			Network: config.NetworkConfig{Setup: false},
+			Limits: config.LimitsConfig{
+				MaxVMs:            25,
+				MaxVCPUsPerVM:     8,
+				MaxMemoryPerVMMiB: 8192,
+			},
+		},
+		db:     db,
+		logger: logger,
+		runtimeManager: &runtimeImageProviderStub{
+			image: &types.Image{
+				Digest:       "sha256:test",
+				Tags:         []string{"docker.io/library/alpine:3.20"},
+				Architecture: "arm64",
+				PulledAt:     time.Now(),
+			},
+		},
+	}
+
+	body := `{"name":"nf-alpine-test","image":"docker.io/library/alpine:3.20","config":{"network":{"port_forwards":[{"host_port":0,"vm_port":8080,"protocol":""}]}}}`
+	req := httptest.NewRequest(http.MethodPost, "/vms", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.handleCreateVM(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var vm types.VM
+	if err := json.NewDecoder(rec.Body).Decode(&vm); err != nil {
+		t.Fatalf("decode VM: %v", err)
+	}
+	if len(vm.Config.Network.PortForwards) != 1 {
+		t.Fatalf("port forwards = %#v, want one", vm.Config.Network.PortForwards)
+	}
+	pf := vm.Config.Network.PortForwards[0]
+	if pf.HostPort <= 0 || pf.HostPort > 65535 {
+		t.Fatalf("host port = %d, want daemon-allocated port", pf.HostPort)
+	}
+	if pf.VMPort != 8080 {
+		t.Fatalf("vm port = %d, want 8080", pf.VMPort)
+	}
+	if pf.Protocol != "tcp" {
+		t.Fatalf("protocol = %q, want tcp", pf.Protocol)
+	}
+}
+
+func TestPrepareVMPortForwardsRejectsDuplicateHostPort(t *testing.T) {
+	config := types.VMConfig{
+		Network: types.NetworkConfig{
+			PortForwards: []types.PortForward{
+				{HostPort: 18080, VMPort: 8080, Protocol: "tcp"},
+				{HostPort: 18080, VMPort: 9090, Protocol: "tcp"},
+			},
+		},
+	}
+
+	err := prepareVMPortForwards(&config)
+	if err == nil {
+		t.Fatal("prepareVMPortForwards() error = nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate host port") {
+		t.Fatalf("prepareVMPortForwards() error = %q, want duplicate host port", err)
+	}
+}
+
 func TestValidateAndResolveImageDoesNotTreatRuntimeProviderErrorAsImageMissing(t *testing.T) {
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
 	if err != nil {

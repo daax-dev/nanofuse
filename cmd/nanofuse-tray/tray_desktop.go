@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,23 +29,31 @@ type trayUI struct {
 	selected  string
 	imageRef  string
 	pending   trayapp.VMAction
+	pendingVM string
 	pendingAt time.Time
 	refreshID uint64
 
-	endpointItem *systray.MenuItem
-	statusItem   *systray.MenuItem
-	runtimeItem  *systray.MenuItem
-	selectedItem *systray.MenuItem
-	imageItem    *systray.MenuItem
-	refreshItem  *systray.MenuItem
-	createItem   *systray.MenuItem
-	startItem    *systray.MenuItem
-	stopItem     *systray.MenuItem
-	killItem     *systray.MenuItem
-	deleteItem   *systray.MenuItem
-	vmItems      []*systray.MenuItem
-	imageItems   []*systray.MenuItem
-	quitItem     *systray.MenuItem
+	endpointItem     *systray.MenuItem
+	statusItem       *systray.MenuItem
+	runtimeItem      *systray.MenuItem
+	selectedItem     *systray.MenuItem
+	imageItem        *systray.MenuItem
+	refreshItem      *systray.MenuItem
+	promptLaunchItem *systray.MenuItem
+	createItem       *systray.MenuItem
+	addImageItem     *systray.MenuItem
+	vmItems          []vmMenuItems
+	imageItems       []*systray.MenuItem
+	quitItem         *systray.MenuItem
+}
+
+type vmMenuItems struct {
+	root   *systray.MenuItem
+	detail *systray.MenuItem
+	start  *systray.MenuItem
+	stop   *systray.MenuItem
+	kill   *systray.MenuItem
+	delete *systray.MenuItem
 }
 
 func runTray(ctx context.Context, cfg trayapp.Config) error {
@@ -89,19 +98,26 @@ func (ui *trayUI) onReady() {
 	ui.selectedItem.Disable()
 	ui.imageItem = systray.AddMenuItem("Selected Image: none", "Image used for new VM launches")
 	ui.imageItem.Disable()
-	ui.createItem = systray.AddMenuItem("Create and Start VM From Image", "Create and start a new VM from the selected image through the API")
-	ui.startItem = systray.AddMenuItem("Start Selected VM", "Start the selected VM through the API")
-	ui.stopItem = systray.AddMenuItem("Stop Selected VM", "Stop the selected VM through the API")
-	ui.killItem = systray.AddMenuItem("Kill Selected VM", "Confirm, then force kill the selected VM through the API")
-	ui.deleteItem = systray.AddMenuItem("Delete Selected VM", "Confirm, then delete the selected VM through the API")
+	ui.promptLaunchItem = systray.AddMenuItem("New MicroVM From Container...", "Enter an OCI image reference and launch it through the API")
+	ui.createItem = systray.AddMenuItem("Launch Selected Cached Image", "Create and start a new VM from the selected cached image through the API")
+	ui.addImageItem = systray.AddMenuItem("Add Image to List...", "Pull or resolve an OCI image reference through the API")
 	systray.AddSeparator()
 
 	vmHeader := systray.AddMenuItem("VMs", "Known VMs")
 	vmHeader.Disable()
 	for i := 0; i < maxMenuRows; i++ {
-		item := systray.AddMenuItem(fmt.Sprintf("VM slot %d", i+1), "Select VM")
-		item.Hide()
-		ui.vmItems = append(ui.vmItems, item)
+		root := systray.AddMenuItem(fmt.Sprintf("VM slot %d", i+1), "VM")
+		items := vmMenuItems{
+			root:   root,
+			detail: root.AddSubMenuItem("Details", "VM details"),
+			start:  root.AddSubMenuItem("Start", "Start this VM through the API"),
+			stop:   root.AddSubMenuItem("Stop", "Stop this VM through the API"),
+			kill:   root.AddSubMenuItem("Kill", "Confirm, then force kill this VM through the API"),
+			delete: root.AddSubMenuItem("Delete", "Confirm, then delete this VM through the API"),
+		}
+		items.detail.Disable()
+		hideVMMenu(items)
+		ui.vmItems = append(ui.vmItems, items)
 	}
 	systray.AddSeparator()
 
@@ -123,59 +139,69 @@ func (ui *trayUI) onReady() {
 }
 
 func (ui *trayUI) listen() {
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ui.ctx.Done():
-				systray.Quit()
-				return
-			case <-ticker.C:
-				ui.refresh()
-			case <-ui.refreshItem.ClickedCh:
-				ui.refresh()
-			case <-ui.createItem.ClickedCh:
-				ui.launchSelectedImage()
-			case <-ui.startItem.ClickedCh:
-				ui.runAction(trayapp.VMActionStart)
-			case <-ui.stopItem.ClickedCh:
-				ui.runAction(trayapp.VMActionStop)
-			case <-ui.killItem.ClickedCh:
-				ui.runAction(trayapp.VMActionKill)
-			case <-ui.deleteItem.ClickedCh:
-				ui.runAction(trayapp.VMActionDelete)
-			case <-ui.quitItem.ClickedCh:
-				systray.Quit()
-				return
-			}
-		}
-	}()
+	go ui.listenMainEvents()
 
-	for idx, item := range ui.vmItems {
-		go func(index int, menuItem *systray.MenuItem) {
-			for {
-				select {
-				case <-ui.ctx.Done():
-					return
-				case <-menuItem.ClickedCh:
-					ui.selectVM(index)
-				}
-			}
-		}(idx, item)
+	for idx, items := range ui.vmItems {
+		go ui.listenVMRow(idx, items)
 	}
 
 	for idx, item := range ui.imageItems {
-		go func(index int, menuItem *systray.MenuItem) {
-			for {
-				select {
-				case <-ui.ctx.Done():
-					return
-				case <-menuItem.ClickedCh:
-					ui.selectImage(index)
-				}
-			}
-		}(idx, item)
+		go ui.listenImageRow(idx, item)
+	}
+}
+
+func (ui *trayUI) listenMainEvents() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ui.ctx.Done():
+			systray.Quit()
+			return
+		case <-ticker.C:
+			ui.refresh()
+		case <-ui.refreshItem.ClickedCh:
+			ui.refresh()
+		case <-ui.promptLaunchItem.ClickedCh:
+			ui.promptAndLaunchImage()
+		case <-ui.createItem.ClickedCh:
+			ui.launchSelectedImage()
+		case <-ui.addImageItem.ClickedCh:
+			ui.promptAndAddImage()
+		case <-ui.quitItem.ClickedCh:
+			systray.Quit()
+			return
+		}
+	}
+}
+
+func (ui *trayUI) listenVMRow(index int, menuItems vmMenuItems) {
+	for {
+		select {
+		case <-ui.ctx.Done():
+			return
+		case <-menuItems.root.ClickedCh:
+			ui.selectVM(index)
+		case <-menuItems.start.ClickedCh:
+			ui.runActionForIndex(index, trayapp.VMActionStart)
+		case <-menuItems.stop.ClickedCh:
+			ui.runActionForIndex(index, trayapp.VMActionStop)
+		case <-menuItems.kill.ClickedCh:
+			ui.runActionForIndex(index, trayapp.VMActionKill)
+		case <-menuItems.delete.ClickedCh:
+			ui.runActionForIndex(index, trayapp.VMActionDelete)
+		}
+	}
+}
+
+func (ui *trayUI) listenImageRow(index int, menuItem *systray.MenuItem) {
+	for {
+		select {
+		case <-ui.ctx.Done():
+			return
+		case <-menuItem.ClickedCh:
+			ui.selectImage(index)
+		}
 	}
 }
 
@@ -197,6 +223,7 @@ func (ui *trayUI) refresh() {
 		}
 		ui.status = status
 		ui.pending = ""
+		ui.pendingVM = ""
 		ui.pendingAt = time.Time{}
 
 		if err != nil {
@@ -217,16 +244,27 @@ func (ui *trayUI) refresh() {
 }
 
 func (ui *trayUI) updateVMItems(vms []client.VM) {
-	for idx, item := range ui.vmItems {
+	ready := trayapp.VMActionReady(ui.status)
+	for idx, items := range ui.vmItems {
 		if idx >= len(vms) {
-			item.Hide()
+			hideVMMenu(items)
 			continue
 		}
 		vm := vms[idx]
-		item.SetTitle(limitTitle(displayVMRow(vm)))
-		item.SetTooltip(displayVMTooltip(vm))
-		item.Show()
-		item.Enable()
+		items.root.SetTitle(limitTitle(displayVMRow(vm)))
+		items.root.SetTooltip(displayVMTooltip(vm))
+		items.detail.SetTitle(limitTitle("Details: " + displayVMTooltip(vm)))
+		items.detail.SetTooltip(displayVMTooltip(vm))
+		items.start.SetTitle("Start")
+		items.stop.SetTitle("Stop")
+		items.kill.SetTitle(actionTitle(ui.pending, ui.pendingVM, vm.ID, trayapp.VMActionKill, "Kill", "Confirm Kill"))
+		items.delete.SetTitle(actionTitle(ui.pending, ui.pendingVM, vm.ID, trayapp.VMActionDelete, "Delete", "Confirm Delete"))
+		showVMMenu(items)
+		items.root.Enable()
+		setMenuEnabled(items.start, ready && trayapp.VMActionAllowed(&vm, trayapp.VMActionStart))
+		setMenuEnabled(items.stop, ready && trayapp.VMActionAllowed(&vm, trayapp.VMActionStop))
+		setMenuEnabled(items.kill, ready && trayapp.VMActionAllowed(&vm, trayapp.VMActionKill))
+		setMenuEnabled(items.delete, ready && trayapp.VMActionAllowed(&vm, trayapp.VMActionDelete))
 	}
 }
 
@@ -254,6 +292,7 @@ func (ui *trayUI) selectVM(index int) {
 	vm := ui.status.VMs[index]
 	ui.selected = vm.ID
 	ui.pending = ""
+	ui.pendingVM = ""
 	ui.pendingAt = time.Time{}
 	ui.selectedItem.SetTitle(limitTitle("Selected VM: " + displayVMRow(vm)))
 	ui.updateActionStateLocked()
@@ -269,6 +308,9 @@ func (ui *trayUI) selectImage(index int) {
 	image := ui.status.Images[index]
 	ui.imageRef = imageReference(image)
 	ui.imageItem.SetTitle(limitTitle("Selected Image: " + displayImageName(image)))
+	ui.pending = ""
+	ui.pendingVM = ""
+	ui.pendingAt = time.Time{}
 	ui.updateActionStateLocked()
 }
 
@@ -280,6 +322,82 @@ func (ui *trayUI) launchSelectedImage() {
 		ui.mu.Unlock()
 		return
 	}
+	ui.mu.Unlock()
+	ui.launchImageRef(imageRef)
+}
+
+func (ui *trayUI) promptAndLaunchImage() {
+	ui.mu.Lock()
+	if !trayapp.VMActionReady(ui.status) {
+		ui.statusItem.SetTitle("Status: runtime unavailable")
+		ui.runtimeItem.SetTitle(limitTitle("Runtime: " + trayapp.RuntimeSummary(ui.status)))
+		ui.updateActionStateLocked()
+		ui.mu.Unlock()
+		return
+	}
+	ui.promptLaunchItem.Disable()
+	ui.statusItem.SetTitle("Status: waiting for image reference")
+	ui.mu.Unlock()
+
+	go func() {
+		imageRef, ok, err := promptImageReference(ui.ctx)
+		if err != nil {
+			ui.statusItem.SetTitle("Status: image prompt failed")
+			ui.runtimeItem.SetTitle(limitTitle(err.Error()))
+			ui.updateActionState()
+			return
+		}
+		if !ok {
+			ui.statusItem.SetTitle("Status: launch canceled")
+			ui.updateActionState()
+			return
+		}
+		ui.launchImageRef(imageRef)
+	}()
+}
+
+func (ui *trayUI) promptAndAddImage() {
+	ui.mu.Lock()
+	if !trayapp.VMActionReady(ui.status) {
+		ui.statusItem.SetTitle("Status: runtime unavailable")
+		ui.runtimeItem.SetTitle(limitTitle("Runtime: " + trayapp.RuntimeSummary(ui.status)))
+		ui.updateActionStateLocked()
+		ui.mu.Unlock()
+		return
+	}
+	ui.addImageItem.Disable()
+	ui.statusItem.SetTitle("Status: waiting for image reference")
+	ui.mu.Unlock()
+
+	go func() {
+		imageRef, ok, err := promptImageReference(ui.ctx)
+		if err != nil {
+			ui.statusItem.SetTitle("Status: image prompt failed")
+			ui.runtimeItem.SetTitle(limitTitle(err.Error()))
+			ui.updateActionState()
+			return
+		}
+		if !ok {
+			ui.statusItem.SetTitle("Status: add image canceled")
+			ui.updateActionState()
+			return
+		}
+		ctx, cancel := withTimeout(ui.ctx, ui.cfg.Timeout)
+		defer cancel()
+		job, err := trayapp.AddImage(ctx, ui.api, imageRef)
+		if err != nil {
+			ui.statusItem.SetTitle("Status: add image failed")
+			ui.runtimeItem.SetTitle(limitTitle(err.Error()))
+			ui.updateActionState()
+			return
+		}
+		ui.statusItem.SetTitle(limitTitle("Status: image pull started " + job.ID))
+		ui.refresh()
+	}()
+}
+
+func (ui *trayUI) launchImageRef(imageRef string) {
+	ui.mu.Lock()
 	if !trayapp.VMActionReady(ui.status) {
 		ui.statusItem.SetTitle("Status: runtime unavailable")
 		ui.runtimeItem.SetTitle(limitTitle("Runtime: " + trayapp.RuntimeSummary(ui.status)))
@@ -288,6 +406,7 @@ func (ui *trayUI) launchSelectedImage() {
 		return
 	}
 	ui.createItem.Disable()
+	ui.promptLaunchItem.Disable()
 	ui.statusItem.SetTitle("Status: launching VM")
 	ui.mu.Unlock()
 
@@ -312,14 +431,16 @@ func (ui *trayUI) launchSelectedImage() {
 	}()
 }
 
-func (ui *trayUI) runAction(action trayapp.VMAction) {
+func (ui *trayUI) runActionForIndex(index int, action trayapp.VMAction) {
 	ui.mu.Lock()
-	selected := ui.selected
-	if selected == "" {
-		ui.statusItem.SetTitle("Status: select a VM first")
+	if ui.status == nil || index >= len(ui.status.VMs) {
+		ui.statusItem.SetTitle("Status: VM row unavailable")
 		ui.mu.Unlock()
 		return
 	}
+	vm := ui.status.VMs[index]
+	ui.selected = vm.ID
+	ui.selectedItem.SetTitle(limitTitle("Selected VM: " + displayVMRow(vm)))
 	if !trayapp.VMActionReady(ui.status) {
 		ui.statusItem.SetTitle("Status: runtime unavailable")
 		ui.runtimeItem.SetTitle(limitTitle("Runtime: " + trayapp.RuntimeSummary(ui.status)))
@@ -327,22 +448,23 @@ func (ui *trayUI) runAction(action trayapp.VMAction) {
 		ui.mu.Unlock()
 		return
 	}
-	selectedVM := ui.selectedVMLocked()
-	if !trayapp.VMActionAllowed(selectedVM, action) {
-		ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s unavailable for VM state %s", action, selectedVMState(selectedVM))))
+	if !trayapp.VMActionAllowed(&vm, action) {
+		ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s unavailable for VM state %s", action, selectedVMState(&vm))))
 		ui.updateActionStateLocked()
 		ui.mu.Unlock()
 		return
 	}
 	if needsConfirmation(action) {
-		pendingAt, confirmed := ui.confirmActionLocked(action)
+		pendingAt, confirmed := ui.confirmActionLocked(action, vm.ID)
 		if !confirmed {
+			ui.updateActionStateLocked()
 			ui.mu.Unlock()
-			ui.expirePending(action, pendingAt)
+			ui.expirePending(action, vm.ID, pendingAt)
 			return
 		}
 	}
 	ui.pending = ""
+	ui.pendingVM = ""
 	ui.pendingAt = time.Time{}
 	ui.updateActionStateLocked()
 	ui.mu.Unlock()
@@ -350,12 +472,12 @@ func (ui *trayUI) runAction(action trayapp.VMAction) {
 	go func() {
 		ctx, cancel := withTimeout(ui.ctx, ui.cfg.Timeout)
 		defer cancel()
-		if _, err := trayapp.ExecuteVMAction(ctx, ui.api, action, selected); err != nil {
+		if _, err := trayapp.ExecuteVMAction(ctx, ui.api, action, vm.ID); err != nil {
 			ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s failed", action)))
 			ui.runtimeItem.SetTitle(limitTitle(err.Error()))
 			return
 		}
-		ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s sent", action)))
+		ui.statusItem.SetTitle(limitTitle(fmt.Sprintf("Status: %s sent for %s", action, displayVMName(vm))))
 		ui.refresh()
 	}()
 }
@@ -364,18 +486,18 @@ func needsConfirmation(action trayapp.VMAction) bool {
 	return action == trayapp.VMActionKill || action == trayapp.VMActionDelete
 }
 
-func (ui *trayUI) confirmActionLocked(action trayapp.VMAction) (time.Time, bool) {
-	if ui.pending == action && time.Since(ui.pendingAt) <= confirmationWindow {
+func (ui *trayUI) confirmActionLocked(action trayapp.VMAction, vmID string) (time.Time, bool) {
+	if ui.pending == action && ui.pendingVM == vmID && time.Since(ui.pendingAt) <= confirmationWindow {
 		return ui.pendingAt, true
 	}
 	pendingAt := time.Now()
 	ui.pending = action
+	ui.pendingVM = vmID
 	ui.pendingAt = pendingAt
-	ui.setPendingTitleLocked(action)
 	return pendingAt, false
 }
 
-func (ui *trayUI) expirePending(action trayapp.VMAction, pendingAt time.Time) {
+func (ui *trayUI) expirePending(action trayapp.VMAction, vmID string, pendingAt time.Time) {
 	go func() {
 		timer := time.NewTimer(confirmationWindow)
 		defer timer.Stop()
@@ -388,22 +510,14 @@ func (ui *trayUI) expirePending(action trayapp.VMAction, pendingAt time.Time) {
 
 		ui.mu.Lock()
 		defer ui.mu.Unlock()
-		if ui.pending == action && ui.pendingAt.Equal(pendingAt) {
+		if ui.pending == action && ui.pendingVM == vmID && ui.pendingAt.Equal(pendingAt) {
 			ui.pending = ""
+			ui.pendingVM = ""
 			ui.pendingAt = time.Time{}
 			ui.statusItem.SetTitle("Status: confirmation expired")
 			ui.updateActionStateLocked()
 		}
 	}()
-}
-
-func (ui *trayUI) setPendingTitleLocked(action trayapp.VMAction) {
-	switch action {
-	case trayapp.VMActionKill:
-		ui.killItem.SetTitle("Confirm Kill Selected VM")
-	case trayapp.VMActionDelete:
-		ui.deleteItem.SetTitle("Confirm Delete Selected VM")
-	}
 }
 
 func (ui *trayUI) updateActionState() {
@@ -413,13 +527,15 @@ func (ui *trayUI) updateActionState() {
 }
 
 func (ui *trayUI) updateActionStateLocked() {
-	ui.createItem.SetTitle("Create and Start VM From Image")
-	ui.startItem.SetTitle("Start Selected VM")
-	ui.stopItem.SetTitle("Stop Selected VM")
-	ui.killItem.SetTitle("Kill Selected VM")
-	ui.deleteItem.SetTitle("Delete Selected VM")
+	ui.promptLaunchItem.SetTitle("New MicroVM From Container...")
+	ui.createItem.SetTitle("Launch Selected Cached Image")
+	ui.addImageItem.SetTitle("Add Image to List...")
 
-	if ui.imageRef == "" || !trayapp.VMActionReady(ui.status) {
+	ready := trayapp.VMActionReady(ui.status)
+	setMenuEnabled(ui.promptLaunchItem, ready)
+	setMenuEnabled(ui.addImageItem, ready)
+
+	if ui.imageRef == "" || !ready {
 		ui.createItem.Disable()
 	} else {
 		ui.createItem.Enable()
@@ -431,18 +547,16 @@ func (ui *trayUI) updateActionStateLocked() {
 		ui.selectedItem.SetTitle("Selected VM: none")
 	}
 
-	if selectedVM == nil || !trayapp.VMActionReady(ui.status) {
-		ui.startItem.Disable()
-		ui.stopItem.Disable()
-		ui.killItem.Disable()
-		ui.deleteItem.Disable()
+	if selectedVM == nil || !ready {
+		if ui.status != nil {
+			ui.updateVMItems(ui.status.VMs)
+		}
 		return
 	}
 	ui.selectedItem.SetTitle(limitTitle("Selected VM: " + displayVMRow(*selectedVM)))
-	setMenuEnabled(ui.startItem, trayapp.VMActionAllowed(selectedVM, trayapp.VMActionStart))
-	setMenuEnabled(ui.stopItem, trayapp.VMActionAllowed(selectedVM, trayapp.VMActionStop))
-	setMenuEnabled(ui.killItem, trayapp.VMActionAllowed(selectedVM, trayapp.VMActionKill))
-	setMenuEnabled(ui.deleteItem, trayapp.VMActionAllowed(selectedVM, trayapp.VMActionDelete))
+	if ui.status != nil {
+		ui.updateVMItems(ui.status.VMs)
+	}
 }
 
 func (ui *trayUI) selectedVMLocked() *client.VM {
@@ -472,18 +586,44 @@ func setMenuEnabled(item *systray.MenuItem, enabled bool) {
 	item.Disable()
 }
 
+func hideVMMenu(items vmMenuItems) {
+	for _, item := range []*systray.MenuItem{items.root, items.detail, items.start, items.stop, items.kill, items.delete} {
+		if item != nil {
+			item.Hide()
+		}
+	}
+}
+
+func showVMMenu(items vmMenuItems) {
+	for _, item := range []*systray.MenuItem{items.root, items.detail, items.start, items.stop, items.kill, items.delete} {
+		if item != nil {
+			item.Show()
+		}
+	}
+}
+
+func actionTitle(pending trayapp.VMAction, pendingVM, vmID string, action trayapp.VMAction, normal, confirm string) string {
+	if pending == action && pendingVM == vmID {
+		return confirm
+	}
+	return normal
+}
+
 func displayVMName(vm client.VM) string {
 	if vm.Name != "" {
 		return vm.Name
 	}
 	if vm.ID != "" {
-		return vm.ID
+		return "vm-" + shortID(vm.ID)
 	}
 	return "unnamed"
 }
 
 func displayVMRow(vm client.VM) string {
 	label := fmt.Sprintf("%s [%s]", displayVMName(vm), vm.State)
+	if image := displayImageRefShort(vm.Image); image != "" {
+		label += " " + image
+	}
 	if ports := portSummary(vm.Config.Network.PortForwards); ports != "" {
 		label += " " + ports
 	}
@@ -520,7 +660,11 @@ func portSummary(portForwards []client.PortForward) string {
 		if protocol == "" {
 			protocol = "tcp"
 		}
-		parts = append(parts, fmt.Sprintf(":%d->%d/%s", pf.HostPort, pf.VMPort, protocol))
+		hostPort := strconv.Itoa(pf.HostPort)
+		if pf.HostPort == 0 {
+			hostPort = "auto"
+		}
+		parts = append(parts, fmt.Sprintf(":%s->%d/%s", hostPort, pf.VMPort, protocol))
 	}
 	return strings.Join(parts, ",")
 }
@@ -540,6 +684,28 @@ func imageReference(image client.Image) string {
 		return image.Tags[0]
 	}
 	return image.Digest
+}
+
+func displayImageRefShort(imageRef string) string {
+	imageRef = strings.TrimSpace(imageRef)
+	if imageRef == "" {
+		return ""
+	}
+	if digestIndex := strings.LastIndex(imageRef, "@"); digestIndex >= 0 {
+		imageRef = imageRef[:digestIndex]
+	}
+	if slashIndex := strings.LastIndex(imageRef, "/"); slashIndex >= 0 {
+		imageRef = imageRef[slashIndex+1:]
+	}
+	return imageRef
+}
+
+func shortID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) <= 12 {
+		return id
+	}
+	return id[:12]
 }
 
 func limitTitle(value string) string {

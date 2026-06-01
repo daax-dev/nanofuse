@@ -40,7 +40,9 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprint(w, renderRootPage(capabilities, vms, vmErr, images, imageErr))
+	if _, err := fmt.Fprint(w, renderRootPage(capabilities, vms, vmErr, images, imageErr)); err != nil && s.logger != nil {
+		s.logger.Printf("ERROR: Failed to write root response: %v", err)
+	}
 }
 
 func (s *Server) rootVMs() ([]*types.VM, error) {

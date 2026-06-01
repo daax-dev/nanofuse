@@ -1,20 +1,20 @@
 # Nanofuse Launch One-Liners
 
-Nanofuse now has two local runtime paths:
+Nanofuse now has one native Linux runtime path and one macOS compatibility path:
 
 - Linux: `nanofused` runs Firecracker on Linux/KVM.
-- macOS: `nanofused` can run OCI images through Apple's `container` CLI, which uses Virtualization.framework on Apple silicon.
+- macOS: `nanofused` can currently run OCI images through Apple's `container` CLI, which uses Virtualization.framework on Apple silicon. The target macOS backend is a Nanofuse-owned Apple Virtualization.framework runtime.
 
 Windows is currently a client/tray host. It manages a reachable `nanofused` API; it is not a local runtime host in this repo.
 
-`nanofuse-tray` is a macOS menu bar and Windows tray API client. On macOS, `scripts/run-tray-macos.sh --start-api` starts a local Apple-container-backed daemon through launchd, then starts the menu bar app.
+`nanofuse-tray` is a macOS menu bar and Windows tray API client. On macOS, `scripts/run-tray-macos.sh --start-api` starts the current Apple `container` compatibility daemon through launchd, then starts the menu bar app.
 
 ## Tested Status
 
 | Path | Status |
 |------|--------|
-| macOS local Apple-container daemon | Tested on this Mac with `runtime.driver=apple_container`; `/capabilities` reports `native_runtime=true`. |
-| macOS API-created VM from OCI image | Tested with `alpine:3.20`; `container exec` inside the API-created VM returned Linux `6.12.28` on `aarch64`. |
+| macOS local Apple-container compatibility daemon | Tested on this Mac with `runtime.driver=apple_container`; `/capabilities` reports `native_runtime=true`. |
+| macOS compatibility-driver API-created VM from OCI image | Tested with `alpine:3.20`; `container exec` inside the API-created VM returned Linux `6.12.28` on `aarch64`. |
 | macOS tray app against local daemon | Tested with `./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s`. |
 | Linux/KVM direct Firecracker boot | Previously tested on a Linux/KVM host with Firecracker `1.7.0`, kernel `6.1.77`, and Ubuntu rootfs. |
 | Linux/KVM rootless API daemon with no VM networking | Tested with `network.setup=false` and VM `network=none`. |
@@ -22,7 +22,7 @@ Windows is currently a client/tray host. It manages a reachable `nanofused` API;
 | Windows tray executable build | Cross-built from this Mac with `GOOS=windows GOARCH=amd64` and `-H=windowsgui`; runtime click testing still requires a Windows desktop session. |
 | Windows one-liner | Syntax only in this workspace. |
 
-## macOS Local Runtime and Tray
+## macOS Compatibility Runtime and Tray
 
 One-line local startup from the repo root:
 
@@ -30,7 +30,7 @@ One-line local startup from the repo root:
 ./scripts/run-tray-macos.sh --start-api --restart
 ```
 
-That command builds `bin/nanofused` and `bin/nanofuse-tray`, writes a macOS daemon config under `${NANOFUSE_DATA_DIR:-/tmp/nanofuse-macos}`, starts `nanofused` through launchd with `runtime.driver=apple_container`, then starts the menu bar app through launchd label `com.daax.nanofuse.tray`. Daemon logs go to `${NANOFUSE_API_LOG:-/tmp/nanofused-macos.log}`. Tray logs go to `${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}`. Stop the tray with `launchctl bootout gui/$(id -u)/com.daax.nanofuse.tray`.
+That command builds `bin/nanofused` and `bin/nanofuse-tray`, writes a macOS daemon config under `${NANOFUSE_DATA_DIR:-/tmp/nanofuse-macos}`, starts `nanofused` through launchd with `runtime.driver=apple_container`, then starts the menu bar app through launchd label `com.daax.nanofuse.tray`. This is the current tray/API compatibility path, not the final native Apple VZ backend. Daemon logs go to `${NANOFUSE_API_LOG:-/tmp/nanofused-macos.log}`. Tray logs go to `${NANOFUSE_TRAY_LOG:-/tmp/nanofuse-tray.log}`. Stop the tray with `launchctl bootout gui/$(id -u)/com.daax.nanofuse.tray`.
 
 Smoke test without opening the menu bar UI:
 
@@ -38,11 +38,15 @@ Smoke test without opening the menu bar UI:
 ./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 5s
 ```
 
+This smoke path checks both `/health` and the browser root page at `/`. A daemon that returns `404 page not found` for `http://127.0.0.1:18080/` does not pass the one-command startup check.
+
 Launch one VM through the same tray create/start path without opening the menu:
 
 ```bash
 ./scripts/run-tray-macos.sh --start-api --launch-image docker.io/library/alpine:3.20 --timeout 30s
 ```
+
+Tray-path launches use generated VM names such as `nf-alpine-3-20-a1b2c3` and request `host_port: 0`; `nanofused` allocates the concrete localhost port on the daemon host.
 
 Confirm API readiness:
 
@@ -54,7 +58,7 @@ curl http://127.0.0.1:18080/capabilities
 
 The root URL is a browser status page. It shows runtime readiness, VMs, images, and host-to-VM port forwards.
 
-Create, start, inspect, stop, and delete a local macOS-backed Linux VM:
+Create, start, inspect, stop, and delete a local Linux VM through the macOS compatibility driver:
 
 ```bash
 API=http://127.0.0.1:18080
@@ -189,7 +193,7 @@ Result:
 /dev/kvm-missing
 ```
 
-This result does not block macOS local VM execution because the macOS runtime uses Apple `container` plus Virtualization.framework instead of Firecracker/KVM.
+This result does not block the current macOS tray/API compatibility path because it uses Apple `container` plus Virtualization.framework instead of a nested Linux Firecracker/KVM guest. It does not validate the final native Apple VZ backend.
 
 Sources:
 

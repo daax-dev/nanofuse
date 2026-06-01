@@ -2,8 +2,9 @@ package trayapp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -40,6 +41,7 @@ type API interface {
 	CreateVM(context.Context, *client.CreateVMRequest) (*client.VM, error)
 	ListVMs(context.Context, string) (*client.ListVMsResponse, error)
 	ListImages(context.Context) (*client.ListImagesResponse, error)
+	PullImage(context.Context, string) (*client.ImagePullJob, error)
 	StartVM(context.Context, string) (*client.VM, error)
 	StopVM(context.Context, string, int) (*client.VM, error)
 	KillVM(context.Context, string) (*client.VM, error)
@@ -59,7 +61,9 @@ const (
 	DefaultVCPUs           = 2
 	DefaultMemoryMiB       = 512
 	DefaultNetworkMode     = "nat"
+	DefaultLaunchHostPort  = 0
 	DefaultPublishedVMPort = 8080
+	DefaultVMNamePrefix    = "nf"
 )
 
 func ConfigFromEnv() Config {
@@ -169,19 +173,15 @@ func LaunchVMFromImage(ctx context.Context, api API, imageRef string) (*client.V
 		return nil, fmt.Errorf("image reference is required")
 	}
 
-	portForwards, err := defaultLaunchPortForwards()
-	if err != nil {
-		return nil, fmt.Errorf("allocate host port for image %q: %w", imageRef, err)
-	}
-
 	vm, err := api.CreateVM(ctx, &client.CreateVMRequest{
+		Name:  GenerateVMName(imageRef),
 		Image: imageRef,
 		Config: client.VMConfig{
 			VCPUs:     DefaultVCPUs,
 			MemoryMiB: DefaultMemoryMiB,
 			Network: client.NetworkConfig{
 				Mode:         DefaultNetworkMode,
-				PortForwards: portForwards,
+				PortForwards: defaultLaunchPortForwards(),
 			},
 		},
 	})
@@ -199,36 +199,83 @@ func LaunchVMFromImage(ctx context.Context, api API, imageRef string) (*client.V
 	return started, nil
 }
 
-func defaultLaunchPortForwards() ([]client.PortForward, error) {
-	hostPort, err := availableLocalTCPPort()
-	if err != nil {
-		return nil, err
+func AddImage(ctx context.Context, api API, imageRef string) (*client.ImagePullJob, error) {
+	imageRef = strings.TrimSpace(imageRef)
+	if imageRef == "" {
+		return nil, fmt.Errorf("image reference is required")
 	}
+	job, err := api.PullImage(ctx, imageRef)
+	if err != nil {
+		return nil, fmt.Errorf("add image %q: %w", imageRef, err)
+	}
+	if job == nil || strings.TrimSpace(job.ID) == "" {
+		return nil, fmt.Errorf("add image %q returned no pull job id", imageRef)
+	}
+	return job, nil
+}
+
+func defaultLaunchPortForwards() []client.PortForward {
 	return []client.PortForward{
 		{
-			HostPort: hostPort,
+			HostPort: DefaultLaunchHostPort,
 			VMPort:   DefaultPublishedVMPort,
 			Protocol: "tcp",
 		},
-	}, nil
+	}
 }
 
-func availableLocalTCPPort() (int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer listener.Close()
+func GenerateVMName(imageRef string) string {
+	base := sanitizeImageName(imageRef)
+	suffix := randomNameSuffix()
+	return limitName(fmt.Sprintf("%s-%s-%s", DefaultVMNamePrefix, base, suffix), 48)
+}
 
-	_, portText, err := net.SplitHostPort(listener.Addr().String())
-	if err != nil {
-		return 0, err
+func sanitizeImageName(imageRef string) string {
+	imageRef = strings.TrimSpace(strings.ToLower(imageRef))
+	if imageRef == "" {
+		return "image"
 	}
-	port, err := strconv.Atoi(portText)
-	if err != nil {
-		return 0, err
+	if digestIndex := strings.LastIndex(imageRef, "@"); digestIndex >= 0 {
+		imageRef = imageRef[:digestIndex]
 	}
-	return port, nil
+	if slashIndex := strings.LastIndex(imageRef, "/"); slashIndex >= 0 {
+		imageRef = imageRef[slashIndex+1:]
+	}
+
+	var b strings.Builder
+	lastDash := false
+	for _, r := range imageRef {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	base := strings.Trim(b.String(), "-")
+	if base == "" {
+		base = "image"
+	}
+	return limitName(base, 26)
+}
+
+func randomNameSuffix() string {
+	var data [3]byte
+	if _, err := rand.Read(data[:]); err == nil {
+		return hex.EncodeToString(data[:])
+	}
+	return strconv.FormatInt(time.Now().UTC().UnixNano(), 36)
+}
+
+func limitName(value string, maxLen int) string {
+	if len(value) <= maxLen {
+		return value
+	}
+	return strings.Trim(value[:maxLen], "-")
 }
 
 func RuntimeSummary(status *Status) string {

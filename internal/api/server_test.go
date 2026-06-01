@@ -175,6 +175,40 @@ func TestRootPageImageErrorDoesNotClaimEmptyInventory(t *testing.T) {
 	}
 }
 
+func TestRootEndpointWriteErrorDoesNotPanicWithoutLogger(t *testing.T) {
+	server := &Server{startTime: time.Now()}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	writer := &errorResponseWriter{header: http.Header{}}
+
+	server.handleRoot(writer, req)
+
+	if writer.status != http.StatusOK {
+		t.Fatalf("status = %d, want %d", writer.status, http.StatusOK)
+	}
+	if writer.writeCalls != 1 {
+		t.Fatalf("write calls = %d, want 1", writer.writeCalls)
+	}
+}
+
+type errorResponseWriter struct {
+	header     http.Header
+	status     int
+	writeCalls int
+}
+
+func (w *errorResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *errorResponseWriter) Write([]byte) (int, error) {
+	w.writeCalls++
+	return 0, errors.New("write failed")
+}
+
+func (w *errorResponseWriter) WriteHeader(statusCode int) {
+	w.status = statusCode
+}
+
 func TestCapabilitiesEndpoint(t *testing.T) {
 	server := &Server{
 		config: &config.Config{

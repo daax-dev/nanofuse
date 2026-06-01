@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +59,11 @@ func (f *fakeAPI) ListImages(context.Context) (*client.ListImagesResponse, error
 	return &client.ListImagesResponse{
 		Images: []client.Image{{Digest: "sha256:abc", Tags: []string{"nanofuse-ci:latest"}}},
 	}, nil
+}
+
+func (f *fakeAPI) PullImage(_ context.Context, imageRef string) (*client.ImagePullJob, error) {
+	f.calls = append(f.calls, "pull:"+imageRef)
+	return &client.ImagePullJob{ID: "job-1", ImageRef: imageRef, State: "pending"}, nil
 }
 
 func (f *fakeAPI) CreateVM(_ context.Context, req *client.CreateVMRequest) (*client.VM, error) {
@@ -187,18 +193,57 @@ func TestLaunchVMFromImageCreatesAndStartsVM(t *testing.T) {
 	if api.createReq.Config.Network.Mode != DefaultNetworkMode {
 		t.Fatalf("network mode = %q, want %q", api.createReq.Config.Network.Mode, DefaultNetworkMode)
 	}
+	if api.createReq.Name == "" {
+		t.Fatal("create request name is empty")
+	}
+	if !strings.HasPrefix(api.createReq.Name, DefaultVMNamePrefix+"-nanofuse-ci-latest-") {
+		t.Fatalf("create request name = %q, want readable generated name", api.createReq.Name)
+	}
 	portForwards := api.createReq.Config.Network.PortForwards
 	if len(portForwards) != 1 {
 		t.Fatalf("port forwards = %#v, want one default forward", portForwards)
 	}
-	if portForwards[0].HostPort <= 0 || portForwards[0].HostPort > 65535 {
-		t.Fatalf("host port = %d, want valid TCP port", portForwards[0].HostPort)
+	if portForwards[0].HostPort != DefaultLaunchHostPort {
+		t.Fatalf("host port = %d, want daemon allocation sentinel %d", portForwards[0].HostPort, DefaultLaunchHostPort)
 	}
 	if portForwards[0].VMPort != DefaultPublishedVMPort {
 		t.Fatalf("VM port = %d, want %d", portForwards[0].VMPort, DefaultPublishedVMPort)
 	}
 	if portForwards[0].Protocol != "tcp" {
 		t.Fatalf("protocol = %q, want tcp", portForwards[0].Protocol)
+	}
+}
+
+func TestAddImageStartsPullJob(t *testing.T) {
+	api := &fakeAPI{}
+
+	job, err := AddImage(context.Background(), api, "docker.io/library/ubuntu:24.04")
+	if err != nil {
+		t.Fatalf("AddImage() error = %v", err)
+	}
+	if job.ID != "job-1" {
+		t.Fatalf("job id = %q, want job-1", job.ID)
+	}
+	wantCalls := []string{"pull:docker.io/library/ubuntu:24.04"}
+	if !reflect.DeepEqual(api.calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", api.calls, wantCalls)
+	}
+}
+
+func TestAddImageRejectsMissingImageRef(t *testing.T) {
+	_, err := AddImage(context.Background(), &fakeAPI{}, " ")
+	if err == nil {
+		t.Fatal("AddImage() error = nil")
+	}
+}
+
+func TestGenerateVMNameUsesReadableImageReference(t *testing.T) {
+	name := GenerateVMName("docker.io/library/alpine:3.20")
+	if !strings.HasPrefix(name, DefaultVMNamePrefix+"-alpine-3-20-") {
+		t.Fatalf("GenerateVMName() = %q, want readable alpine prefix", name)
+	}
+	if len(name) > 48 {
+		t.Fatalf("GenerateVMName() length = %d, want <= 48", len(name))
 	}
 }
 

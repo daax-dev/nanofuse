@@ -913,7 +913,8 @@ components:
       properties:
         host_port:
           type: integer
-          minimum: 1
+          description: Host port on the daemon host. Use 0 on create requests to let nanofused allocate an available localhost port.
+          minimum: 0
           maximum: 65535
           example: 8080
         vm_port:

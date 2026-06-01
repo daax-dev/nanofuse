@@ -23,7 +23,8 @@ usage() {
 Usage: scripts/run-tray-macos.sh [--api-url URL] [--timeout DURATION] [--foreground] [--restart] [--smoke] [--start-api] [--launch-image REF] [--debug]
 
 Builds and launches the Nanofuse macOS menu bar app. With --start-api, it also
-starts a local nanofused daemon using the macOS Apple container microVM runtime.
+starts a local nanofused daemon using the current Apple container compatibility
+runtime.
 
 Options:
   --api-url URL    nanofused API URL. Default: NANOFUSE_TRAY_API_URL, NANOFUSE_API_URL, or http://127.0.0.1:18080
@@ -31,7 +32,7 @@ Options:
   --foreground     keep the tray app attached to this terminal
   --restart        stop existing nanofuse-tray processes before launching
   --smoke          run an API smoke check and exit without starting the menu bar app
-  --start-api      start local nanofused on macOS using Apple container / Virtualization.framework
+  --start-api      start local nanofused on macOS using the Apple container compatibility driver
   --launch-image   create and start one VM from an image through the tray launch path, then exit
   --debug          enable API client debug logging
 USAGE
@@ -167,12 +168,24 @@ wait_for_api() {
   local deadline
   deadline=$((SECONDS + 45))
   while (( SECONDS < deadline )); do
-    if curl -fsS "${api_url}/health" >/dev/null 2>&1; then
+    if api_ready; then
       return 0
     fi
     sleep 1
   done
   return 1
+}
+
+api_health_ready() {
+  curl -fsS "${api_url}/health" >/dev/null 2>&1
+}
+
+api_root_ready() {
+  curl -fsS "${api_url}/" 2>/dev/null | grep -q '<title>Nanofuse</title>'
+}
+
+api_ready() {
+  api_health_ready && api_root_ready
 }
 
 find_tray_pids() {
@@ -182,21 +195,38 @@ find_tray_pids() {
 if [[ "${start_api}" -eq 1 ]]; then
   write_api_config
   launchd_target="gui/$(id -u)/${api_launchd_label}"
+  api_service_loaded=0
   if launchctl print "${launchd_target}" >/dev/null 2>&1; then
+    api_service_loaded=1
     if [[ "${restart}" -eq 1 ]]; then
       echo "Stopping existing nanofused launchd service ${api_launchd_label}"
       launchctl bootout "${launchd_target}" >/dev/null 2>&1 || true
+      api_service_loaded=0
       sleep 1
     else
       echo "nanofused launchd service is already loaded: ${api_launchd_label}"
     fi
   fi
-  if ! curl -fsS "${api_url}/health" >/dev/null 2>&1; then
-    echo "Starting local nanofused with Apple container runtime. Endpoint: ${api_url}"
+
+  if api_health_ready && ! api_root_ready; then
+    if [[ "${api_service_loaded}" -eq 1 ]]; then
+      echo "Existing nanofused is healthy but does not serve ${api_url}/; restarting ${api_launchd_label}"
+      launchctl bootout "${launchd_target}" >/dev/null 2>&1 || true
+      api_service_loaded=0
+      sleep 1
+    else
+      echo "A daemon at ${api_url} is healthy but does not serve the Nanofuse root status page." >&2
+      echo "Stop the process bound to ${api_url}, or set NANOFUSE_API_BIND/NANOFUSE_API_URL to a free local port." >&2
+      exit 1
+    fi
+  fi
+
+  if ! api_ready; then
+    echo "Starting local nanofused with Apple container compatibility runtime. Endpoint: ${api_url}"
     abs_daemon="$(pwd)/bin/nanofused"
     launchctl submit -l "${api_launchd_label}" -o "${api_log_file}" -e "${api_log_file}" -- "${abs_daemon}" -config "${api_config}"
     if ! wait_for_api; then
-      echo "nanofused did not become healthy. Log:" >&2
+      echo "nanofused did not become healthy and serve the root status page. Log:" >&2
       sed -n '1,160p' "${api_log_file}" >&2 || true
       exit 1
     fi
@@ -220,6 +250,10 @@ fi
 
 if [[ "${smoke}" -eq 1 ]]; then
   echo "Running tray API smoke check against ${api_url}..."
+  if ! api_root_ready; then
+    echo "API root status page is not available at ${api_url}/" >&2
+    exit 1
+  fi
   exec ./bin/nanofuse-tray --smoke "${args[@]}"
 fi
 

@@ -17,7 +17,15 @@ open http://127.0.0.1:18080/
 curl "$NANOFUSE_API_URL/capabilities"
 ```
 
-The root URL is a browser status page with runtime state, VMs, images, and published port mappings. The expected macOS runtime is `driver=apple_container` with `native_runtime=true`.
+The root URL is a browser status page with runtime state, VMs, images, and published port mappings. The current macOS tray/API compatibility path reports `driver=apple_container` with `native_runtime=true`. That driver uses Apple's `container` tooling; it is not the final Nanofuse-owned Apple Virtualization.framework backend target.
+
+If `http://127.0.0.1:18080/` returns `404 page not found`, the process listening on `18080` is not the current Nanofuse daemon build. Run:
+
+```bash
+./scripts/run-tray-macos.sh --start-api --restart --smoke --timeout 10s
+```
+
+The launcher now treats `/` as part of daemon readiness, not just `/health`.
 
 ## See Running VMs
 
@@ -91,7 +99,7 @@ nanofuse vm list
 nanofuse vm ports
 ```
 
-The tray app lists up to 25 VMs with state and port context. Select a VM from the VM list, then use start, stop, kill, or delete.
+The tray app lists up to 25 VMs with state, image, and port context. Each VM row expands to its own start, stop, kill, and delete actions, so a stopped VM does not show an active stop action and a running VM does not show an active start action.
 
 Start is enabled only for `created` and `stopped` VMs. Stop is enabled only for `running` and `paused` VMs. Kill requires an active runtime handle. Delete remains available for selected VM rows.
 
@@ -111,7 +119,7 @@ nanofuse image pull docker.io/library/ubuntu:24.04
 nanofuse image list
 ```
 
-On macOS with `runtime.driver=apple_container`, `nanofuse vm run <oci-ref>` can also resolve OCI image references through Apple container when creating the VM:
+On macOS with the current `runtime.driver=apple_container` compatibility path, `nanofuse vm run <oci-ref>` can also resolve OCI image references through Apple container when creating the VM:
 
 ```bash
 nanofuse vm run docker.io/library/alpine:3.20 alpine-test
@@ -128,4 +136,4 @@ curl -X POST "$NANOFUSE_API_URL/images/pull" \
 curl "$NANOFUSE_API_URL/images"
 ```
 
-In the tray app, choose `Refresh`, select a cached image under `Images`, then choose `Create and Start VM From Image`.
+In the tray app, choose `New MicroVM From Container...` and enter an OCI reference such as `docker.io/library/alpine:3.20` to create and start a VM immediately. Choose `Add Image to List...` to start an API image pull/resolution job, then refresh the tray and launch from the cached image list.

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -51,6 +52,8 @@ const (
 	DefaultBaseImage = "base"
 	// DefaultImageTag is the default image tag
 	DefaultImageTag = "latest"
+	// DefaultAPIURL is the default TCP API endpoint used for Windows clients.
+	DefaultAPIURL = "http://127.0.0.1:18080"
 	// DefaultAPISocketPath is the default nanofused Unix socket.
 	DefaultAPISocketPath = "/var/run/nanofused.sock"
 )
@@ -120,7 +123,7 @@ It provides simple commands for VM lifecycle management, snapshots, and image ha
 			apiClient = client.NewTCPClient(apiURL, timeout, debug)
 		} else {
 			if apiSocket == "" {
-				apiSocket = DefaultAPISocketPath
+				_, apiSocket = defaultClientEndpoint(runtime.GOOS)
 			}
 			apiClient = client.NewClient(apiSocket, timeout, debug)
 		}
@@ -157,8 +160,18 @@ func applyClientEnvironment() error {
 	if !noColor && envTruthy(os.Getenv("NANOFUSE_NO_COLOR")) {
 		noColor = true
 	}
+	if apiURL == "" && apiSocket == "" {
+		apiURL, apiSocket = defaultClientEndpoint(runtime.GOOS)
+	}
 
 	return nil
+}
+
+func defaultClientEndpoint(goos string) (apiURL string, socketPath string) {
+	if goos == "windows" {
+		return DefaultAPIURL, ""
+	}
+	return "", DefaultAPISocketPath
 }
 
 func envTruthy(value string) bool {

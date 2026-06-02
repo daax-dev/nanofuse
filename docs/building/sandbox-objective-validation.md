@@ -102,6 +102,30 @@ Local macOS runtime result on 2026-05-31:
 - `POST /vms/{id}/stop` returned `stopped`.
 - `DELETE /vms/{id}` returned HTTP 204 and runtime cleanup left no matching `nf-*` container.
 
+Windows packaging result on 2026-06-02:
+
+- Build host toolchain: `go version go1.25.10 linux/amd64`.
+- Local compiler used for `mage ci`: Zig `0.16.0` via `CC='/tmp/zig-x86_64-linux-0.16.0/zig cc'`.
+- Windows CLI cross-build passed:
+  `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 /tmp/go1.25.10/go/bin/go build -o /tmp/nanofuse.exe ./cmd/nanofuse`.
+- Windows tray cross-build passed:
+  `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 /tmp/go1.25.10/go/bin/go build -ldflags='-H=windowsgui' -o /tmp/nanofuse-tray.exe ./cmd/nanofuse-tray`.
+- Cross-built artifacts are PE binaries for Windows:
+  `nanofuse.exe` console, `nanofuse-tray.exe` GUI.
+- The first Windows package slice was assembled with:
+  `GO_BIN=/tmp/go1.25.10/go/bin/go ./scripts/package-windows.sh`.
+- Resulting artifact: `dist/nanofuse-windows-amd64.zip`.
+- ZIP contents were verified with `python3 -m zipfile -l dist/nanofuse-windows-amd64.zip`.
+- Package contents:
+  `nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`.
+- The full local repo gate passed with:
+  `PATH=/tmp/go1.25.10/go/bin:/tmp/nanofuse-go/path/bin:$PATH HOME=/tmp/nanofuse-go/home GOCACHE=/tmp/nanofuse-go/cache GOPATH=/tmp/nanofuse-go/path GOMODCACHE=/tmp/nanofuse-go/mod CC='/tmp/zig-x86_64-linux-0.16.0/zig cc' mage ci`.
+- `gosec` was not installed; the existing mage target reported that and continued.
+- Windows desktop smoke is still blocked because this workspace does not provide an actual Windows interactive session for executing `nanofuse.exe` or `nanofuse-tray.exe`.
+- Attempting to invoke Windows PowerShell from this workspace for script parsing failed with WSL interop error `UtilBindVsockAnyPort:307: socket failed 1`, so the installer script was validated by content and packaging, not by a live PowerShell parser run.
+- Mount visibility remains a product blocker for this task slice: no first-class Windows CLI or API mount metadata query exists today.
+- Secret reference visibility remains a product blocker for this task slice: no first-class Windows CLI secret inventory or VM secret-reference query exists today.
+
 The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-2026-05-30.log` and `.logs/validation/vagrant-closed-loop-2026-05-30-nested.log` in the local working tree. The committed validation record is `.logs/validation/sandbox-objective.jsonl`.
 
 ## Current Implementation Evidence
@@ -114,6 +138,7 @@ The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-20
 | Secrets/identity | SPIFFE/vsock path remains identity-only. Raw secret broker and Vault exchange are not implemented in this PR. |
 | Cross-platform support | Documentation now separates Linux/KVM Firecracker, macOS Apple-container runtime, and Windows API/tray client support. |
 | API-driven operation | `GET /capabilities` reports host/runtime readiness, CLI env vars support remote API configuration, and Vagrant forwards host `127.0.0.1:18080` to guest API port `8080`. |
+| Windows package | `dist/nanofuse-windows-amd64.zip` and `scripts/install-windows.ps1` provide the first Windows client package slice; Windows defaults to `http://127.0.0.1:18080` when no endpoint is provided. |
 
 ## Known Gaps
 
@@ -123,3 +148,5 @@ The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-20
 - Guest-side SPIFFE SVID client is still required for end-to-end identity retrieval inside the VM.
 - macOS arm64 Parallels validation depends on whether the provider exposes Linux KVM to the guest; unsupported providers must be reported as KVM-unavailable, not treated as pass.
 - macOS Apple-container runtime does not yet support Nanofuse egress policy enforcement, pause/resume, or snapshots. Those remain Firecracker/Linux-path capabilities or future backend work.
+- This workspace still lacks a real Windows interactive session, so `nanofuse.exe health`, `/capabilities` output from Windows PowerShell, `vm list`, `vm ports`, and tray smoke output remain uncollected Windows-side evidence.
+- Mount metadata and secret reference inventory are not exposed as first-class Windows operator query surfaces today.

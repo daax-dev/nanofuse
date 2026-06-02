@@ -360,3 +360,23 @@ func TestConfigDefaultsToUnixSocket(t *testing.T) {
 		t.Fatalf("Timeout = %v", cfg.Timeout)
 	}
 }
+
+func TestDefaultEndpointForWindowsUsesTCP(t *testing.T) {
+	apiURL, apiSocket := defaultEndpointForOS("windows")
+	if apiURL != DefaultAPIURL {
+		t.Fatalf("apiURL = %q, want %q", apiURL, DefaultAPIURL)
+	}
+	if apiSocket != "" {
+		t.Fatalf("apiSocket = %q, want empty", apiSocket)
+	}
+}
+
+func TestDefaultEndpointForLinuxUsesUnixSocket(t *testing.T) {
+	apiURL, apiSocket := defaultEndpointForOS("linux")
+	if apiURL != "" {
+		t.Fatalf("apiURL = %q, want empty", apiURL)
+	}
+	if apiSocket != DefaultAPISocketPath {
+		t.Fatalf("apiSocket = %q, want %q", apiSocket, DefaultAPISocketPath)
+	}
+}

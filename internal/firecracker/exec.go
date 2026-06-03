@@ -43,14 +43,16 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	// after the destination to the guest's login shell verbatim, so no "--"
 	// terminator is used (ssh would forward it into the remote command).
 	remoteCommand := shellJoin(command)
-	args := []string{
+	hostKeyOpts := m.hostKeyOptions()
+	args := make([]string, 0, 10+len(hostKeyOpts)+2)
+	args = append(args,
 		"-i", m.execSSHKey,
 		"-o", "IdentitiesOnly=yes",
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
 		"-o", "LogLevel=ERROR",
-	}
-	args = append(args, m.hostKeyOptions()...)
+	)
+	args = append(args, hostKeyOpts...)
 	args = append(args, fmt.Sprintf("%s@%s", user, ip), remoteCommand)
 
 	var stdout, stderr bytes.Buffer

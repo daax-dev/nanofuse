@@ -11,6 +11,10 @@ FIXTURES="$PROJECT_ROOT/test/fixtures/debug-kernel"
 # (where sudo may not be installed) as well as normal non-root shells.
 SUDO=""
 if [[ "$(id -u)" -ne 0 ]]; then
+    if ! command -v sudo >/dev/null 2>&1; then
+        echo "ERROR: not running as root and 'sudo' is not installed; run this script as root or install sudo." >&2
+        exit 1
+    fi
     SUDO="sudo"
 fi
 

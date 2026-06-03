@@ -50,9 +50,16 @@ if (-not (Test-Path bin\nanofuse-tray.exe)) {
 
 # --- 2. Ensure the WSL2 Firecracker daemon is running -----------------------
 $wslRepo = (wsl -d $Distro -u root -e wslpath -u "$RepoRoot").Trim()
-$wslIp = ((wsl -d $Distro -u root -e hostname -I).Trim() -split '\s+')[0]
-if (-not $wslIp) { throw "Could not determine the WSL IP for distro '$Distro'." }
-$endpoint = "http://${wslIp}:18080"
+# Prefer an IPv4 address; bracket IPv6 if that is all that is available.
+$wslAddrs = ((wsl -d $Distro -u root -e hostname -I).Trim() -split '\s+') | Where-Object { $_ }
+$wslIp4 = $wslAddrs | Where-Object { $_ -match '^\d{1,3}(\.\d{1,3}){3}$' } | Select-Object -First 1
+if ($wslIp4) {
+    $endpoint = "http://${wslIp4}:18080"
+} elseif ($wslAddrs.Count -gt 0) {
+    $endpoint = "http://[$($wslAddrs[0])]:18080"
+} else {
+    throw "Could not determine the WSL IP for distro '$Distro'."
+}
 
 function Test-Daemon { try { $null = Invoke-RestMethod "$endpoint/health" -TimeoutSec 3; return $true } catch { return $false } }
 
@@ -62,7 +69,9 @@ if (Test-Daemon) {
     $haveDaemon = (wsl -d $Distro -u root -e bash -lc "test -x '$wslRepo/bin/nanofused' && echo yes || echo no").Trim()
     if ($haveDaemon -ne "yes") {
         Warn "First-time WSL setup (Go + Firecracker + image, several minutes)..."
-        wsl -d $Distro -u root -e bash -lc "cd '$wslRepo' && sed -i 's/\r`$//' scripts/wsl-firecracker-daemon.sh && bash scripts/wsl-firecracker-daemon.sh setup"
+        # 's/\r//' strips CR if the repo was checked out CRLF; no '$' so there is
+        # nothing for PowerShell to interpolate inside the bash command string.
+        wsl -d $Distro -u root -e bash -lc "cd '$wslRepo' && sed -i 's/\r//' scripts/wsl-firecracker-daemon.sh && bash scripts/wsl-firecracker-daemon.sh setup"
         if ($LASTEXITCODE -ne 0) { throw "WSL daemon setup failed; see output above." }
     }
     Info "Starting nanofused in a new WSL window ..."

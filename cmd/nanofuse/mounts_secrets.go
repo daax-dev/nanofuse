@@ -63,10 +63,19 @@ func parseMountSpecs(specs []string) ([]client.Mount, error) {
 			value = strings.TrimSpace(value)
 			switch key {
 			case "src", "source":
+				if value == "" {
+					return nil, fmt.Errorf("invalid --mount %q: %q requires a value", spec, key)
+				}
 				m.Source = value
 			case "dst", "target", "destination":
+				if value == "" {
+					return nil, fmt.Errorf("invalid --mount %q: %q requires a value", spec, key)
+				}
 				m.Target = value
 			case "type":
+				if value == "" {
+					return nil, fmt.Errorf("invalid --mount %q: %q requires a value", spec, key)
+				}
 				m.Type = strings.ToLower(value)
 			case "ro", "readonly", "read_only":
 				// Bare "ro" means read-only; an explicit value is parsed

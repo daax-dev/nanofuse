@@ -190,6 +190,12 @@ func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfi
 				config.Network.EgressPolicy = req.Config.Network.EgressPolicy
 			}
 		}
+		if req.Config.Mounts != nil {
+			config.Mounts = *req.Config.Mounts
+		}
+		if req.Config.Secrets != nil {
+			config.Secrets = *req.Config.Secrets
+		}
 	}
 
 	return config
@@ -595,6 +601,20 @@ func (s *Server) prepareCreateVMConfig(w http.ResponseWriter, image *types.Image
 		writePortForwardPreparationError(w, s.logger, err)
 		return types.VMConfig{}, false
 	}
+
+	normalizedMounts, err := types.NormalizeAndValidateMounts(config.Mounts)
+	if err != nil {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, err.Error(), nil)
+		return types.VMConfig{}, false
+	}
+	config.Mounts = normalizedMounts
+
+	normalizedSecrets, err := types.NormalizeAndValidateSecrets(config.Secrets)
+	if err != nil {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, err.Error(), nil)
+		return types.VMConfig{}, false
+	}
+	config.Secrets = normalizedSecrets
 
 	if err := s.validateVMResourceLimits(config); err != nil {
 		if s.logger != nil {

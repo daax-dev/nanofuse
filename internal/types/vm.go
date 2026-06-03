@@ -46,6 +46,43 @@ type VMConfig struct {
 	SSHPublicKey string        `json:"ssh_public_key,omitempty"` // Base64-encoded SSH public key
 	Network      NetworkConfig `json:"network"`
 	Disks        []DiskConfig  `json:"disks"`
+	Mounts       []Mount       `json:"mounts,omitempty"`
+	Secrets      []SecretRef   `json:"secrets,omitempty"`
+}
+
+// MountType enumerates the supported operator mount kinds.
+const (
+	MountTypeBind   = "bind"   // host path mapped into the guest
+	MountTypeVolume = "volume" // named host-managed volume
+	MountTypeTmpfs  = "tmpfs"  // ephemeral in-guest tmpfs
+)
+
+// Mount declares an operator-visible filesystem mount for a VM.
+// It is a first-class query surface: source/target/type/read-only intent are
+// recorded and surfaced to operators. Runtime enforcement (virtio-fs/block
+// attachment) is performed by the selected backend where supported.
+type Mount struct {
+	Source   string `json:"source,omitempty"` // host path or volume name; empty for tmpfs
+	Target   string `json:"target"`           // absolute guest mount point
+	Type     string `json:"type,omitempty"`   // bind|volume|tmpfs (default bind)
+	ReadOnly bool   `json:"read_only,omitempty"`
+}
+
+// SecretType enumerates how a referenced secret is delivered to the guest.
+const (
+	SecretTypeEnv  = "env"  // delivered as an environment variable
+	SecretTypeFile = "file" // delivered as a file at Target
+)
+
+// SecretRef is a reference to a secret made available to a VM. It never carries
+// the secret value: only the logical name, the source reference, the delivery
+// type, and the in-guest target. This is the operator inventory surface; scoped
+// value delivery is handled by the secret broker layer.
+type SecretRef struct {
+	Name   string `json:"name"`             // logical secret name
+	Source string `json:"source,omitempty"` // provider reference, e.g. spire://, vault://, env://NAME
+	Type   string `json:"type,omitempty"`   // env|file (default env)
+	Target string `json:"target,omitempty"` // env var name or absolute file path in guest
 }
 
 // NetworkConfig represents network configuration
@@ -141,6 +178,8 @@ type VMConfigRequest struct {
 	KernelArgs   *string               `json:"kernel_args,omitempty"`
 	SSHPublicKey *string               `json:"ssh_public_key,omitempty"` // Base64-encoded SSH public key
 	Network      *NetworkConfigRequest `json:"network,omitempty"`
+	Mounts       *[]Mount              `json:"mounts,omitempty"`
+	Secrets      *[]SecretRef          `json:"secrets,omitempty"`
 }
 
 // NetworkConfigRequest represents network config in create request

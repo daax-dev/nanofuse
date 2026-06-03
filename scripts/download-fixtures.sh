@@ -7,8 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 FIXTURES="$PROJECT_ROOT/test/fixtures/debug-kernel"
 
-# Firecracker CI release - December 2025
-CI_VERSION="20251218-f2f293f67e5f-0"
+# Firecracker CI channel - use the maintained v1.15 channel prefix.
+# The dated snapshot prefixes are pruned over time and 404 on the rootfs; the
+# versioned channel (firecracker-ci/v1.15/x86_64/) is kept current by the
+# Firecracker team and carries Ubuntu 24.04 + kernel 5.10/6.1.
+CI_VERSION="v1.15"
 ARCH="x86_64"
 S3_BASE="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/${CI_VERSION}/${ARCH}"
 

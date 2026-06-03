@@ -148,6 +148,42 @@ func (f *Formatter) PrintVM(vm *client.VM) error {
 	if vm.Config.KernelArgs != "" {
 		fmt.Printf("  Kernel Args:   %s\n", vm.Config.KernelArgs)
 	}
+	if len(vm.Config.Mounts) > 0 {
+		fmt.Println("  Mounts:")
+		for _, m := range vm.Config.Mounts {
+			mode := "rw"
+			if m.ReadOnly {
+				mode = "ro"
+			}
+			typ := m.Type
+			if typ == "" {
+				typ = "bind"
+			}
+			source := m.Source
+			if source == "" {
+				source = "-"
+			}
+			fmt.Printf("    %s %s -> %s (%s)\n", typ, source, m.Target, mode)
+		}
+	}
+	if len(vm.Config.Secrets) > 0 {
+		fmt.Println("  Secret Refs:")
+		for _, s := range vm.Config.Secrets {
+			typ := s.Type
+			if typ == "" {
+				typ = "env"
+			}
+			target := s.Target
+			if target == "" {
+				target = s.Name
+			}
+			source := s.Source
+			if source == "" {
+				source = "-"
+			}
+			fmt.Printf("    %s (%s) source=%s target=%s\n", s.Name, typ, source, target)
+		}
+	}
 
 	if vm.Runtime != nil {
 		fmt.Println()

@@ -41,6 +41,7 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	remoteCommand := shellJoin(command)
 	args := []string{
 		"-i", m.execSSHKey,
+		"-o", "IdentitiesOnly=yes",
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",

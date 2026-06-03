@@ -25,6 +25,8 @@ NF_EXEC_KEY="${NF_EXEC_KEY:-${NF_DATA_DIR}/exec_id_ed25519}"
 FIXTURES="${REPO_ROOT}/test/fixtures/debug-kernel"
 GO_VERSION="1.25.0"
 GOROOT="/usr/local/go"
+# Pin Firecracker by default for reproducible bring-up; set NF_FIRECRACKER_TAG=latest to track upstream.
+NF_FIRECRACKER_TAG="${NF_FIRECRACKER_TAG:-v1.15.1}"
 export PATH="${GOROOT}/bin:${HOME}/go/bin:${PATH}"
 
 log() { echo "[wsl-fc] $*"; }
@@ -37,7 +39,7 @@ install_deps() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
   apt-get install -y --no-install-recommends \
-    ca-certificates curl gcc libc6-dev make \
+    ca-certificates curl gcc libc6-dev make openssh-client \
     squashfs-tools e2fsprogs iproute2 iptables jq xz-utils
 }
 
@@ -56,10 +58,15 @@ install_firecracker() {
   if command -v firecracker >/dev/null 2>&1; then
     log "firecracker present: $(firecracker --version | head -1)"; return
   fi
-  log "resolving latest firecracker release"
   local tag arch url tmp
-  tag="$(curl -fsSL https://api.github.com/repos/firecracker-microvm/firecracker/releases/latest | jq -r .tag_name)"
-  [ -n "$tag" ] && [ "$tag" != "null" ] || tag="v1.13.1"
+  tag="${NF_FIRECRACKER_TAG}"
+  if [ "${tag}" = "latest" ]; then
+    log "resolving latest firecracker release"
+    tag="$(curl -fsSL https://api.github.com/repos/firecracker-microvm/firecracker/releases/latest | jq -r .tag_name)"
+    [ -n "$tag" ] && [ "$tag" != "null" ] || tag="v1.15.1"
+  else
+    log "using pinned firecracker ${tag}"
+  fi
   arch="$(uname -m)"
   url="https://github.com/firecracker-microvm/firecracker/releases/download/${tag}/firecracker-${tag}-${arch}.tgz"
   log "downloading firecracker ${tag}"

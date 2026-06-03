@@ -93,7 +93,7 @@ Current blockers to record during Windows smoke:
 Invoke-RestMethod "$env:NANOFUSE_API_URL/vms"
 ```
 
-Mount visibility is not exposed as a first-class CLI/API query surface today. Secret reference visibility is not exposed as a first-class Windows CLI surface today. Record both as blockers unless the repo changes.
+Mount visibility and secret-reference visibility are now first-class operator surfaces: `nanofuse vm mounts`, `nanofuse vm secrets`, the `--mount`/`--secret` flags, and `config.mounts`/`config.secrets` in `vm status` and `/vms` JSON. These are no longer blockers.
 
 ## Required Evidence
 
@@ -147,8 +147,8 @@ The Windows work maps to the larger objective as follows:
 | Sandbox listing | Must work from Windows through the daemon API via `nanofuse vm list` or `/vms`. |
 | Ingress ports | Must be visible from Windows through `nanofuse vm ports` or API equivalent. |
 | Egress policy | Current intent is visible through VM status or `/vms` JSON. Enforcement is still not fail-closed on the macOS compatibility path. |
-| Mounts | Current Windows operator path has no first-class mount metadata query surface. Record this as a blocker. |
-| Secrets | Current Windows operator path has no first-class secret reference query surface. Record this as a blocker. |
+| Mounts | Visible from Windows through `nanofuse vm mounts`, `vm status`, and `config.mounts` in `/vms` JSON. Declared with `--mount`. Resolved. |
+| Secrets | Visible from Windows through `nanofuse vm secrets`, `vm status`, and `config.secrets` in `/vms` JSON. Declared with `--secret` (references only). Resolved. |
 | Easy installer | First target is ZIP or PowerShell installer. MSI/signing can follow. |
 
 ## Current Blockers

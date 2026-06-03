@@ -123,8 +123,7 @@ Windows packaging result on 2026-06-02:
 - `gosec` was not installed; the existing mage target reported that and continued.
 - Windows desktop smoke is still blocked because this workspace does not provide an actual Windows interactive session for executing `nanofuse.exe` or `nanofuse-tray.exe`.
 - Attempting to invoke Windows PowerShell from this workspace for script parsing failed with WSL interop error `UtilBindVsockAnyPort:307: socket failed 1`, so the installer script was validated by content and packaging, not by a live PowerShell parser run.
-- Mount visibility remains a product blocker for this task slice: no first-class Windows CLI or API mount metadata query exists today.
-- Secret reference visibility remains a product blocker for this task slice: no first-class Windows CLI secret inventory or VM secret-reference query exists today.
+- (At packaging time, mount and secret-reference visibility were open blockers. They were subsequently resolved; see "Windows closed-loop result on 2026-06-02" below, which adds `vm mounts`, `vm secrets`, `--mount`/`--secret`, and `config.mounts`/`config.secrets` in the `/vms` JSON.)
 
 Windows closed-loop result on 2026-06-02:
 

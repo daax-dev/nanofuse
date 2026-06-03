@@ -78,11 +78,12 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	if errors.As(runErr, &exitErr) {
 		code := exitErr.ExitCode()
 		// ssh uses 255 for its own connection/transport failures. Surface those
-		// as an error rather than a guest command exit code.
-		if code == 255 {
-			return nil, fmt.Errorf("firecracker exec ssh transport error: %s", strings.TrimSpace(stderr.String()))
-		}
+		// as an error rather than a guest command exit code, but still return the
+		// populated result so callers can read captured stdout/stderr diagnostics.
 		result.ExitCode = code
+		if code == 255 {
+			return result, fmt.Errorf("firecracker exec ssh transport error: %s", strings.TrimSpace(stderr.String()))
+		}
 		return result, nil
 	}
 

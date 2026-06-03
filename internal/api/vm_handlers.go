@@ -1418,8 +1418,19 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Printf("ERROR: Failed to exec in VM: %v", err)
+		details := map[string]interface{}{"vm_id": vm.ID}
+		// Surface any captured diagnostics (e.g. ssh transport stderr) so the
+		// operator can see why exec failed.
+		if result != nil {
+			if result.Stderr != "" {
+				details["stderr"] = result.Stderr
+			}
+			if result.Stdout != "" {
+				details["stdout"] = result.Stdout
+			}
+		}
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
-			"Failed to exec in VM", map[string]interface{}{"vm_id": vm.ID})
+			"Failed to exec in VM", details)
 		return
 	}
 

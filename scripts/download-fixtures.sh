@@ -7,6 +7,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 FIXTURES="$PROJECT_ROOT/test/fixtures/debug-kernel"
 
+# Use sudo only when not already root, so this works on minimal root WSL/containers
+# (where sudo may not be installed) as well as normal non-root shells.
+SUDO=""
+if [[ "$(id -u)" -ne 0 ]]; then
+    SUDO="sudo"
+fi
+
 # Firecracker CI channel - use the maintained v1.15 channel prefix.
 # The dated snapshot prefixes are pruned over time and 404 on the rootfs; the
 # versioned channel (firecracker-ci/v1.15/x86_64/) is kept current by the
@@ -97,10 +104,10 @@ else
 
     # Mount and copy
     MOUNT_DIR=$(mktemp -d)
-    sudo mount -o loop "$FIXTURES/$EXT4_FILE" "$MOUNT_DIR"
+    $SUDO mount -o loop "$FIXTURES/$EXT4_FILE" "$MOUNT_DIR"
     echo "  Copying files..."
-    sudo cp -a "$TEMP_DIR/rootfs/." "$MOUNT_DIR/"
-    sudo umount "$MOUNT_DIR"
+    $SUDO cp -a "$TEMP_DIR/rootfs/." "$MOUNT_DIR/"
+    $SUDO umount "$MOUNT_DIR"
     rmdir "$MOUNT_DIR"
 
     # Cleanup squashfs (optional - comment out to keep)

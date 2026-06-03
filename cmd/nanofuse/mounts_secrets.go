@@ -69,8 +69,19 @@ func parseMountSpecs(specs []string) ([]client.Mount, error) {
 			case "type":
 				m.Type = strings.ToLower(value)
 			case "ro", "readonly", "read_only":
-				if !hasValue || value == "" || value == "true" || value == "1" {
+				// Bare "ro" means read-only; an explicit value is parsed
+				// case-insensitively as a boolean.
+				if !hasValue {
 					m.ReadOnly = true
+					break
+				}
+				switch strings.ToLower(value) {
+				case "", "true", "1", "yes", "on":
+					m.ReadOnly = true
+				case "false", "0", "no", "off":
+					m.ReadOnly = false
+				default:
+					return nil, fmt.Errorf("invalid --mount %q: ro must be true or false", spec)
 				}
 			default:
 				return nil, fmt.Errorf("invalid --mount %q: unknown key %q", spec, key)

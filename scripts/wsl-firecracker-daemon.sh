@@ -32,7 +32,7 @@ export PATH="${GOROOT}/bin:${HOME}/go/bin:${PATH}"
 log() { echo "[wsl-fc] $*"; }
 die() { echo "[wsl-fc][FAIL] $*" >&2; exit 1; }
 
-require_root() { [ "$(id -u)" -eq 0 ] || die "must run as root (wsl.exe -u root)"; }
+require_root() { [ "$(id -u)" -eq 0 ] || die "must run as root (e.g. 'sudo bash $0 ...' or 'wsl.exe -d Ubuntu -u root')"; }
 
 install_deps() {
   log "installing apt dependencies"
@@ -190,11 +190,11 @@ api:
   socket: /var/run/nanofused.sock
   tcp_bind: "${NF_TCP_BIND}"
 storage:
-  data_dir: ${NF_DATA_DIR}
-  database: ${NF_DB}
+  data_dir: "${NF_DATA_DIR}"
+  database: "${NF_DB}"
 firecracker:
   binary_path: /usr/local/bin/firecracker
-  exec_ssh_key_path: ${NF_EXEC_KEY}
+  exec_ssh_key_path: "${NF_EXEC_KEY}"
   exec_ssh_user: root
 network:
   setup: true

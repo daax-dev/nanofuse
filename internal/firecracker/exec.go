@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/daax-dev/nanofuse/internal/types"
@@ -46,13 +47,11 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 		"-i", m.execSSHKey,
 		"-o", "IdentitiesOnly=yes",
 		"-o", "BatchMode=yes",
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "ConnectTimeout=10",
 		"-o", "LogLevel=ERROR",
-		fmt.Sprintf("%s@%s", user, ip),
-		remoteCommand,
 	}
+	args = append(args, m.hostKeyOptions()...)
+	args = append(args, fmt.Sprintf("%s@%s", user, ip), remoteCommand)
 
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "ssh", args...)
@@ -98,6 +97,19 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	// result). ErrUnsupportedOperation stays reserved for true gaps such as a
 	// missing exec key.
 	return result, fmt.Errorf("firecracker exec could not run ssh client: %w", runErr)
+}
+
+// hostKeyOptions returns the ssh host-key verification options. When enabled,
+// it uses accept-new TOFU with a known_hosts file under the data dir. The
+// default disables host-key checks because guest host keys are ephemeral and
+// the bridge recycles guest IPs across VMs (a persistent known_hosts would then
+// fail with "host key changed"); the exec bridge is daemon-controlled.
+func (m *Manager) hostKeyOptions() []string {
+	if m.execVerifyHostK {
+		knownHosts := filepath.Join(m.dataDir, "exec_known_hosts")
+		return []string{"-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=" + knownHosts}
+	}
+	return []string{"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"}
 }
 
 // firecrackerRuntimeID returns the runtime-owned identifier for a VM, matching

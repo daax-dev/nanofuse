@@ -41,8 +41,9 @@ type Manager struct {
 	spireConfig   *SPIREProxyConfig
 	vsockProxies  map[string]*VsockProxy // vmID -> proxy
 	vsockMu       sync.Mutex             // protects vsockProxies map
-	execSSHKey    string                 // daemon private key for `vm exec` over SSH ("" disables exec)
-	execSSHUser   string                 // guest SSH user for exec (default "root")
+	execSSHKey      string               // daemon private key for `vm exec` over SSH ("" disables exec)
+	execSSHUser     string               // guest SSH user for exec (default "root")
+	execVerifyHostK bool                 // verify guest host key (accept-new TOFU) instead of disabling checks
 }
 
 // NewManager creates a new Firecracker manager
@@ -56,10 +57,13 @@ func NewManager(binaryPath, dataDir string) *Manager {
 
 // SetExecSSH configures the daemon-side SSH key and user used to implement
 // `vm exec` inside Firecracker guests. An empty keyPath leaves exec disabled,
-// in which case Exec reports the operation as unsupported.
-func (m *Manager) SetExecSSH(keyPath, user string) {
+// in which case Exec reports the operation as unsupported. When verifyHostKey
+// is true, exec uses accept-new host-key verification with a known_hosts file
+// under the data dir; otherwise host-key checks are disabled (see config).
+func (m *Manager) SetExecSSH(keyPath, user string, verifyHostKey bool) {
 	m.execSSHKey = keyPath
 	m.execSSHUser = user
+	m.execVerifyHostK = verifyHostKey
 }
 
 // SetSPIREConfig sets the SPIRE proxy configuration.

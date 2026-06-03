@@ -3,6 +3,7 @@ package firecracker
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/daax-dev/nanofuse/internal/types"
@@ -20,7 +21,7 @@ func TestExecUnsupportedWhenKeyUnset(t *testing.T) {
 
 func TestExecRequiresGuestIP(t *testing.T) {
 	m := NewManager("/usr/bin/firecracker", t.TempDir())
-	m.SetExecSSH("/tmp/key", "root")
+	m.SetExecSSH("/tmp/key", "root", false)
 	vm := &types.VM{ID: "x"} // no runtime/IP
 	_, err := m.Exec(context.Background(), vm, []string{"echo", "hi"})
 	if err == nil || errors.Is(err, vmm.ErrUnsupportedOperation) {
@@ -49,6 +50,19 @@ func TestGuestIP(t *testing.T) {
 			t.Fatalf("got %q", got)
 		}
 	})
+}
+
+func TestHostKeyOptions(t *testing.T) {
+	m := NewManager("/usr/bin/firecracker", "/var/lib/nanofuse")
+	m.SetExecSSH("/k", "root", false)
+	if got := strings.Join(m.hostKeyOptions(), " "); !strings.Contains(got, "StrictHostKeyChecking=no") || !strings.Contains(got, "/dev/null") {
+		t.Fatalf("default should disable host-key checks, got %q", got)
+	}
+	m.SetExecSSH("/k", "root", true)
+	got := strings.Join(m.hostKeyOptions(), " ")
+	if !strings.Contains(got, "StrictHostKeyChecking=accept-new") || !strings.Contains(got, "/var/lib/nanofuse/exec_known_hosts") {
+		t.Fatalf("verify mode should use accept-new + known_hosts, got %q", got)
+	}
 }
 
 func TestFirecrackerRuntimeID(t *testing.T) {

@@ -91,6 +91,12 @@ type FirecrackerConfig struct {
 	ExecSSHKeyPath string `yaml:"exec_ssh_key_path,omitempty"`
 	// ExecSSHUser is the guest user for `vm exec` over SSH (default "root").
 	ExecSSHUser string `yaml:"exec_ssh_user,omitempty"`
+	// ExecSSHVerifyHostKey enables TOFU host-key verification for `vm exec`
+	// (StrictHostKeyChecking=accept-new with a known_hosts file under the data
+	// dir). Default false because guest host keys are ephemeral and bridge IPs
+	// are recycled across VMs, which would otherwise cause host-key-changed
+	// failures; the exec bridge is daemon-controlled and host-internal.
+	ExecSSHVerifyHostKey bool `yaml:"exec_ssh_verify_host_key,omitempty"`
 }
 
 // LimitsConfig represents resource limits

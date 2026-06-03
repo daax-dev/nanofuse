@@ -228,6 +228,11 @@ cmd_setup() {
 cmd_run() {
   require_root
   write_config
+  case "${NF_TCP_BIND}" in
+    0.0.0.0:* | :::* | "[::]:"*)
+      log "WARNING: binding the API to ${NF_TCP_BIND} exposes full VM control on all interfaces with no authentication. On a non-isolated host prefer NF_TCP_BIND=127.0.0.1:18080 and reach it via the WSL IP or an SSH tunnel."
+      ;;
+  esac
   log "starting nanofused (firecracker) on ${NF_TCP_BIND}"
   exec "${REPO_ROOT}/bin/nanofused" -config "${NF_CONFIG}" -tcp "${NF_TCP_BIND}"
 }

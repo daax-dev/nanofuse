@@ -55,13 +55,33 @@ func TestGuestIP(t *testing.T) {
 func TestHostKeyOptions(t *testing.T) {
 	m := NewManager("/usr/bin/firecracker", "/var/lib/nanofuse")
 	m.SetExecSSH("/k", "root", false)
-	if got := strings.Join(m.hostKeyOptions(), " "); !strings.Contains(got, "StrictHostKeyChecking=no") || !strings.Contains(got, "/dev/null") {
+	if got := strings.Join(m.hostKeyOptions("vm-1"), " "); !strings.Contains(got, "StrictHostKeyChecking=no") || !strings.Contains(got, "/dev/null") {
 		t.Fatalf("default should disable host-key checks, got %q", got)
 	}
 	m.SetExecSSH("/k", "root", true)
-	got := strings.Join(m.hostKeyOptions(), " ")
+	got := strings.Join(m.hostKeyOptions("vm-1"), " ")
 	if !strings.Contains(got, "StrictHostKeyChecking=accept-new") || !strings.Contains(got, "/var/lib/nanofuse/exec_known_hosts") {
 		t.Fatalf("verify mode should use accept-new + known_hosts, got %q", got)
+	}
+	if !strings.Contains(got, "HostKeyAlias=nf-vm-1") || !strings.Contains(got, "CheckHostIP=no") {
+		t.Fatalf("verify mode should pin a per-VM HostKeyAlias and disable CheckHostIP, got %q", got)
+	}
+}
+
+func TestCappedBuffer(t *testing.T) {
+	c := &cappedBuffer{limit: 4}
+	n, _ := c.Write([]byte("abcdef")) // exceeds limit
+	if n != 6 {
+		t.Fatalf("Write should report full length, got %d", n)
+	}
+	got := c.String()
+	if got != "abcd\n[output truncated]" {
+		t.Fatalf("unexpected truncated output: %q", got)
+	}
+	c2 := &cappedBuffer{limit: 16}
+	_, _ = c2.Write([]byte("hi"))
+	if c2.String() != "hi" {
+		t.Fatalf("under-limit output should be verbatim, got %q", c2.String())
 	}
 }
 

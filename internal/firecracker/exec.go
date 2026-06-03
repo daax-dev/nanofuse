@@ -43,7 +43,7 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	// after the destination to the guest's login shell verbatim, so no "--"
 	// terminator is used (ssh would forward it into the remote command).
 	remoteCommand := shellJoin(command)
-	hostKeyOpts := m.hostKeyOptions()
+	hostKeyOpts := m.hostKeyOptions(vm.ID)
 	args := make([]string, 0, 10+len(hostKeyOpts)+2)
 	args = append(args,
 		"-i", m.execSSHKey,
@@ -55,10 +55,12 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	args = append(args, hostKeyOpts...)
 	args = append(args, fmt.Sprintf("%s@%s", user, ip), remoteCommand)
 
-	var stdout, stderr bytes.Buffer
+	// Cap captured output: the guest is untrusted and could emit unbounded data.
+	stdout := &cappedBuffer{limit: execOutputCap}
+	stderr := &cappedBuffer{limit: execOutputCap}
 	cmd := exec.CommandContext(ctx, "ssh", args...)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	runErr := cmd.Run()
 	result := &types.VMExecResult{
@@ -104,16 +106,55 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 }
 
 // hostKeyOptions returns the ssh host-key verification options. When enabled,
-// it uses accept-new TOFU with a known_hosts file under the data dir. The
-// default disables host-key checks because guest host keys are ephemeral and
-// the bridge recycles guest IPs across VMs (a persistent known_hosts would then
-// fail with "host key changed"); the exec bridge is daemon-controlled.
-func (m *Manager) hostKeyOptions() []string {
+// it uses accept-new TOFU with a known_hosts file under the data dir, keyed by a
+// stable per-VM HostKeyAlias (with CheckHostIP disabled) so a recycled guest IP
+// does not trip "host key changed". The default disables host-key checks because
+// guest host keys are ephemeral and the exec bridge is daemon-controlled.
+func (m *Manager) hostKeyOptions(vmID string) []string {
 	if m.execVerifyHostK {
 		knownHosts := filepath.Join(m.dataDir, "exec_known_hosts")
-		return []string{"-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=" + knownHosts}
+		return []string{
+			"-o", "StrictHostKeyChecking=accept-new",
+			"-o", "UserKnownHostsFile=" + knownHosts,
+			"-o", "CheckHostIP=no",
+			"-o", "HostKeyAlias=nf-" + vmID,
+		}
 	}
 	return []string{"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"}
+}
+
+// execOutputCap bounds captured stdout/stderr per stream so a hostile guest
+// cannot exhaust daemon memory by emitting unbounded output.
+const execOutputCap = 1 << 20 // 1 MiB
+
+// cappedBuffer accumulates up to limit bytes, then silently discards the rest
+// and flags truncation. Write always reports the full length so the ssh process
+// is never blocked or errored by a short write.
+type cappedBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if remaining := c.limit - c.buf.Len(); remaining > 0 {
+		if len(p) > remaining {
+			c.buf.Write(p[:remaining])
+			c.truncated = true
+		} else {
+			c.buf.Write(p)
+		}
+	} else if len(p) > 0 {
+		c.truncated = true
+	}
+	return len(p), nil
+}
+
+func (c *cappedBuffer) String() string {
+	if c.truncated {
+		return c.buf.String() + "\n[output truncated]"
+	}
+	return c.buf.String()
 }
 
 // firecrackerRuntimeID returns the runtime-owned identifier for a VM, matching

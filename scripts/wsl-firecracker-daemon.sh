@@ -213,7 +213,9 @@ write_config() {
   mkdir -p /etc/nanofuse "${NF_DATA_DIR}"
   cat >"${NF_CONFIG}" <<EOF
 api:
-  socket: /var/run/nanofused.sock
+  # Empty socket disables the world-writable Unix listener; this bring-up is
+  # Windows-over-TCP only, so a local Unix socket is unnecessary attack surface.
+  socket: ""
   tcp_bind: "${NF_TCP_BIND}"
 storage:
   data_dir: "${NF_DATA_DIR}"

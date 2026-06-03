@@ -1438,6 +1438,13 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Bound success output too: some backends (e.g. apple_container) buffer exec
+	// output without a cap, so an untrusted guest could otherwise force a huge
+	// JSON response and high memory use even on success.
+	if result != nil {
+		result.Stdout = capExecOutput(result.Stdout)
+		result.Stderr = capExecOutput(result.Stderr)
+	}
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -1449,6 +1456,16 @@ func truncateForError(s string) string {
 		return s
 	}
 	return s[:maxErrorOutput] + "… (truncated)"
+}
+
+// capExecOutput bounds a single exec output stream returned in a success
+// response so an uncapped backend cannot produce an unbounded JSON body.
+func capExecOutput(s string) string {
+	const maxExecOutput = 1 << 20 // 1 MiB per stream
+	if len(s) <= maxExecOutput {
+		return s
+	}
+	return s[:maxExecOutput] + "… (truncated)"
 }
 
 // handleVMProcessExit handles VM process termination

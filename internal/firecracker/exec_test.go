@@ -138,7 +138,9 @@ func TestParseExitSentinel(t *testing.T) {
 		}
 	})
 	t.Run("unique per invocation", func(t *testing.T) {
-		if newExitMarker() == newExitMarker() {
+		a := newExitMarker()
+		b := newExitMarker()
+		if a == b {
 			t.Fatal("markers should be unique per exec")
 		}
 	})

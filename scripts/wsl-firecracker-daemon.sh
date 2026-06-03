@@ -68,11 +68,17 @@ install_go() {
 }
 
 install_firecracker() {
-  if command -v firecracker >/dev/null 2>&1; then
-    log "firecracker present: $(firecracker --version | head -1)"; return
-  fi
-  local tag arch url tmp
+  local tag arch url tmp have
   tag="${NF_FIRECRACKER_TAG}"
+  if command -v firecracker >/dev/null 2>&1; then
+    have="$(firecracker --version 2>/dev/null | head -1)"
+    # Only accept an existing install when tracking latest or when the present
+    # version matches the pinned tag; otherwise reinstall to stay reproducible.
+    if [ "${tag}" = "latest" ] || echo "${have}" | grep -qF "${tag}"; then
+      log "firecracker present: ${have}"; return
+    fi
+    log "firecracker present (${have}) does not match pinned ${tag}; reinstalling"
+  fi
   if [ "${tag}" = "latest" ]; then
     log "resolving latest firecracker release"
     tag="$(curl -fsSL https://api.github.com/repos/firecracker-microvm/firecracker/releases/latest | jq -r .tag_name)"

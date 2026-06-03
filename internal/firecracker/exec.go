@@ -91,9 +91,11 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 		return result, nil
 	}
 
-	// ssh binary missing or could not start: report as unsupported so the API
-	// returns a clean not-implemented rather than a 500.
-	return nil, fmt.Errorf("firecracker exec could not run ssh: %v: %w", runErr, vmm.ErrUnsupportedOperation)
+	// ssh binary missing or could not start is a host misconfiguration, not a
+	// backend capability gap, so return a regular error (with the populated
+	// result). ErrUnsupportedOperation stays reserved for true gaps such as a
+	// missing exec key.
+	return result, fmt.Errorf("firecracker exec could not run ssh client: %w", runErr)
 }
 
 // guestIP resolves the guest IP from runtime info, falling back to configured IP.

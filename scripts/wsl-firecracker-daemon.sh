@@ -111,7 +111,9 @@ install_firecracker() {
   curl -fsSL "$url" -o "${tmp}/fc.tgz"
   # Verify against the per-release published checksum before extracting as root.
   local want_fc got_fc
-  want_fc="$(curl -fsSL "${url}.sha256.txt" 2>/dev/null | awk '{print $1}')"
+  # Non-fatal under set -euo pipefail so the actionable die message below fires
+  # instead of the script aborting on a failed fetch.
+  want_fc="$(curl -fsSL "${url}.sha256.txt" 2>/dev/null | awk '{print $1}' || true)"
   [ -n "${want_fc}" ] || die "could not fetch firecracker checksum (${url}.sha256.txt)"
   got_fc="$(sha256sum "${tmp}/fc.tgz" | awk '{print $1}')"
   [ "${got_fc}" = "${want_fc}" ] || die "firecracker checksum mismatch: got ${got_fc}, want ${want_fc}"

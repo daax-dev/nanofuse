@@ -81,8 +81,13 @@ install_firecracker() {
   fi
   if [ "${tag}" = "latest" ]; then
     log "resolving latest firecracker release"
-    tag="$(curl -fsSL https://api.github.com/repos/firecracker-microvm/firecracker/releases/latest | jq -r .tag_name)"
-    [ -n "$tag" ] && [ "$tag" != "null" ] || tag="v1.15.1"
+    # Keep the lookup non-fatal under set -euo pipefail: rate limits / transient
+    # failures fall back to the pinned default instead of aborting the script.
+    tag="$(curl -fsSL https://api.github.com/repos/firecracker-microvm/firecracker/releases/latest 2>/dev/null | jq -r .tag_name 2>/dev/null || true)"
+    if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+      log "could not resolve latest; falling back to v1.15.1"
+      tag="v1.15.1"
+    fi
   else
     log "using pinned firecracker ${tag}"
   fi

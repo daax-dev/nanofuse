@@ -82,7 +82,11 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 		// populated result so callers can read captured stdout/stderr diagnostics.
 		result.ExitCode = code
 		if code == 255 {
-			return result, fmt.Errorf("firecracker exec ssh transport error: %s", strings.TrimSpace(stderr.String()))
+			msg := strings.TrimSpace(stderr.String())
+			if msg == "" {
+				msg = "ssh connection failed (no stderr); check guest sshd, network reachability, and the exec key"
+			}
+			return result, fmt.Errorf("firecracker exec ssh transport error: %s", msg)
 		}
 		return result, nil
 	}

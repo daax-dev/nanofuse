@@ -7,7 +7,7 @@
 # Run as root inside WSL:
 #   sudo bash scripts/wsl-firecracker-daemon.sh setup   # install deps, build, fetch fixtures, register image
 #   sudo bash scripts/wsl-firecracker-daemon.sh run     # setup network + run daemon (foreground)
-#   sudo bash scripts/wsl-firecracker-daemon.sh status  # print endpoint + image + vm state
+#   sudo bash scripts/wsl-firecracker-daemon.sh status  # print endpoint, firecracker/KVM, and image rows
 #
 # Environment knobs:
 #   NF_TCP_BIND   default 0.0.0.0:18080
@@ -43,7 +43,7 @@ install_deps() {
   # system library via the `libsqlite3` build tag.
   apt-get install -y --no-install-recommends \
     ca-certificates curl gcc libc6-dev libsqlite3-dev make openssh-client \
-    squashfs-tools e2fsprogs iproute2 iptables jq xz-utils
+    sqlite3 squashfs-tools e2fsprogs iproute2 iptables jq xz-utils
 }
 
 go_arch() {

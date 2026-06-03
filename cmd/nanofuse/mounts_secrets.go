@@ -154,12 +154,24 @@ func parseSecretSpecs(specs []string) ([]client.SecretRef, error) {
 			value = strings.TrimSpace(value)
 			switch key {
 			case "name":
+				if value == "" {
+					return nil, fmt.Errorf("invalid --secret %q: %q requires a value", spec, key)
+				}
 				s.Name = value
 			case "source", "src", "ref":
+				if value == "" {
+					return nil, fmt.Errorf("invalid --secret %q: %q requires a value", spec, key)
+				}
 				s.Source = value
 			case "type":
+				if value == "" {
+					return nil, fmt.Errorf("invalid --secret %q: %q requires a value", spec, key)
+				}
 				s.Type = strings.ToLower(value)
 			case "target", "dst", "as":
+				if value == "" {
+					return nil, fmt.Errorf("invalid --secret %q: %q requires a value", spec, key)
+				}
 				s.Target = value
 			case "value", "secret":
 				return nil, fmt.Errorf("invalid --secret %q: secret values are not accepted; pass a reference via source=", spec)

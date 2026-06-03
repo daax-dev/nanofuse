@@ -88,4 +88,11 @@ func TestParseSecretSpecs(t *testing.T) {
 			t.Fatal("want error for empty --secret")
 		}
 	})
+	t.Run("empty field value rejected", func(t *testing.T) {
+		for _, spec := range []string{"name=x,type=", "name=x,source=", "name=x,target=", "name=x,bare"} {
+			if _, err := parseSecretSpecs([]string{spec}); err == nil {
+				t.Fatalf("want error for %q", spec)
+			}
+		}
+	})
 }

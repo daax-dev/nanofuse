@@ -2,6 +2,9 @@
 
 This document is the Windows operator handoff for the current Nanofuse client path.
 
+> **Just want to start it?** See [`QUICKSTART-WINDOWS.md`](QUICKSTART-WINDOWS.md)
+> — or run `powershell -ExecutionPolicy Bypass -File scripts\start-windows.ps1`.
+
 ## Scope
 
 - Windows is a CLI and tray client host.

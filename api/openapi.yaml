@@ -903,6 +903,7 @@ components:
       type: object
       required:
         - name
+        - source
       description: Reference to a secret made available to a VM. Never carries the value.
       properties:
         name:

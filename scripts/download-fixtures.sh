@@ -1,5 +1,6 @@
 #!/bin/bash
-# download-fixtures.sh - Download official Firecracker CI images (Ubuntu 24.04 + kernel 6.1)
+# download-fixtures.sh - Download official Firecracker CI images (Ubuntu 24.04;
+# kernel 5.10.x/6.1.x, defaulting to 5.10.245 — see KERNEL_VERSION below).
 # These are updated regularly by the Firecracker team and tested for compatibility
 set -e
 

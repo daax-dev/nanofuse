@@ -30,7 +30,7 @@ NF_FIRECRACKER_TAG="${NF_FIRECRACKER_TAG:-v1.15.1}"
 # Default HOME for root/non-interactive shells where it may be unset (set -u),
 # and export it so child processes (curl/go/ssh-keygen) see it too.
 export HOME="${HOME:-/root}"
-export PATH="${GOROOT}/bin:${HOME}/go/bin:${PATH}"
+export PATH="${GOROOT}/bin:${HOME}/go/bin:${PATH:-}"
 
 # Pinned SHA256 checksums for the Go toolchain tarball (from go.dev/dl JSON).
 GO_SHA256_amd64="2852af0cb20a13139b3448992e69b868e50ed0f8a1e5940ee1de9e19a123b613"

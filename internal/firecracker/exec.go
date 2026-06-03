@@ -184,7 +184,7 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 // does not trip "host key changed". The default disables host-key checks because
 // guest host keys are ephemeral and the exec bridge is daemon-controlled.
 func (m *Manager) hostKeyOptions(vmID string) []string {
-	if m.execVerifyHostK {
+	if m.execVerifyHostKey {
 		knownHosts := filepath.Join(m.dataDir, "exec_known_hosts")
 		return []string{
 			"-o", "StrictHostKeyChecking=accept-new",

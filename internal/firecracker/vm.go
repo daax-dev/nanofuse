@@ -35,15 +35,15 @@ type SPIREProxyConfig struct {
 
 // Manager manages Firecracker VMs
 type Manager struct {
-	binaryPath      string
-	dataDir         string
-	onProcessExit   ProcessExitHandler
-	spireConfig     *SPIREProxyConfig
-	vsockProxies    map[string]*VsockProxy // vmID -> proxy
-	vsockMu         sync.Mutex             // protects vsockProxies map
-	execSSHKey      string                 // daemon private key for `vm exec` over SSH ("" disables exec)
-	execSSHUser     string                 // guest SSH user for exec (default "root")
-	execVerifyHostK bool                   // verify guest host key (accept-new TOFU) instead of disabling checks
+	binaryPath        string
+	dataDir           string
+	onProcessExit     ProcessExitHandler
+	spireConfig       *SPIREProxyConfig
+	vsockProxies      map[string]*VsockProxy // vmID -> proxy
+	vsockMu           sync.Mutex             // protects vsockProxies map
+	execSSHKey        string                 // daemon private key for `vm exec` over SSH ("" disables exec)
+	execSSHUser       string                 // guest SSH user for exec (default "root")
+	execVerifyHostKey bool                   // verify guest host key (accept-new TOFU) instead of disabling checks
 }
 
 // NewManager creates a new Firecracker manager
@@ -63,7 +63,7 @@ func NewManager(binaryPath, dataDir string) *Manager {
 func (m *Manager) SetExecSSH(keyPath, user string, verifyHostKey bool) {
 	m.execSSHKey = keyPath
 	m.execSSHUser = user
-	m.execVerifyHostK = verifyHostKey
+	m.execVerifyHostKey = verifyHostKey
 }
 
 // SetSPIREConfig sets the SPIRE proxy configuration.

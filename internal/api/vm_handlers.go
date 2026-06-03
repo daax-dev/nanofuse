@@ -1418,9 +1418,10 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Printf("ERROR: Failed to exec in VM: %v", err)
-		details := map[string]interface{}{"vm_id": vm.ID}
-		// Surface any captured diagnostics (e.g. ssh transport stderr) so the
-		// operator can see why exec failed.
+		// Keep the top-level message stable and place the underlying error and any
+		// captured diagnostics (which may include untrusted guest ssh stderr) in
+		// the structured details rather than the primary message field.
+		details := map[string]interface{}{"vm_id": vm.ID, "error": err.Error()}
 		if result != nil {
 			if result.Stderr != "" {
 				details["stderr"] = result.Stderr
@@ -1430,7 +1431,7 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
-			fmt.Sprintf("Failed to exec in VM: %v", err), details)
+			"Failed to exec in VM", details)
 		return
 	}
 

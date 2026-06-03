@@ -17,7 +17,8 @@ fi
 # Firecracker CI channel - use the maintained v1.15 channel prefix.
 # The dated snapshot prefixes are pruned over time and 404 on the rootfs; the
 # versioned channel (firecracker-ci/v1.15/x86_64/) is kept current by the
-# Firecracker team and carries Ubuntu 24.04 + kernel 5.10/6.1.
+# Firecracker team and carries Ubuntu 24.04 plus 5.10.x and 6.1.x kernels.
+# This script defaults to the 5.10.245 kernel (see KERNEL_VERSION below).
 CI_VERSION="v1.15"
 
 # Derive the Firecracker CI arch from the host (override with FIXTURES_ARCH).

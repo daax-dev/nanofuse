@@ -2,8 +2,9 @@
 
 This document is the Windows operator handoff for the current Nanofuse client path.
 
-> **Just want to start it?** See [`QUICKSTART-WINDOWS.md`](QUICKSTART-WINDOWS.md)
-> — or run `powershell -ExecutionPolicy Bypass -File scripts\start-windows.ps1`.
+> **Just want to start it?**
+> - From this ZIP package: run `.\install-windows.ps1 -ApiUrl "http://<daemon-host>:18080"`, then use the Smoke Commands below.
+> - From a source checkout: run `powershell -ExecutionPolicy Bypass -File scripts\start-windows.ps1` (full guide: `QUICKSTART-WINDOWS.md`).
 
 ## Scope
 
@@ -19,6 +20,7 @@ The first package target is `dist/nanofuse-windows-amd64.zip` with:
 - `nanofuse-tray.exe`
 - `install-windows.ps1`
 - `WINDOWS_RESUME.md`
+- `QUICKSTART-WINDOWS.md`
 
 ## Install
 

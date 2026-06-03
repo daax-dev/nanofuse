@@ -24,6 +24,7 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 "$GO_BIN" build -ldflags "-H=windowsgui"
 
 cp scripts/install-windows.ps1 "${STAGE_DIR}/install-windows.ps1"
 cp docs/WINDOWS_RESUME.md "${STAGE_DIR}/WINDOWS_RESUME.md"
+cp docs/QUICKSTART-WINDOWS.md "${STAGE_DIR}/QUICKSTART-WINDOWS.md"
 
 if command -v zip >/dev/null 2>&1; then
     (

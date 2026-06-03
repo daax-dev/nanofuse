@@ -48,6 +48,7 @@ if ($LASTEXITCODE -ne 0) { throw "nanofuse-tray.exe build failed" }
 
 Copy-Item scripts\install-windows.ps1 (Join-Path $StageDir "install-windows.ps1")
 Copy-Item docs\WINDOWS_RESUME.md (Join-Path $StageDir "WINDOWS_RESUME.md")
+Copy-Item docs\QUICKSTART-WINDOWS.md (Join-Path $StageDir "QUICKSTART-WINDOWS.md")
 
 Write-Host "Creating $ArchivePath..."
 Compress-Archive -Path $StageDir -DestinationPath $ArchivePath -Force

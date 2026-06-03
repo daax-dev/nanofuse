@@ -37,6 +37,7 @@ function Warn($m) { Write-Host "[start] $m" -ForegroundColor Yellow }
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     throw "Go toolchain not found on PATH. Install Go 1.25.x, then re-run."
 }
+New-Item -ItemType Directory -Force bin | Out-Null
 if (-not (Test-Path bin\nanofuse.exe)) {
     Info "Building nanofuse.exe ..."
     $env:CGO_ENABLED = "0"; go build -o bin\nanofuse.exe .\cmd\nanofuse

@@ -117,7 +117,7 @@ func parseMountRO(spec, value string, hasValue bool) (bool, error) {
 		return true, nil
 	}
 	switch strings.ToLower(value) {
-	case "", "true", "1", "yes", "on":
+	case "true", "1", "yes", "on":
 		return true, nil
 	case "false", "0", "no", "off":
 		return false, nil

@@ -21,6 +21,7 @@ func TestParseMountSpecs(t *testing.T) {
 		{name: "kv ro mixed case", spec: "src=/h,dst=/g,type=bind,ro=True", want: client.Mount{Source: "/h", Target: "/g", Type: "bind", ReadOnly: true}},
 		{name: "kv ro false", spec: "src=/h,dst=/g,type=bind,ro=False", want: client.Mount{Source: "/h", Target: "/g", Type: "bind", ReadOnly: false}},
 		{name: "kv ro invalid", spec: "src=/h,dst=/g,ro=maybe", wantErr: true},
+		{name: "kv ro empty value", spec: "src=/h,dst=/g,ro=", wantErr: true},
 		{name: "kv empty src value", spec: "src=,dst=/g", wantErr: true},
 		{name: "kv bare key no value", spec: "src,dst=/g", wantErr: true},
 		{name: "empty spec rejected", spec: "", wantErr: true},

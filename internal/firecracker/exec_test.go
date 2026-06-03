@@ -107,6 +107,30 @@ func TestFirecrackerRuntimeID(t *testing.T) {
 	}
 }
 
+func TestParseExitSentinel(t *testing.T) {
+	t.Run("present", func(t *testing.T) {
+		code, clean, ok := parseExitSentinel("hello\nworld\n" + exitSentinel + "7\n")
+		if !ok || code != 7 || clean != "hello\nworld" {
+			t.Fatalf("got code=%d clean=%q ok=%v", code, clean, ok)
+		}
+	})
+	t.Run("exit 255 is a guest code, not transport", func(t *testing.T) {
+		code, _, ok := parseExitSentinel(exitSentinel + "255\n")
+		if !ok || code != 255 {
+			t.Fatalf("got code=%d ok=%v", code, ok)
+		}
+	})
+	t.Run("absent means transport failure", func(t *testing.T) {
+		_, clean, ok := parseExitSentinel("ssh: connect to host 10.0.0.1 port 22: Connection refused")
+		if ok {
+			t.Fatal("did not expect a sentinel")
+		}
+		if clean == "" {
+			t.Fatal("clean should pass through original output")
+		}
+	})
+}
+
 func TestShellQuoteJoin(t *testing.T) {
 	// shellQuote always single-quotes for safety, even simple words.
 	cases := map[string]string{

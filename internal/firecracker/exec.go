@@ -3,15 +3,36 @@ package firecracker
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/daax-dev/nanofuse/internal/types"
 	"github.com/daax-dev/nanofuse/internal/vmm"
 )
+
+// exitSentinel prefixes the trailing line the remote shell prints so the daemon
+// can recover the guest command's true exit code independent of ssh's status.
+const exitSentinel = "__NANOFUSE_EXIT__="
+
+// parseExitSentinel extracts the trailing exit-code sentinel from captured
+// stdout. ok is true only when the sentinel is present, meaning the remote shell
+// actually executed the command. The sentinel line is stripped from cleanStdout.
+func parseExitSentinel(s string) (code int, cleanStdout string, ok bool) {
+	idx := strings.LastIndex(s, exitSentinel)
+	if idx < 0 {
+		return 0, s, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s[idx+len(exitSentinel):]))
+	if err != nil {
+		return 0, s, false
+	}
+	// Drop the sentinel and the single newline we injected before it.
+	clean := strings.TrimSuffix(s[:idx], "\n")
+	return n, clean, true
+}
 
 // Exec runs a command inside a running Firecracker guest over SSH and returns
 // its stdout, stderr, and exit code. This gives the Firecracker backend the
@@ -41,8 +62,11 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 
 	// remoteCommand is a single, fully shell-quoted string. ssh sends everything
 	// after the destination to the guest's login shell verbatim, so no "--"
-	// terminator is used (ssh would forward it into the remote command).
-	remoteCommand := shellJoin(command)
+	// terminator is used (ssh would forward it into the remote command). A
+	// trailing sentinel reports the command's true exit code: ssh collapses both
+	// its own transport failures and a remote "exit 255" onto status 255, so the
+	// sentinel is the only reliable way to recover the real guest exit code.
+	remoteCommand := shellJoin(command) + "; printf '\\n" + exitSentinel + "%d\\n' \"$?\""
 	hostKeyOpts := m.hostKeyOptions(vm.ID)
 	args := make([]string, 0, 10+len(hostKeyOpts)+2)
 	args = append(args,
@@ -63,15 +87,20 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	cmd.Stderr = stderr
 
 	runErr := cmd.Run()
+
+	// Recover the true guest exit code from the sentinel. Its presence means the
+	// remote shell actually ran, so ssh's own 255 (transport) is distinguishable
+	// from a guest "exit 255".
+	guestCode, cleanStdout, ranInGuest := parseExitSentinel(stdout.String())
 	result := &types.VMExecResult{
 		Command:   append([]string(nil), command...),
-		Stdout:    stdout.String(),
+		Stdout:    cleanStdout,
 		Stderr:    stderr.String(),
 		RuntimeID: firecrackerRuntimeID(vm),
 	}
 
-	if runErr == nil {
-		result.ExitCode = 0
+	if ranInGuest {
+		result.ExitCode = guestCode
 		return result, nil
 	}
 
@@ -79,36 +108,25 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 		return result, ctxErr
 	}
 
-	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) {
-		code := exitErr.ExitCode()
-		// ssh uses 255 for its own connection/transport failures. Surface those
-		// as an error rather than a guest command exit code, but still return the
-		// populated result so callers can read captured stdout/stderr diagnostics.
-		result.ExitCode = code
-		if code == 255 {
-			msg := strings.TrimSpace(stderr.String())
-			if msg == "" {
-				msg = "ssh connection failed (no stderr); check guest sshd, network reachability, and the exec key"
-			}
-			// Keep the returned error small (full stderr remains in result.Stderr)
-			// so it does not flood logs or oversize API error details.
-			const maxErrLen = 256
-			if len(msg) > maxErrLen {
-				msg = msg[:maxErrLen] + "… (truncated; see stderr)"
-			}
-			return result, fmt.Errorf("firecracker exec ssh transport error: %s", msg)
-		}
-		return result, nil
-	}
-
-	// ssh binary missing or could not start is a host misconfiguration, not a
-	// backend capability gap, so return a regular error (with the populated
-	// result). ErrUnsupportedOperation stays reserved for true gaps such as a
-	// missing exec key. Use ssh's transport-failure convention (255) so callers
-	// inspecting the result do not see a misleading 0 exit code.
+	// No sentinel: the remote shell never ran. This is an ssh transport failure
+	// (connection/auth) or the ssh client could not start — a host-side problem,
+	// not a guest command result. Surface it as an error with exit code 255.
 	result.ExitCode = 255
-	return result, fmt.Errorf("firecracker exec could not run ssh client: %w", runErr)
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		if runErr != nil {
+			msg = runErr.Error()
+		} else {
+			msg = "ssh connection failed (no stderr); check guest sshd, network reachability, and the exec key"
+		}
+	}
+	// Keep the returned error small (full stderr remains in result.Stderr) so it
+	// does not flood logs or oversize API error details.
+	const maxErrLen = 256
+	if len(msg) > maxErrLen {
+		msg = msg[:maxErrLen] + "… (truncated; see stderr)"
+	}
+	return result, fmt.Errorf("firecracker exec ssh transport error: %s", msg)
 }
 
 // hostKeyOptions returns the ssh host-key verification options. When enabled,

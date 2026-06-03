@@ -38,18 +38,24 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     throw "Go toolchain not found on PATH. Install Go 1.25.x, then re-run."
 }
 New-Item -ItemType Directory -Force bin | Out-Null
-# Force a native Windows build regardless of any inherited GOOS/GOARCH, and
-# disable VCS stamping so the build does not require Git on PATH.
-$env:CGO_ENABLED = "0"; $env:GOOS = "windows"; $env:GOARCH = "amd64"
-if (-not (Test-Path bin\nanofuse.exe)) {
-    Info "Building nanofuse.exe ..."
-    go build -buildvcs=false -o bin\nanofuse.exe .\cmd\nanofuse
-    if ($LASTEXITCODE -ne 0) { throw "nanofuse.exe build failed" }
-}
-if (-not (Test-Path bin\nanofuse-tray.exe)) {
-    Info "Building nanofuse-tray.exe ..."
-    go build -buildvcs=false -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray
-    if ($LASTEXITCODE -ne 0) { throw "nanofuse-tray.exe build failed" }
+# Force a native Windows build regardless of any inherited GOOS/GOARCH, disable
+# VCS stamping (no Git required), and restore the prior env afterward so this
+# does not disturb other `go` commands when dot-sourced into a live session.
+$savedGoos = $env:GOOS; $savedGoarch = $env:GOARCH; $savedCgo = $env:CGO_ENABLED
+try {
+    $env:CGO_ENABLED = "0"; $env:GOOS = "windows"; $env:GOARCH = "amd64"
+    if (-not (Test-Path bin\nanofuse.exe)) {
+        Info "Building nanofuse.exe ..."
+        go build -buildvcs=false -o bin\nanofuse.exe .\cmd\nanofuse
+        if ($LASTEXITCODE -ne 0) { throw "nanofuse.exe build failed" }
+    }
+    if (-not (Test-Path bin\nanofuse-tray.exe)) {
+        Info "Building nanofuse-tray.exe ..."
+        go build -buildvcs=false -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray
+        if ($LASTEXITCODE -ne 0) { throw "nanofuse-tray.exe build failed" }
+    }
+} finally {
+    $env:GOOS = $savedGoos; $env:GOARCH = $savedGoarch; $env:CGO_ENABLED = $savedCgo
 }
 
 # --- 2. Ensure the WSL2 Firecracker daemon is running -----------------------

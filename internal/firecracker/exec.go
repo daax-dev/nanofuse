@@ -110,8 +110,13 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	}
 
 	// No sentinel. It may have been truncated away by the output cap (>1 MiB of
-	// stdout) even though the command ran, so fall back to ssh's own exit code:
-	// a non-255 ExitError is the guest's code; only 255 (or a failure to start
+	// stdout) even though the command ran, so fall back to ssh's own exit code.
+	if runErr == nil {
+		// ssh succeeded; the command ran and exited 0 (sentinel was truncated).
+		result.ExitCode = 0
+		return result, nil
+	}
+	// A non-255 ExitError is the guest's code; only 255 (or a failure to start
 	// ssh) is the ambiguous transport case the sentinel exists to disambiguate.
 	var exitErr *exec.ExitError
 	if errors.As(runErr, &exitErr) {

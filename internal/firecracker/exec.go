@@ -91,6 +91,12 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 			if msg == "" {
 				msg = "ssh connection failed (no stderr); check guest sshd, network reachability, and the exec key"
 			}
+			// Keep the returned error small (full stderr remains in result.Stderr)
+			// so it does not flood logs or oversize API error details.
+			const maxErrLen = 256
+			if len(msg) > maxErrLen {
+				msg = msg[:maxErrLen] + "… (truncated; see stderr)"
+			}
 			return result, fmt.Errorf("firecracker exec ssh transport error: %s", msg)
 		}
 		return result, nil

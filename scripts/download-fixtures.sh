@@ -107,13 +107,17 @@ else
     dd if=/dev/zero of="$FIXTURES/$EXT4_FILE" bs=1M count=$ROOTFS_SIZE_MB status=progress
     mkfs.ext4 -F "$FIXTURES/$EXT4_FILE"
 
-    # Mount and copy
+    # Mount and copy. Install a cleanup trap before/right after mounting so a
+    # failure under set -e always unmounts and removes the temp dir.
     MOUNT_DIR=$(mktemp -d)
+    trap '$SUDO umount "$MOUNT_DIR" 2>/dev/null || true; rmdir "$MOUNT_DIR" 2>/dev/null || true; rm -rf "$TEMP_DIR"' EXIT
     $SUDO mount -o loop "$FIXTURES/$EXT4_FILE" "$MOUNT_DIR"
     echo "  Copying files..."
     $SUDO cp -a "$TEMP_DIR/rootfs/." "$MOUNT_DIR/"
     $SUDO umount "$MOUNT_DIR"
     rmdir "$MOUNT_DIR"
+    # Restore the original TEMP_DIR-only cleanup now that the mount is released.
+    trap 'rm -rf "$TEMP_DIR"' EXIT
 
     # Cleanup squashfs (optional - comment out to keep)
     rm "$FIXTURES/$SQUASHFS_FILE"

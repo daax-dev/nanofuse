@@ -106,6 +106,7 @@ install_firecracker() {
 build_binaries() {
   log "building nanofused + register-local-image (CGO sqlite)"
   cd "${REPO_ROOT}"
+  mkdir -p "${REPO_ROOT}/bin"
   export CGO_ENABLED=1 GOCACHE=/root/.cache/go-build GOPATH=/root/go
   git config --global --add safe.directory "${REPO_ROOT}" 2>/dev/null || true
   # Repo lives on /mnt/c (Windows-owned); disable VCS stamping to avoid git ownership errors.

@@ -38,17 +38,30 @@ install_deps() {
   log "installing apt dependencies"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
+  # gcc + libc6-dev are sufficient to build go-sqlite3 (it vendors the SQLite
+  # amalgamation); libsqlite3-dev is included for builds that opt into the
+  # system library via the `libsqlite3` build tag.
   apt-get install -y --no-install-recommends \
-    ca-certificates curl gcc libc6-dev make openssh-client \
+    ca-certificates curl gcc libc6-dev libsqlite3-dev make openssh-client \
     squashfs-tools e2fsprogs iproute2 iptables jq xz-utils
+}
+
+go_arch() {
+  case "$(uname -m)" in
+    x86_64 | amd64) echo "amd64" ;;
+    aarch64 | arm64) echo "arm64" ;;
+    *) die "unsupported architecture for Go install: $(uname -m)" ;;
+  esac
 }
 
 install_go() {
   if "${GOROOT}/bin/go" version 2>/dev/null | grep -q "go${GO_VERSION}"; then
     log "go ${GO_VERSION} already installed"; return
   fi
-  log "installing go ${GO_VERSION}"
-  curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz
+  local goarch
+  goarch="$(go_arch)"
+  log "installing go ${GO_VERSION} (linux-${goarch})"
+  curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz" -o /tmp/go.tgz
   rm -rf "${GOROOT}"
   tar -C /usr/local -xzf /tmp/go.tgz
   "${GOROOT}/bin/go" version
@@ -117,6 +130,8 @@ inject_exec_key() {
   pub="$(cat "${NF_EXEC_KEY}.pub")"
   mnt="$(mktemp -d)"
   mount -o loop "${rootfs}" "${mnt}"
+  # Guarantee unmount + temp-dir removal even if a later step fails under set -e.
+  trap 'umount "${mnt}" 2>/dev/null || true; rmdir "${mnt}" 2>/dev/null || true' EXIT
   mkdir -p "${mnt}/root/.ssh"
   chmod 700 "${mnt}/root/.ssh"
   if ! grep -qxF "${pub}" "${mnt}/root/.ssh/authorized_keys" 2>/dev/null; then
@@ -130,6 +145,7 @@ inject_exec_key() {
   sync
   umount "${mnt}"
   rmdir "${mnt}"
+  trap - EXIT
   log "injected exec key into ${rootfs}"
 }
 

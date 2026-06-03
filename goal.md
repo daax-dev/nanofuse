@@ -38,7 +38,7 @@ Current Windows status:
 - `nanofuse.exe` and `nanofuse-tray.exe` were built natively on Windows and packaged into `dist/nanofuse-windows-amd64.zip` (also produced by `scripts/package-windows.ps1`).
 - Full lifecycle was driven from the Windows CLI: health, capabilities, image list, `vm run` (with mounts + secrets + port forward), list, status, ports, mounts, secrets, logs, stop, delete, and tray `--smoke`.
 - Mount visibility and secret-reference visibility are now first-class operator query surfaces (`vm mounts`, `vm secrets`, `--mount`, `--secret`, and `vm status`/`/vms` JSON). Both former blockers are resolved.
-- `nanofuse vm exec` is an apple_container (macOS) backend capability; the Firecracker backend returns a clear unsupported error and uses SSH for in-guest exec. The client command surface is identical across platforms.
+- `nanofuse vm exec` works on both backends: apple_container natively on macOS, and over SSH (daemon-managed key) on the Firecracker/WSL2 backend. Validated from the Windows CLI (`uname`, `/etc/os-release`, and exit-code propagation).
 - MSI, winget, signing, and a native Windows local runtime remain out of scope.
 
 ## Source Files Already Updated
@@ -158,7 +158,6 @@ The broad objective is not complete until these are resolved:
 - Native Windows local runtime is not implemented (out of scope; WSL2 Firecracker is the local Linux backend).
 - Scoped secret broker/handoff value delivery is not implemented (the secret-reference inventory surface is implemented; value delivery is the remaining runtime layer).
 - Mount runtime enforcement (virtio-fs/block attachment) is not implemented on the Firecracker backend (the mount inventory surface is implemented).
-- Firecracker backend `vm exec` is not implemented (apple_container supports it; Firecracker uses SSH).
 - The macOS compatibility path egress implementation is not fail-closed.
 - M3/M4/M5 Firecracker-on-macOS path is unvalidated on supported Apple Silicon hardware.
 - Linux Firecracker jailer is not yet the default hardened launch path.

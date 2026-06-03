@@ -84,6 +84,13 @@ type StorageConfig struct {
 type FirecrackerConfig struct {
 	BinaryPath string `yaml:"binary_path"`
 	JailerPath string `yaml:"jailer_path,omitempty"`
+	// ExecSSHKeyPath is the daemon-side private key used to run `vm exec`
+	// commands inside a Firecracker guest over SSH. When empty, `vm exec`
+	// reports the runtime as not supporting exec. The matching public key must
+	// be present in the guest image's authorized_keys.
+	ExecSSHKeyPath string `yaml:"exec_ssh_key_path,omitempty"`
+	// ExecSSHUser is the guest user for `vm exec` over SSH (default "root").
+	ExecSSHUser string `yaml:"exec_ssh_user,omitempty"`
 }
 
 // LimitsConfig represents resource limits

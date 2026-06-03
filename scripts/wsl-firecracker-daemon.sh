@@ -21,6 +21,7 @@ NF_DATA_DIR="${NF_DATA_DIR:-/var/lib/nanofuse}"
 NF_DB="${NF_DATA_DIR}/nanofuse.db"
 NF_IMAGE_TAG="${NF_IMAGE_TAG:-nanofuse-base:latest}"
 NF_CONFIG="/etc/nanofuse/nanofused.yaml"
+NF_EXEC_KEY="${NF_EXEC_KEY:-${NF_DATA_DIR}/exec_id_ed25519}"
 FIXTURES="${REPO_ROOT}/test/fixtures/debug-kernel"
 GO_VERSION="1.25.0"
 GOROOT="/usr/local/go"
@@ -91,11 +92,64 @@ fetch_fixtures() {
   bash scripts/download-fixtures.sh
 }
 
+ensure_exec_key() {
+  mkdir -p "${NF_DATA_DIR}"
+  if [ ! -f "${NF_EXEC_KEY}" ]; then
+    log "generating daemon exec SSH key ${NF_EXEC_KEY}"
+    ssh-keygen -t ed25519 -N "" -C "nanofuse-exec" -f "${NF_EXEC_KEY}" >/dev/null
+  fi
+}
+
+# inject_exec_key writes the daemon exec public key into the rootfs image's
+# /root/.ssh/authorized_keys so `nanofuse vm exec` can SSH into guests. The
+# per-VM rootfs is copied from this image, so every VM inherits the key.
+inject_exec_key() {
+  ensure_exec_key
+  local rootfs mnt pub
+  rootfs="$(readlink -f "${FIXTURES}/rootfs.ext4")"
+  pub="$(cat "${NF_EXEC_KEY}.pub")"
+  mnt="$(mktemp -d)"
+  mount -o loop "${rootfs}" "${mnt}"
+  mkdir -p "${mnt}/root/.ssh"
+  chmod 700 "${mnt}/root/.ssh"
+  if ! grep -qxF "${pub}" "${mnt}/root/.ssh/authorized_keys" 2>/dev/null; then
+    echo "${pub}" >> "${mnt}/root/.ssh/authorized_keys"
+  fi
+  chmod 600 "${mnt}/root/.ssh/authorized_keys"
+  # Ensure sshd permits root key auth in the guest image.
+  if [ -f "${mnt}/etc/ssh/sshd_config" ]; then
+    sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' "${mnt}/etc/ssh/sshd_config" || true
+  fi
+  sync
+  umount "${mnt}"
+  rmdir "${mnt}"
+  log "injected exec key into ${rootfs}"
+}
+
+# resolve_kernel returns the concrete kernel file. vmlinux.bin is normally a
+# symlink, but on a Windows-checked-out tree (/mnt/c, core.symlinks=false) it can
+# be materialized as a small text file containing the target name; handle both.
+resolve_kernel() {
+  local k
+  k="$(readlink -f "${FIXTURES}/vmlinux.bin")"
+  if [ -f "${k}" ] && [ "$(stat -c%s "${k}" 2>/dev/null || echo 0)" -ge 1000000 ]; then
+    echo "${k}"; return
+  fi
+  # vmlinux.bin is a text "symlink": read its target name and resolve in-dir.
+  local target
+  target="$(tr -d '\r\n' < "${FIXTURES}/vmlinux.bin")"
+  if [ -n "${target}" ] && [ -f "${FIXTURES}/${target}" ]; then
+    echo "${FIXTURES}/${target}"; return
+  fi
+  # Fallback: the largest vmlinux-* file in the fixtures dir.
+  ls -S "${FIXTURES}"/vmlinux-* 2>/dev/null | head -1
+}
+
 register_image() {
   mkdir -p "${NF_DATA_DIR}"
   local rootfs kernel
   rootfs="$(readlink -f "${FIXTURES}/rootfs.ext4")"
-  kernel="$(readlink -f "${FIXTURES}/vmlinux.bin")"
+  kernel="$(resolve_kernel)"
   log "registering image ${NF_IMAGE_TAG} -> ${rootfs} + ${kernel}"
   "${REPO_ROOT}/bin/register-local-image" "${NF_DB}" "${NF_IMAGE_TAG}" "${rootfs}" "${kernel}" "$(uname -m)"
 }
@@ -111,6 +165,8 @@ storage:
   database: ${NF_DB}
 firecracker:
   binary_path: /usr/local/bin/firecracker
+  exec_ssh_key_path: ${NF_EXEC_KEY}
+  exec_ssh_user: root
 network:
   setup: true
 limits:
@@ -132,6 +188,8 @@ cmd_setup() {
   install_firecracker
   build_binaries
   fetch_fixtures
+  ensure_exec_key
+  inject_exec_key
   register_image
   write_config
   log "SETUP COMPLETE"

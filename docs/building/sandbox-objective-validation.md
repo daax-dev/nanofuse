@@ -140,7 +140,7 @@ Windows closed-loop result on 2026-06-02:
 - `vm list`, `vm status`, `vm ports`, `vm mounts`, `vm secrets`, and `vm logs` all returned correct data from the Windows CLI. `vm status` rendered the new `Mounts:` and `Secret Refs:` sections; the guest booted Ubuntu to a root console.
 - `vm stop` returned `stopped`; `vm delete --force` removed the VM; the post-delete `vm list` was empty.
 - `nanofuse-tray.exe --smoke --api-url http://<wsl-ip>:18080` exited 0 and emitted health + capabilities + image inventory JSON.
-- `nanofuse.exe vm exec` returned the expected "Runtime does not support VM exec" on the Firecracker backend (apple_container-only capability; documented difference, not a Windows-client gap).
+- `nanofuse.exe vm exec winwm -- uname -a` returned `Linux ubuntu-fc-uvm 5.10.245+ ... x86_64`; `vm exec ... grep PRETTY /etc/os-release` returned `Ubuntu 24.04.3 LTS`; `vm exec ... sh -lc 'exit 7'` propagated exit status 7. Firecracker exec runs over SSH using a daemon-managed key injected into the guest image (`firecracker.exec_ssh_key_path`).
 - Full local repo gate passed in WSL2: `mage ci` (clean → build → go vet + golangci-lint `v2.12.2` (built with go1.25) → `go test -race ./...` → security check). `gosec` not installed; the mage target reports and continues.
 
 The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-2026-05-30.log` and `.logs/validation/vagrant-closed-loop-2026-05-30-nested.log` in the local working tree. The committed validation record is `.logs/validation/sandbox-objective.jsonl`.
@@ -168,4 +168,4 @@ The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-20
 - macOS arm64 Parallels validation depends on whether the provider exposes Linux KVM to the guest; unsupported providers must be reported as KVM-unavailable, not treated as pass.
 - macOS Apple-container runtime does not yet support Nanofuse egress policy enforcement, pause/resume, or snapshots. Those remain Firecracker/Linux-path capabilities or future backend work.
 - Mount runtime enforcement (virtio-fs/block attachment) and scoped secret value delivery are not yet implemented on the Firecracker backend; the operator-visible mount and secret-reference inventory surfaces are implemented and validated from Windows.
-- The Firecracker backend does not implement API `vm exec`; in-guest execution there is via SSH. apple_container (macOS) supports API exec.
+- Firecracker `vm exec` runs over SSH with a daemon-managed key whose public half must be present in the guest image's authorized_keys (provisioned by the bring-up script); it requires guest sshd and a configured `firecracker.exec_ssh_key_path`. apple_container (macOS) supports exec natively without a key.

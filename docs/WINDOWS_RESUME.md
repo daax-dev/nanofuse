@@ -89,6 +89,7 @@ Full lifecycle, including the mount and secret-reference surfaces:
 .\nanofuse.exe vm status demo
 .\nanofuse.exe vm mounts demo
 .\nanofuse.exe vm secrets demo
+.\nanofuse.exe vm exec demo -- uname -a
 .\nanofuse.exe vm logs demo --tail 20
 .\nanofuse.exe vm stop demo
 .\nanofuse.exe vm delete demo --force
@@ -107,13 +108,15 @@ Inspect one VM in more detail:
 - Mount visibility: working. Declared with `--mount` on `vm create`/`vm run`, queried with `nanofuse.exe vm mounts`, and shown in `vm status` and `/vms` JSON under `config.mounts`.
 - Secret reference visibility: working. Declared with `--secret` on `vm create`/`vm run`, queried with `nanofuse.exe vm secrets`, and shown in `vm status` and `/vms` JSON under `config.secrets`. Secret references never carry values — only the name, source reference, delivery type, and in-guest target.
 
-### Backend capability note
+### vm exec
 
-`nanofuse.exe vm exec` is an apple_container (macOS) runtime capability. The
-Firecracker backend is a bare microVM and returns a clear "Runtime does not
-support VM exec" error; in-guest command execution on Firecracker is via SSH to
-the guest. The CLI command surface is identical across platforms; only the
-daemon backend differs.
+`nanofuse.exe vm exec <vm> -- <cmd>` works on both backends. On macOS it uses the
+apple_container runtime; on Firecracker it runs over SSH using a daemon-managed
+key whose public half is in the guest image's authorized_keys (provisioned by
+`scripts/wsl-firecracker-daemon.sh`, configured via `firecracker.exec_ssh_key_path`).
+Stdout, stderr, and the guest exit code are returned. If no exec key is
+configured, the Firecracker backend reports the runtime as not supporting exec.
+The CLI command surface is identical across platforms.
 
 Mount and secret references are operator-visibility/inventory surfaces:
 declared, validated, persisted, and queryable on every backend. Runtime

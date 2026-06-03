@@ -68,7 +68,7 @@ Closed-loop validation completed on 2026-06-02 (real Windows session + WSL2 Fire
 - Windows CLI smoke (endpoint `http://<wsl-ip>:18080`): `health` healthy; `/capabilities` `driver=firecracker native_runtime=true`; `image list` shows `nanofuse-base:latest`.
 - Full lifecycle from Windows: `vm run` (with `--mount`, `--secret`, `-p 8081:80`) → running, guest IP `172.16.0.10`; `vm list`/`vm status`/`vm ports`/`vm mounts`/`vm secrets`/`vm logs` correct; `vm stop` → stopped; `vm delete --force` → empty list.
 - `nanofuse-tray.exe --smoke` exit 0 with health + capabilities + image JSON.
-- `vm exec` on Firecracker returns the documented "Runtime does not support VM exec" (apple_container-only capability).
+- `vm exec` works on Firecracker from Windows: `uname -a` → `Linux ubuntu-fc-uvm 5.10.245+ x86_64`, `/etc/os-release` → `Ubuntu 24.04.3 LTS`, and `exit 7` propagated status 7. Runs over SSH with a daemon-managed key injected into the guest image.
 - Full repo gate: `mage ci` exit 0 ("All CI checks passed!") in WSL2; golangci-lint `v2.12.2` (rebuilt with go1.25); `go test -race ./...` green; `gosec` absent and reported.
 - Uninstall: see `docs/WINDOWS_RESUME.md` (remove `%LOCALAPPDATA%\Nanofuse\bin`, clear `NANOFUSE_API_URL`, drop PATH entry).
 
@@ -76,5 +76,4 @@ Mount visibility and secret-reference visibility blockers are RESOLVED: `vm moun
 
 Remaining (out of scope for this task / tracked elsewhere):
 - Mount runtime enforcement (virtio-fs/block) and scoped secret value delivery on the Firecracker backend.
-- Firecracker backend API `vm exec` (apple_container supports it; Firecracker uses SSH).
 <!-- SECTION:NOTES:END -->

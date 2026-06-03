@@ -41,6 +41,8 @@ type Manager struct {
 	spireConfig   *SPIREProxyConfig
 	vsockProxies  map[string]*VsockProxy // vmID -> proxy
 	vsockMu       sync.Mutex             // protects vsockProxies map
+	execSSHKey    string                 // daemon private key for `vm exec` over SSH ("" disables exec)
+	execSSHUser   string                 // guest SSH user for exec (default "root")
 }
 
 // NewManager creates a new Firecracker manager
@@ -50,6 +52,14 @@ func NewManager(binaryPath, dataDir string) *Manager {
 		dataDir:      dataDir,
 		vsockProxies: make(map[string]*VsockProxy),
 	}
+}
+
+// SetExecSSH configures the daemon-side SSH key and user used to implement
+// `vm exec` inside Firecracker guests. An empty keyPath leaves exec disabled,
+// in which case Exec reports the operation as unsupported.
+func (m *Manager) SetExecSSH(keyPath, user string) {
+	m.execSSHKey = keyPath
+	m.execSSHUser = user
 }
 
 // SetSPIREConfig sets the SPIRE proxy configuration.

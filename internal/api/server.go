@@ -132,7 +132,9 @@ func newRuntimeManager(cfg *config.Config, logger *logging.Logger) (vmm.Manager,
 	switch driver {
 	case "firecracker":
 		logger.Info("Runtime driver: firecracker")
-		return firecracker.NewManager(cfg.Firecracker.BinaryPath, cfg.Storage.DataDir), nil
+		mgr := firecracker.NewManager(cfg.Firecracker.BinaryPath, cfg.Storage.DataDir)
+		mgr.SetExecSSH(cfg.Firecracker.ExecSSHKeyPath, cfg.Firecracker.ExecSSHUser)
+		return mgr, nil
 	case applecontainer.DriverName:
 		logger.Info("Runtime driver: apple_container")
 		return applecontainer.NewManager(cfg.Runtime.AppleContainer, cfg.Storage.DataDir), nil

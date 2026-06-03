@@ -232,10 +232,18 @@ cmd_run() {
 }
 
 cmd_status() {
-  echo "WSL IP(s): $(hostname -I)"
+  local fcbin fcver
+  fcbin="$(command -v firecracker || echo MISSING)"
+  fcver=""
+  # Only query the version when firecracker exists, so status works before setup
+  # even under set -euo pipefail.
+  if [ "${fcbin}" != "MISSING" ]; then
+    fcver="$(firecracker --version 2>/dev/null | head -1 || true)"
+  fi
+  echo "WSL IP(s): $(hostname -I || true)"
   echo "TCP bind:  ${NF_TCP_BIND}"
-  echo "Firecracker: $(command -v firecracker || echo MISSING) $(firecracker --version 2>/dev/null | head -1)"
-  echo "KVM: $(ls -l /dev/kvm 2>&1)"
+  echo "Firecracker: ${fcbin} ${fcver}"
+  echo "KVM: $(ls -l /dev/kvm 2>&1 || true)"
   echo "Image rows:"
   command -v sqlite3 >/dev/null 2>&1 && sqlite3 "${NF_DB}" 'select tag,architecture from image_tags;' 2>/dev/null || true
 }

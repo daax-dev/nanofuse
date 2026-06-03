@@ -1422,12 +1422,15 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 		// captured diagnostics (which may include untrusted guest ssh stderr) in
 		// the structured details rather than the primary message field.
 		details := map[string]interface{}{"vm_id": vm.ID, "error": err.Error()}
+		// Bound the captured output echoed into the error response: some backends
+		// (e.g. apple_container) do not cap exec output, so a hostile/buggy guest
+		// could otherwise produce an oversized JSON error and bloated logs.
 		if result != nil {
 			if result.Stderr != "" {
-				details["stderr"] = result.Stderr
+				details["stderr"] = truncateForError(result.Stderr)
 			}
 			if result.Stdout != "" {
-				details["stdout"] = result.Stdout
+				details["stdout"] = truncateForError(result.Stdout)
 			}
 		}
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
@@ -1436,6 +1439,16 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// truncateForError bounds captured exec output included in an error response so
+// large guest output cannot bloat the JSON response or logs.
+func truncateForError(s string) string {
+	const maxErrorOutput = 4096
+	if len(s) <= maxErrorOutput {
+		return s
+	}
+	return s[:maxErrorOutput] + "… (truncated)"
 }
 
 // handleVMProcessExit handles VM process termination

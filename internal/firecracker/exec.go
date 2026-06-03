@@ -3,6 +3,8 @@ package firecracker
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -14,19 +16,40 @@ import (
 	"github.com/daax-dev/nanofuse/internal/vmm"
 )
 
-// exitSentinel prefixes the trailing line the remote shell prints so the daemon
-// can recover the guest command's true exit code independent of ssh's status.
-const exitSentinel = "__NANOFUSE_EXIT__="
+// exitSentinelPrefix begins the trailing line the remote shell prints so the
+// daemon can recover the guest command's true exit code independent of ssh's
+// status. A per-exec random nonce is appended so guest output cannot forge it.
+const exitSentinelPrefix = "__NANOFUSE_EXIT_"
 
-// parseExitSentinel extracts the trailing exit-code sentinel from captured
-// stdout. ok is true only when the sentinel is present, meaning the remote shell
+// newExitMarker returns a unique end-of-output marker for one exec invocation.
+func newExitMarker() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// rand.Read effectively never fails; fall back to a constant marker.
+		return exitSentinelPrefix + "x="
+	}
+	return exitSentinelPrefix + hex.EncodeToString(b[:]) + "="
+}
+
+// parseExitSentinel extracts the exit code from the trailing sentinel line for
+// the given per-exec marker. ok is true only when the marker is present as the
+// final line (digits followed by trailing whitespace), meaning the remote shell
 // actually executed the command. The sentinel line is stripped from cleanStdout.
-func parseExitSentinel(s string) (code int, cleanStdout string, ok bool) {
-	idx := strings.LastIndex(s, exitSentinel)
+func parseExitSentinel(s, marker string) (code int, cleanStdout string, ok bool) {
+	idx := strings.LastIndex(s, marker)
 	if idx < 0 {
 		return 0, s, false
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(s[idx+len(exitSentinel):]))
+	rest := s[idx+len(marker):]
+	numEnd := 0
+	for numEnd < len(rest) && rest[numEnd] >= '0' && rest[numEnd] <= '9' {
+		numEnd++
+	}
+	// Require the marker to be the trailing line: digits then only whitespace.
+	if numEnd == 0 || strings.TrimSpace(rest[numEnd:]) != "" {
+		return 0, s, false
+	}
+	n, err := strconv.Atoi(rest[:numEnd])
 	if err != nil {
 		return 0, s, false
 	}
@@ -67,7 +90,8 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	// trailing sentinel reports the command's true exit code: ssh collapses both
 	// its own transport failures and a remote "exit 255" onto status 255, so the
 	// sentinel is the only reliable way to recover the real guest exit code.
-	remoteCommand := shellJoin(command) + "; printf '\\n" + exitSentinel + "%d\\n' \"$?\""
+	marker := newExitMarker()
+	remoteCommand := shellJoin(command) + "; printf '\\n" + marker + "%d\\n' \"$?\""
 	hostKeyOpts := m.hostKeyOptions(vm.ID)
 	args := make([]string, 0, 10+len(hostKeyOpts)+2)
 	args = append(args,
@@ -92,7 +116,7 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	// Recover the true guest exit code from the sentinel. Its presence means the
 	// remote shell actually ran, so ssh's own 255 (transport) is distinguishable
 	// from a guest "exit 255".
-	guestCode, cleanStdout, ranInGuest := parseExitSentinel(stdout.String())
+	guestCode, cleanStdout, ranInGuest := parseExitSentinel(stdout.String(), marker)
 	result := &types.VMExecResult{
 		Command:   append([]string(nil), command...),
 		Stdout:    cleanStdout,

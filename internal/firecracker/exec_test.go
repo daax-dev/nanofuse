@@ -108,25 +108,38 @@ func TestFirecrackerRuntimeID(t *testing.T) {
 }
 
 func TestParseExitSentinel(t *testing.T) {
+	marker := newExitMarker()
 	t.Run("present", func(t *testing.T) {
-		code, clean, ok := parseExitSentinel("hello\nworld\n" + exitSentinel + "7\n")
+		code, clean, ok := parseExitSentinel("hello\nworld\n"+marker+"7\n", marker)
 		if !ok || code != 7 || clean != "hello\nworld" {
 			t.Fatalf("got code=%d clean=%q ok=%v", code, clean, ok)
 		}
 	})
 	t.Run("exit 255 is a guest code, not transport", func(t *testing.T) {
-		code, _, ok := parseExitSentinel(exitSentinel + "255\n")
+		code, _, ok := parseExitSentinel(marker+"255\n", marker)
 		if !ok || code != 255 {
 			t.Fatalf("got code=%d ok=%v", code, ok)
 		}
 	})
 	t.Run("absent means transport failure", func(t *testing.T) {
-		_, clean, ok := parseExitSentinel("ssh: connect to host 10.0.0.1 port 22: Connection refused")
+		_, clean, ok := parseExitSentinel("ssh: connect to host 10.0.0.1 port 22: Connection refused", marker)
 		if ok {
 			t.Fatal("did not expect a sentinel")
 		}
 		if clean == "" {
 			t.Fatal("clean should pass through original output")
+		}
+	})
+	t.Run("forged sentinel earlier in output is not the trailing line", func(t *testing.T) {
+		// Guest prints the marker mid-stream but the real trailing sentinel is gone.
+		_, _, ok := parseExitSentinel("evil "+marker+"0 still more output\n", marker)
+		if ok {
+			t.Fatal("a non-trailing marker must not be accepted")
+		}
+	})
+	t.Run("unique per invocation", func(t *testing.T) {
+		if newExitMarker() == newExitMarker() {
+			t.Fatal("markers should be unique per exec")
 		}
 	})
 }

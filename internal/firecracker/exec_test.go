@@ -69,14 +69,18 @@ func TestHostKeyOptions(t *testing.T) {
 }
 
 func TestCappedBuffer(t *testing.T) {
-	c := &cappedBuffer{limit: 4}
-	n, _ := c.Write([]byte("abcdef")) // exceeds limit
-	if n != 6 {
+	const limit = 64
+	c := &cappedBuffer{limit: limit}
+	n, _ := c.Write([]byte(strings.Repeat("a", 200))) // far exceeds limit
+	if n != 200 {
 		t.Fatalf("Write should report full length, got %d", n)
 	}
 	got := c.String()
-	if got != "abcd\n[output truncated]" {
-		t.Fatalf("unexpected truncated output: %q", got)
+	if len(got) > limit {
+		t.Fatalf("truncated output %d exceeds hard limit %d", len(got), limit)
+	}
+	if !strings.HasSuffix(got, "[output truncated]") {
+		t.Fatalf("want truncation marker, got %q", got)
 	}
 	c2 := &cappedBuffer{limit: 16}
 	_, _ = c2.Write([]byte("hi"))

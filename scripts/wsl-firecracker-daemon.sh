@@ -233,6 +233,9 @@ cmd_setup() {
 
 cmd_run() {
   require_root
+  if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+    die "/dev/kvm is missing or not read/write; enable nested virtualization / KVM for this WSL2 distro (and run as root) before starting the Firecracker daemon."
+  fi
   write_config
   case "${NF_TCP_BIND}" in
     0.0.0.0:* | :::* | "[::]:"*)

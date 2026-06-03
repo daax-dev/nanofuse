@@ -150,11 +150,22 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+const truncationMarker = "\n[output truncated]"
+
 func (c *cappedBuffer) String() string {
-	if c.truncated {
-		return c.buf.String() + "\n[output truncated]"
+	if !c.truncated {
+		return c.buf.String()
 	}
-	return c.buf.String()
+	// Keep the final string within limit, reserving room for the marker.
+	keep := c.limit - len(truncationMarker)
+	if keep < 0 {
+		keep = 0
+	}
+	s := c.buf.String()
+	if len(s) > keep {
+		s = s[:keep]
+	}
+	return s + truncationMarker
 }
 
 // firecrackerRuntimeID returns the runtime-owned identifier for a VM, matching

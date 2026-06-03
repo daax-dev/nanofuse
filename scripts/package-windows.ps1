@@ -40,11 +40,11 @@ $env:GOOS = "windows"
 $env:GOARCH = "amd64"
 
 Write-Host "Building Windows CLI..."
-go build -o (Join-Path $StageDir "nanofuse.exe") ./cmd/nanofuse
+go build -buildvcs=false -o (Join-Path $StageDir "nanofuse.exe") ./cmd/nanofuse
 if ($LASTEXITCODE -ne 0) { throw "nanofuse.exe build failed" }
 
 Write-Host "Building Windows tray..."
-go build -ldflags "-H=windowsgui" -o (Join-Path $StageDir "nanofuse-tray.exe") ./cmd/nanofuse-tray
+go build -buildvcs=false -ldflags "-H=windowsgui" -o (Join-Path $StageDir "nanofuse-tray.exe") ./cmd/nanofuse-tray
 if ($LASTEXITCODE -ne 0) { throw "nanofuse-tray.exe build failed" }
 
 Copy-Item scripts\install-windows.ps1 (Join-Path $StageDir "install-windows.ps1")

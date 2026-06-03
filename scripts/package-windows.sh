@@ -17,10 +17,10 @@ rm -rf "$STAGE_DIR" "$ARCHIVE_PATH"
 mkdir -p "$STAGE_DIR"
 
 echo "Building Windows CLI..."
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 "$GO_BIN" build -o "${STAGE_DIR}/nanofuse.exe" ./cmd/nanofuse
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 "$GO_BIN" build -buildvcs=false -o "${STAGE_DIR}/nanofuse.exe" ./cmd/nanofuse
 
 echo "Building Windows tray..."
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 "$GO_BIN" build -ldflags "-H=windowsgui" -o "${STAGE_DIR}/nanofuse-tray.exe" ./cmd/nanofuse-tray
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 "$GO_BIN" build -buildvcs=false -ldflags "-H=windowsgui" -o "${STAGE_DIR}/nanofuse-tray.exe" ./cmd/nanofuse-tray
 
 cp scripts/install-windows.ps1 "${STAGE_DIR}/install-windows.ps1"
 cp docs/WINDOWS_RESUME.md "${STAGE_DIR}/WINDOWS_RESUME.md"

@@ -27,6 +27,8 @@ GO_VERSION="1.25.0"
 GOROOT="/usr/local/go"
 # Pin Firecracker by default for reproducible bring-up; set NF_FIRECRACKER_TAG=latest to track upstream.
 NF_FIRECRACKER_TAG="${NF_FIRECRACKER_TAG:-v1.15.1}"
+# Default HOME for root/non-interactive shells where it may be unset (set -u).
+HOME="${HOME:-/root}"
 export PATH="${GOROOT}/bin:${HOME}/go/bin:${PATH}"
 
 log() { echo "[wsl-fc] $*"; }

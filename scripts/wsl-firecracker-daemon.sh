@@ -27,9 +27,14 @@ GO_VERSION="1.25.0"
 GOROOT="/usr/local/go"
 # Pin Firecracker by default for reproducible bring-up; set NF_FIRECRACKER_TAG=latest to track upstream.
 NF_FIRECRACKER_TAG="${NF_FIRECRACKER_TAG:-v1.15.1}"
-# Default HOME for root/non-interactive shells where it may be unset (set -u).
-HOME="${HOME:-/root}"
+# Default HOME for root/non-interactive shells where it may be unset (set -u),
+# and export it so child processes (curl/go/ssh-keygen) see it too.
+export HOME="${HOME:-/root}"
 export PATH="${GOROOT}/bin:${HOME}/go/bin:${PATH}"
+
+# Pinned SHA256 checksums for the Go toolchain tarball (from go.dev/dl JSON).
+GO_SHA256_amd64="2852af0cb20a13139b3448992e69b868e50ed0f8a1e5940ee1de9e19a123b613"
+GO_SHA256_arm64="05de75d6994a2783699815ee553bd5a9327d8b79991de36e38b66862782f54ae"
 
 log() { echo "[wsl-fc] $*"; }
 die() { echo "[wsl-fc][FAIL] $*" >&2; exit 1; }
@@ -60,12 +65,18 @@ install_go() {
   if "${GOROOT}/bin/go" version 2>/dev/null | grep -q "go${GO_VERSION}"; then
     log "go ${GO_VERSION} already installed"; return
   fi
-  local goarch
+  local goarch want got
   goarch="$(go_arch)"
+  eval "want=\"\${GO_SHA256_${goarch}:-}\""
+  [ -n "${want}" ] || die "no pinned Go checksum for arch ${goarch}"
   log "installing go ${GO_VERSION} (linux-${goarch})"
   curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz" -o /tmp/go.tgz
+  # Verify the tarball checksum before extracting as root (supply-chain guard).
+  got="$(sha256sum /tmp/go.tgz | awk '{print $1}')"
+  [ "${got}" = "${want}" ] || die "go tarball checksum mismatch: got ${got}, want ${want}"
   rm -rf "${GOROOT}"
   tar -C /usr/local -xzf /tmp/go.tgz
+  rm -f /tmp/go.tgz
   "${GOROOT}/bin/go" version
 }
 

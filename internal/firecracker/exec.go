@@ -94,9 +94,12 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	// its own transport failures and a remote "exit 255" onto status 255, so the
 	// sentinel is the only reliable way to recover the real guest exit code.
 	// The marker is a best-effort exit-code channel (see exitSentinelPrefix); a
-	// guest could read it from argv, so it is not a trust boundary.
+	// guest could read it from argv, so it is not a trust boundary. Capture the
+	// command's status, print the sentinel, then re-exit with that status so
+	// ssh's own exit code stays meaningful as a fallback if the sentinel is
+	// truncated away by the output cap (printf must not become the last status).
 	marker := newExitMarker()
-	remoteCommand := shellJoin(command) + "; printf '\\n" + marker + "%d\\n' \"$?\""
+	remoteCommand := shellJoin(command) + "; __nf_rc=$?; printf '\\n" + marker + "%d\\n' \"$__nf_rc\"; exit \"$__nf_rc\""
 	hostKeyOpts := m.hostKeyOptions(vm.ID)
 	args := make([]string, 0, 10+len(hostKeyOpts)+2)
 	args = append(args,

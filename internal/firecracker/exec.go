@@ -62,7 +62,7 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 		Command:   append([]string(nil), command...),
 		Stdout:    stdout.String(),
 		Stderr:    stderr.String(),
-		RuntimeID: ip,
+		RuntimeID: firecrackerRuntimeID(vm),
 	}
 
 	if runErr == nil {
@@ -96,6 +96,18 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	// result). ErrUnsupportedOperation stays reserved for true gaps such as a
 	// missing exec key.
 	return result, fmt.Errorf("firecracker exec could not run ssh client: %w", runErr)
+}
+
+// firecrackerRuntimeID returns the runtime-owned identifier for a VM, matching
+// the VMExecResult.runtime_id contract (a backend handle, not a network address).
+func firecrackerRuntimeID(vm *types.VM) string {
+	if vm == nil {
+		return ""
+	}
+	if vm.Runtime != nil && strings.TrimSpace(vm.Runtime.ExternalID) != "" {
+		return vm.Runtime.ExternalID
+	}
+	return vm.ID
 }
 
 // guestIP resolves the guest IP from runtime info, falling back to configured IP.

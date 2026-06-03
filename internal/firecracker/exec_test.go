@@ -51,6 +51,18 @@ func TestGuestIP(t *testing.T) {
 	})
 }
 
+func TestFirecrackerRuntimeID(t *testing.T) {
+	if got := firecrackerRuntimeID(&types.VM{ID: "vm-1", Runtime: &types.VMRuntime{ExternalID: "ext-9"}}); got != "ext-9" {
+		t.Fatalf("want external id, got %q", got)
+	}
+	if got := firecrackerRuntimeID(&types.VM{ID: "vm-1"}); got != "vm-1" {
+		t.Fatalf("want vm id fallback, got %q", got)
+	}
+	if got := firecrackerRuntimeID(nil); got != "" {
+		t.Fatalf("want empty, got %q", got)
+	}
+}
+
 func TestShellQuoteJoin(t *testing.T) {
 	// shellQuote always single-quotes for safety, even simple words.
 	cases := map[string]string{

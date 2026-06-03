@@ -80,16 +80,18 @@ Run client smoke checks:
 ```powershell
 .\bin\nanofuse.exe health
 Invoke-RestMethod "$env:NANOFUSE_API_URL/capabilities"
-\bin\nanofuse.exe vm list
-\bin\nanofuse.exe vm ports
-\bin\nanofuse.exe vm status <vm-id>
+.\bin\nanofuse.exe vm list
+.\bin\nanofuse.exe vm ports
+.\bin\nanofuse.exe vm mounts
+.\bin\nanofuse.exe vm secrets
+.\bin\nanofuse.exe vm status <vm-id>
 .\bin\nanofuse-tray.exe --smoke --api-url "$env:NANOFUSE_API_URL"
 ```
 
-Current blockers to record during Windows smoke:
+Additional detail to capture during Windows smoke:
 
 ```powershell
-\bin\nanofuse.exe vm status <vm-id>
+.\bin\nanofuse.exe vm status <vm-id>
 Invoke-RestMethod "$env:NANOFUSE_API_URL/vms"
 ```
 
@@ -193,4 +195,4 @@ Additional packaging validation completed on 2026-06-02 from a Linux amd64 works
 - Windows binaries cross-built successfully with `GOOS=windows GOARCH=amd64 CGO_ENABLED=0`
 - `dist/nanofuse-windows-amd64.zip` was created with `nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, and `WINDOWS_RESUME.md`
 - `mage ci` passed locally using Zig as the CGO compiler and a writable temp HOME/cache path
-- Real Windows command output, tray smoke, Windows version, and Windows architecture remain blocked pending an actual Windows session
+- (Superseded) Real Windows command output, tray smoke, Windows version, and architecture were later captured on a Windows 11 session against a WSL2 Firecracker daemon — see "Current Windows status" above and `docs/building/sandbox-objective-validation.md`.

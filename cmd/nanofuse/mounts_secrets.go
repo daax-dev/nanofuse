@@ -32,20 +32,24 @@ func parseMountSpecs(specs []string) ([]client.Mount, error) {
 		}
 		var m client.Mount
 		if !strings.Contains(spec, "=") {
-			// shorthand src:dst[:ro]
-			parts := strings.Split(spec, ":")
-			if len(parts) < 2 || len(parts) > 3 {
+			// shorthand src:dst[:ro|:rw]. Strip the optional mode suffix first,
+			// then split on the LAST colon so a Windows drive-letter source
+			// (e.g. C:\data:/data) parses correctly.
+			body := spec
+			switch {
+			case strings.HasSuffix(body, ":ro"):
+				m.ReadOnly = true
+				body = strings.TrimSuffix(body, ":ro")
+			case strings.HasSuffix(body, ":rw"):
+				body = strings.TrimSuffix(body, ":rw")
+			}
+			idx := strings.LastIndex(body, ":")
+			if idx <= 0 || idx == len(body)-1 {
 				return nil, fmt.Errorf("invalid --mount %q: expected src:dst[:ro] or key=value list", spec)
 			}
-			m.Source = parts[0]
-			m.Target = parts[1]
+			m.Source = body[:idx]
+			m.Target = body[idx+1:]
 			m.Type = "bind"
-			if len(parts) == 3 {
-				if parts[2] != "ro" {
-					return nil, fmt.Errorf("invalid --mount %q: third field must be 'ro'", spec)
-				}
-				m.ReadOnly = true
-			}
 			mounts = append(mounts, m)
 			continue
 		}

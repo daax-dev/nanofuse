@@ -21,6 +21,24 @@ func TestParseMountSpecs(t *testing.T) {
 			t.Fatalf("want ro, got %+v", m[0])
 		}
 	})
+	t.Run("shorthand windows drive source", func(t *testing.T) {
+		m, err := parseMountSpecs([]string{`C:\data:/data:ro`})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m[0].Source != `C:\data` || m[0].Target != "/data" || !m[0].ReadOnly {
+			t.Fatalf("unexpected: %+v", m[0])
+		}
+	})
+	t.Run("shorthand rw suffix", func(t *testing.T) {
+		m, err := parseMountSpecs([]string{"/host:/data:rw"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m[0].Source != "/host" || m[0].Target != "/data" || m[0].ReadOnly {
+			t.Fatalf("unexpected: %+v", m[0])
+		}
+	})
 	t.Run("kv full", func(t *testing.T) {
 		m, err := parseMountSpecs([]string{"src=/h,dst=/g,type=bind,ro"})
 		if err != nil {

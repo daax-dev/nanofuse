@@ -121,8 +121,7 @@ Windows packaging result on 2026-06-02:
 - The full local repo gate passed with:
   `PATH=/tmp/go1.25.10/go/bin:/tmp/nanofuse-go/path/bin:$PATH HOME=/tmp/nanofuse-go/home GOCACHE=/tmp/nanofuse-go/cache GOPATH=/tmp/nanofuse-go/path GOMODCACHE=/tmp/nanofuse-go/mod CC='/tmp/zig-x86_64-linux-0.16.0/zig cc' mage ci`.
 - `gosec` was not installed; the existing mage target reported that and continued.
-- Windows desktop smoke is still blocked because this workspace does not provide an actual Windows interactive session for executing `nanofuse.exe` or `nanofuse-tray.exe`.
-- Attempting to invoke Windows PowerShell from this workspace for script parsing failed with WSL interop error `UtilBindVsockAnyPort:307: socket failed 1`, so the installer script was validated by content and packaging, not by a live PowerShell parser run.
+- At the time of this Linux packaging run, the workspace had no Windows interactive session, so `nanofuse.exe`/`nanofuse-tray.exe` smoke and PowerShell parsing were deferred (an attempted WSL-interop PowerShell invocation failed with `UtilBindVsockAnyPort:307: socket failed 1`). That gap was scoped to the Linux packaging workspace only and was closed on a real Windows 11 session — see "Windows closed-loop result on 2026-06-02" below.
 - (At packaging time, mount and secret-reference visibility were open blockers. They were subsequently resolved; see "Windows closed-loop result on 2026-06-02" below, which adds `vm mounts`, `vm secrets`, `--mount`/`--secret`, and `config.mounts`/`config.secrets` in the `/vms` JSON.)
 
 Windows closed-loop result on 2026-06-02:

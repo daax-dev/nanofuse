@@ -1430,7 +1430,7 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
-			"Failed to exec in VM", details)
+			fmt.Sprintf("Failed to exec in VM: %v", err), details)
 		return
 	}
 

@@ -135,9 +135,10 @@ inject_exec_key() {
   rootfs="$(readlink -f "${FIXTURES}/rootfs.ext4")"
   pub="$(cat "${NF_EXEC_KEY}.pub")"
   mnt="$(mktemp -d)"
-  mount -o loop "${rootfs}" "${mnt}"
-  # Guarantee unmount + temp-dir removal even if a later step fails under set -e.
+  # Install cleanup before mounting so a mount (or later) failure under set -e
+  # still unmounts and removes the temp dir.
   trap 'umount "${mnt}" 2>/dev/null || true; rmdir "${mnt}" 2>/dev/null || true' EXIT
+  mount -o loop "${rootfs}" "${mnt}"
   mkdir -p "${mnt}/root/.ssh"
   chmod 700 "${mnt}/root/.ssh"
   if ! grep -qxF "${pub}" "${mnt}/root/.ssh/authorized_keys" 2>/dev/null; then

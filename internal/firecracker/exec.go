@@ -97,7 +97,9 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	// ssh binary missing or could not start is a host misconfiguration, not a
 	// backend capability gap, so return a regular error (with the populated
 	// result). ErrUnsupportedOperation stays reserved for true gaps such as a
-	// missing exec key.
+	// missing exec key. Use ssh's transport-failure convention (255) so callers
+	// inspecting the result do not see a misleading 0 exit code.
+	result.ExitCode = 255
 	return result, fmt.Errorf("firecracker exec could not run ssh client: %w", runErr)
 }
 

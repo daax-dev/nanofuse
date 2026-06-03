@@ -70,16 +70,17 @@ func TestNormalizeAndValidateSecrets(t *testing.T) {
 			}
 		}},
 		{name: "file ok", in: []SecretRef{{Name: "tls", Type: "file", Target: "/etc/tls/key.pem", Source: "spire://"}}},
-		{name: "file target normalized", in: []SecretRef{{Name: "tls", Type: "file", Target: "/etc/tls//key.pem/"}}, check: func(t *testing.T, out []SecretRef) {
+		{name: "file target normalized", in: []SecretRef{{Name: "tls", Type: "file", Target: "/etc/tls//key.pem/", Source: "spire://"}}, check: func(t *testing.T, out []SecretRef) {
 			if out[0].Target != "/etc/tls/key.pem" {
 				t.Fatalf("want cleaned target, got %q", out[0].Target)
 			}
 		}},
-		{name: "file missing target", in: []SecretRef{{Name: "tls", Type: "file"}}, wantErr: true},
-		{name: "file relative target", in: []SecretRef{{Name: "tls", Type: "file", Target: "rel"}}, wantErr: true},
+		{name: "file missing target", in: []SecretRef{{Name: "tls", Type: "file", Source: "spire://"}}, wantErr: true},
+		{name: "file relative target", in: []SecretRef{{Name: "tls", Type: "file", Target: "rel", Source: "spire://"}}, wantErr: true},
 		{name: "missing name", in: []SecretRef{{Source: "vault://x"}}, wantErr: true},
-		{name: "bad type", in: []SecretRef{{Name: "x", Type: "kms"}}, wantErr: true},
-		{name: "duplicate name", in: []SecretRef{{Name: "a"}, {Name: "a"}}, wantErr: true},
+		{name: "missing source", in: []SecretRef{{Name: "x"}}, wantErr: true},
+		{name: "bad type", in: []SecretRef{{Name: "x", Type: "kms", Source: "vault://x"}}, wantErr: true},
+		{name: "duplicate name", in: []SecretRef{{Name: "a", Source: "x"}, {Name: "a", Source: "y"}}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

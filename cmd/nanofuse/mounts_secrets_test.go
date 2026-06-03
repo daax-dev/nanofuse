@@ -78,6 +78,11 @@ func TestParseSecretSpecs(t *testing.T) {
 			t.Fatal("want error")
 		}
 	})
+	t.Run("missing source", func(t *testing.T) {
+		if _, err := parseSecretSpecs([]string{"name=x"}); err == nil {
+			t.Fatal("want error: source is required")
+		}
+	})
 	t.Run("unknown key", func(t *testing.T) {
 		if _, err := parseSecretSpecs([]string{"name=x,bogus=1"}); err == nil {
 			t.Fatal("want error")

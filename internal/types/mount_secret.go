@@ -76,6 +76,9 @@ func NormalizeAndValidateSecrets(secrets []SecretRef) ([]SecretRef, error) {
 		if s.Name == "" {
 			return nil, fmt.Errorf("secret[%d]: name is required", i)
 		}
+		if s.Source == "" {
+			return nil, fmt.Errorf("secret[%d]: source is required (a reference with no source is not actionable)", i)
+		}
 		if _, dup := seenNames[s.Name]; dup {
 			return nil, fmt.Errorf("secret[%d]: duplicate name %q", i, s.Name)
 		}

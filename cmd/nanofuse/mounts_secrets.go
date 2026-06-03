@@ -182,6 +182,9 @@ func parseSecretSpecs(specs []string) ([]client.SecretRef, error) {
 		if s.Name == "" {
 			return nil, fmt.Errorf("invalid --secret %q: name is required", spec)
 		}
+		if s.Source == "" {
+			return nil, fmt.Errorf("invalid --secret %q: source is required (e.g. source=vault://kv/token)", spec)
+		}
 		secrets = append(secrets, s)
 	}
 	return secrets, nil

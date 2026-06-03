@@ -38,6 +38,9 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 		user = "root"
 	}
 
+	// remoteCommand is a single, fully shell-quoted string. ssh sends everything
+	// after the destination to the guest's login shell verbatim, so no "--"
+	// terminator is used (ssh would forward it into the remote command).
 	remoteCommand := shellJoin(command)
 	args := []string{
 		"-i", m.execSSHKey,
@@ -48,7 +51,6 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 		"-o", "ConnectTimeout=10",
 		"-o", "LogLevel=ERROR",
 		fmt.Sprintf("%s@%s", user, ip),
-		"--",
 		remoteCommand,
 	}
 

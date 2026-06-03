@@ -30,75 +30,100 @@ func parseMountSpecs(specs []string) ([]client.Mount, error) {
 		if spec == "" {
 			continue
 		}
-		var m client.Mount
-		if !strings.Contains(spec, "=") {
-			// shorthand src:dst[:ro|:rw]. Strip the optional mode suffix first,
-			// then split on the LAST colon so a Windows drive-letter source
-			// (e.g. C:\data:/data) parses correctly.
-			body := spec
-			switch {
-			case strings.HasSuffix(body, ":ro"):
-				m.ReadOnly = true
-				body = strings.TrimSuffix(body, ":ro")
-			case strings.HasSuffix(body, ":rw"):
-				body = strings.TrimSuffix(body, ":rw")
-			}
-			idx := strings.LastIndex(body, ":")
-			if idx <= 0 || idx == len(body)-1 {
-				return nil, fmt.Errorf("invalid --mount %q: expected src:dst[:ro] or key=value list", spec)
-			}
-			m.Source = body[:idx]
-			m.Target = body[idx+1:]
-			m.Type = "bind"
-			mounts = append(mounts, m)
-			continue
+		var (
+			m   client.Mount
+			err error
+		)
+		if strings.Contains(spec, "=") {
+			m, err = parseMountKV(spec)
+		} else {
+			m, err = parseMountShorthand(spec)
 		}
-		for _, field := range strings.Split(spec, ",") {
-			field = strings.TrimSpace(field)
-			if field == "" {
-				continue
-			}
-			key, value, hasValue := strings.Cut(field, "=")
-			key = strings.ToLower(strings.TrimSpace(key))
-			value = strings.TrimSpace(value)
-			switch key {
-			case "src", "source":
-				if value == "" {
-					return nil, fmt.Errorf("invalid --mount %q: %q requires a value", spec, key)
-				}
-				m.Source = value
-			case "dst", "target", "destination":
-				if value == "" {
-					return nil, fmt.Errorf("invalid --mount %q: %q requires a value", spec, key)
-				}
-				m.Target = value
-			case "type":
-				if value == "" {
-					return nil, fmt.Errorf("invalid --mount %q: %q requires a value", spec, key)
-				}
-				m.Type = strings.ToLower(value)
-			case "ro", "readonly", "read_only":
-				// Bare "ro" means read-only; an explicit value is parsed
-				// case-insensitively as a boolean.
-				if !hasValue {
-					m.ReadOnly = true
-					break
-				}
-				switch strings.ToLower(value) {
-				case "", "true", "1", "yes", "on":
-					m.ReadOnly = true
-				case "false", "0", "no", "off":
-					m.ReadOnly = false
-				default:
-					return nil, fmt.Errorf("invalid --mount %q: ro must be true or false", spec)
-				}
-			default:
-				return nil, fmt.Errorf("invalid --mount %q: unknown key %q", spec, key)
-			}
+		if err != nil {
+			return nil, err
 		}
 		mounts = append(mounts, m)
 	}
 	return mounts, nil
+}
+
+// parseMountShorthand parses the src:dst[:ro|:rw] form. It strips the optional
+// mode suffix first, then splits on the LAST colon so a Windows drive-letter
+// source (e.g. C:\data:/data) parses correctly.
+func parseMountShorthand(spec string) (client.Mount, error) {
+	var m client.Mount
+	body := spec
+	switch {
+	case strings.HasSuffix(body, ":ro"):
+		m.ReadOnly = true
+		body = strings.TrimSuffix(body, ":ro")
+	case strings.HasSuffix(body, ":rw"):
+		body = strings.TrimSuffix(body, ":rw")
+	}
+	idx := strings.LastIndex(body, ":")
+	if idx <= 0 || idx == len(body)-1 {
+		return client.Mount{}, fmt.Errorf("invalid --mount %q: expected src:dst[:ro] or key=value list", spec)
+	}
+	m.Source = body[:idx]
+	m.Target = body[idx+1:]
+	m.Type = "bind"
+	return m, nil
+}
+
+// parseMountKV parses the comma-separated key=value form.
+func parseMountKV(spec string) (client.Mount, error) {
+	var m client.Mount
+	for _, field := range strings.Split(spec, ",") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		key, value, hasValue := strings.Cut(field, "=")
+		key = strings.ToLower(strings.TrimSpace(key))
+		value = strings.TrimSpace(value)
+		switch key {
+		case "src", "source":
+			if value == "" {
+				return client.Mount{}, fmt.Errorf("invalid --mount %q: %q requires a value", spec, key)
+			}
+			m.Source = value
+		case "dst", "target", "destination":
+			if value == "" {
+				return client.Mount{}, fmt.Errorf("invalid --mount %q: %q requires a value", spec, key)
+			}
+			m.Target = value
+		case "type":
+			if value == "" {
+				return client.Mount{}, fmt.Errorf("invalid --mount %q: %q requires a value", spec, key)
+			}
+			m.Type = strings.ToLower(value)
+		case "ro", "readonly", "read_only":
+			ro, err := parseMountRO(spec, value, hasValue)
+			if err != nil {
+				return client.Mount{}, err
+			}
+			m.ReadOnly = ro
+		default:
+			return client.Mount{}, fmt.Errorf("invalid --mount %q: unknown key %q", spec, key)
+		}
+	}
+	return m, nil
+}
+
+// parseMountRO interprets the read-only field: bare "ro" is true; an explicit
+// value is parsed case-insensitively as a boolean.
+func parseMountRO(spec, value string, hasValue bool) (bool, error) {
+	if !hasValue {
+		return true, nil
+	}
+	switch strings.ToLower(value) {
+	case "", "true", "1", "yes", "on":
+		return true, nil
+	case "false", "0", "no", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid --mount %q: ro must be true or false", spec)
+	}
 }
 
 // parseSecretSpecs parses repeatable --secret flags into client.SecretRef values.

@@ -80,7 +80,7 @@ const (
 // value delivery is handled by the secret broker layer.
 type SecretRef struct {
 	Name   string `json:"name"`             // logical secret name
-	Source string `json:"source,omitempty"` // provider reference, e.g. spire://, vault://, env://NAME
+	Source string `json:"source"`           // required provider reference, e.g. spire://, vault://, env://NAME
 	Type   string `json:"type,omitempty"`   // env|file (default env)
 	Target string `json:"target,omitempty"` // env var name or absolute file path in guest
 }

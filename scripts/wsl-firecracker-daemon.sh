@@ -109,6 +109,12 @@ install_firecracker() {
   log "downloading firecracker ${tag}"
   tmp="$(mktemp -d)"
   curl -fsSL "$url" -o "${tmp}/fc.tgz"
+  # Verify against the per-release published checksum before extracting as root.
+  local want_fc got_fc
+  want_fc="$(curl -fsSL "${url}.sha256.txt" 2>/dev/null | awk '{print $1}')"
+  [ -n "${want_fc}" ] || die "could not fetch firecracker checksum (${url}.sha256.txt)"
+  got_fc="$(sha256sum "${tmp}/fc.tgz" | awk '{print $1}')"
+  [ "${got_fc}" = "${want_fc}" ] || die "firecracker checksum mismatch: got ${got_fc}, want ${want_fc}"
   tar -C "${tmp}" -xzf "${tmp}/fc.tgz"
   install -m 0755 "${tmp}/release-${tag}-${arch}/firecracker-${tag}-${arch}" /usr/local/bin/firecracker
   install -m 0755 "${tmp}/release-${tag}-${arch}/jailer-${tag}-${arch}" /usr/local/bin/jailer 2>/dev/null || true

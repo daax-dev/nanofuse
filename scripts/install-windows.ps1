@@ -34,6 +34,14 @@ Copy-Item -Force $nanofuseExe (Join-Path $InstallDir "nanofuse.exe")
 Copy-Item -Force $trayExe (Join-Path $InstallDir "nanofuse-tray.exe")
 Copy-Item -Force $resumeDoc (Join-Path $InstallDir "WINDOWS_RESUME.md")
 
+# QUICKSTART-WINDOWS.md ships in the package; copy it too when present so the
+# "start here" guide stays with the installed client.
+$quickstartDoc = $null
+try { $quickstartDoc = Resolve-PackageFile "QUICKSTART-WINDOWS.md" } catch { $quickstartDoc = $null }
+if ($quickstartDoc) {
+    Copy-Item -Force $quickstartDoc (Join-Path $InstallDir "QUICKSTART-WINDOWS.md")
+}
+
 [Environment]::SetEnvironmentVariable("NANOFUSE_API_URL", $ApiUrl, "User")
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

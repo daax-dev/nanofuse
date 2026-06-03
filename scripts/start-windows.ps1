@@ -38,14 +38,17 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     throw "Go toolchain not found on PATH. Install Go 1.25.x, then re-run."
 }
 New-Item -ItemType Directory -Force bin | Out-Null
+# Force a native Windows build regardless of any inherited GOOS/GOARCH, and
+# disable VCS stamping so the build does not require Git on PATH.
+$env:CGO_ENABLED = "0"; $env:GOOS = "windows"; $env:GOARCH = "amd64"
 if (-not (Test-Path bin\nanofuse.exe)) {
     Info "Building nanofuse.exe ..."
-    $env:CGO_ENABLED = "0"; go build -o bin\nanofuse.exe .\cmd\nanofuse
+    go build -buildvcs=false -o bin\nanofuse.exe .\cmd\nanofuse
     if ($LASTEXITCODE -ne 0) { throw "nanofuse.exe build failed" }
 }
 if (-not (Test-Path bin\nanofuse-tray.exe)) {
     Info "Building nanofuse-tray.exe ..."
-    $env:CGO_ENABLED = "0"; go build -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray
+    go build -buildvcs=false -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray
     if ($LASTEXITCODE -ne 0) { throw "nanofuse-tray.exe build failed" }
 }
 

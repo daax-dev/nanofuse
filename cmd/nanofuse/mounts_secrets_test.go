@@ -23,6 +23,8 @@ func TestParseMountSpecs(t *testing.T) {
 		{name: "kv ro invalid", spec: "src=/h,dst=/g,ro=maybe", wantErr: true},
 		{name: "kv empty src value", spec: "src=,dst=/g", wantErr: true},
 		{name: "kv bare key no value", spec: "src,dst=/g", wantErr: true},
+		{name: "empty spec rejected", spec: "", wantErr: true},
+		{name: "whitespace spec rejected", spec: "   ", wantErr: true},
 		{name: "kv tmpfs", spec: "type=tmpfs,dst=/scratch", want: client.Mount{Target: "/scratch", Type: "tmpfs"}},
 		{name: "unknown key", spec: "foo=bar", wantErr: true},
 		{name: "bad shorthand", spec: "justone", wantErr: true},
@@ -78,6 +80,11 @@ func TestParseSecretSpecs(t *testing.T) {
 	t.Run("unknown key", func(t *testing.T) {
 		if _, err := parseSecretSpecs([]string{"name=x,bogus=1"}); err == nil {
 			t.Fatal("want error")
+		}
+	})
+	t.Run("empty rejected", func(t *testing.T) {
+		if _, err := parseSecretSpecs([]string{""}); err == nil {
+			t.Fatal("want error for empty --secret")
 		}
 	})
 }

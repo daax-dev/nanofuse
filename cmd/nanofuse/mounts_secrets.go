@@ -28,7 +28,7 @@ func parseMountSpecs(specs []string) ([]client.Mount, error) {
 	for _, spec := range specs {
 		spec = strings.TrimSpace(spec)
 		if spec == "" {
-			continue
+			return nil, fmt.Errorf("invalid --mount: empty value")
 		}
 		var (
 			m   client.Mount
@@ -122,7 +122,7 @@ func parseMountRO(spec, value string, hasValue bool) (bool, error) {
 	case "false", "0", "no", "off":
 		return false, nil
 	default:
-		return false, fmt.Errorf("invalid --mount %q: ro must be true or false", spec)
+		return false, fmt.Errorf("invalid --mount %q: ro must be a boolean (true/false/1/0/yes/no/on/off)", spec)
 	}
 }
 
@@ -141,7 +141,7 @@ func parseSecretSpecs(specs []string) ([]client.SecretRef, error) {
 	for _, spec := range specs {
 		spec = strings.TrimSpace(spec)
 		if spec == "" {
-			continue
+			return nil, fmt.Errorf("invalid --secret: empty value")
 		}
 		var s client.SecretRef
 		for _, field := range strings.Split(spec, ",") {

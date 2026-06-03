@@ -1451,21 +1451,26 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 // truncateForError bounds captured exec output included in an error response so
 // large guest output cannot bloat the JSON response or logs.
 func truncateForError(s string) string {
-	const maxErrorOutput = 4096
-	if len(s) <= maxErrorOutput {
-		return s
-	}
-	return s[:maxErrorOutput] + "… (truncated)"
+	return capString(s, 4096)
 }
 
 // capExecOutput bounds a single exec output stream returned in a success
 // response so an uncapped backend cannot produce an unbounded JSON body.
 func capExecOutput(s string) string {
-	const maxExecOutput = 1 << 20 // 1 MiB per stream
-	if len(s) <= maxExecOutput {
+	return capString(s, 1<<20) // 1 MiB per stream
+}
+
+// capString returns s bounded to at most max bytes (including the truncation
+// suffix), reserving room for the suffix so the result never exceeds max.
+func capString(s string, max int) string {
+	if len(s) <= max {
 		return s
 	}
-	return s[:maxExecOutput] + "… (truncated)"
+	const suffix = "… (truncated)"
+	if max <= len(suffix) {
+		return s[:max]
+	}
+	return s[:max-len(suffix)] + suffix
 }
 
 // handleVMProcessExit handles VM process termination

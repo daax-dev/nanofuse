@@ -30,9 +30,10 @@ NF_FIRECRACKER_TAG="${NF_FIRECRACKER_TAG:-v1.15.1}"
 # Default HOME for root/non-interactive shells where it may be unset (set -u),
 # and export it so child processes (curl/go/ssh-keygen) see it too.
 export HOME="${HOME:-/root}"
-# Append the existing PATH only when set, so an unset PATH does not leave an
-# empty element (which would put the working directory on root's PATH).
-export PATH="${GOROOT}/bin:${HOME}/go/bin${PATH:+:${PATH}}"
+# Prepend the Go bin dirs. When PATH is unset/empty fall back to a standard
+# system PATH (not an empty element, which would put the working directory on
+# root's PATH; and not just the Go dirs, which would drop id/apt-get/curl).
+export PATH="${GOROOT}/bin:${HOME}/go/bin:${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
 
 # Pinned SHA256 checksums for the Go toolchain tarball (from go.dev/dl JSON).
 GO_SHA256_amd64="2852af0cb20a13139b3448992e69b868e50ed0f8a1e5940ee1de9e19a123b613"

@@ -165,7 +165,13 @@ func (c *cappedBuffer) String() string {
 	if len(s) > keep {
 		s = s[:keep]
 	}
-	return s + truncationMarker
+	out := s + truncationMarker
+	// Final guard so the result never exceeds limit, even when limit is smaller
+	// than the marker itself.
+	if len(out) > c.limit {
+		out = out[:c.limit]
+	}
+	return out
 }
 
 // firecrackerRuntimeID returns the runtime-owned identifier for a VM, matching

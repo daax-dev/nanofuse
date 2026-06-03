@@ -87,6 +87,12 @@ func TestCappedBuffer(t *testing.T) {
 	if c2.String() != "hi" {
 		t.Fatalf("under-limit output should be verbatim, got %q", c2.String())
 	}
+	// Tiny limit (smaller than the truncation marker) must still be respected.
+	c3 := &cappedBuffer{limit: 4}
+	_, _ = c3.Write([]byte("abcdef"))
+	if len(c3.String()) > 4 {
+		t.Fatalf("tiny-limit output %q exceeds 4 bytes", c3.String())
+	}
 }
 
 func TestFirecrackerRuntimeID(t *testing.T) {

@@ -110,8 +110,8 @@ build_binaries() {
   cd "${REPO_ROOT}"
   mkdir -p "${REPO_ROOT}/bin"
   export CGO_ENABLED=1 GOCACHE=/root/.cache/go-build GOPATH=/root/go
-  git config --global --add safe.directory "${REPO_ROOT}" 2>/dev/null || true
-  # Repo lives on /mnt/c (Windows-owned); disable VCS stamping to avoid git ownership errors.
+  # -buildvcs=false means git is never consulted, so there is no need to mutate
+  # root's global git config (safe.directory) just to build.
   "${GOROOT}/bin/go" build -buildvcs=false -o ./bin/nanofused ./cmd/nanofused
   "${GOROOT}/bin/go" build -buildvcs=false -o ./bin/register-local-image ./register-local-image.go
   log "built: $(ls -lh ./bin/nanofused ./bin/register-local-image | awk '{print $9, $5}' | tr '\n' ' ')"

@@ -35,17 +35,23 @@ if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
 if (Test-Path $ArchivePath) { Remove-Item -Force $ArchivePath }
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 
-$env:CGO_ENABLED = "0"
-$env:GOOS = "windows"
-$env:GOARCH = "amd64"
+# Cross-compile env; saved/restored so the caller's session is left unchanged.
+$savedGoos = $env:GOOS; $savedGoarch = $env:GOARCH; $savedCgo = $env:CGO_ENABLED
+try {
+    $env:CGO_ENABLED = "0"
+    $env:GOOS = "windows"
+    $env:GOARCH = "amd64"
 
-Write-Host "Building Windows CLI..."
-go build -buildvcs=false -o (Join-Path $StageDir "nanofuse.exe") ./cmd/nanofuse
-if ($LASTEXITCODE -ne 0) { throw "nanofuse.exe build failed" }
+    Write-Host "Building Windows CLI..."
+    go build -buildvcs=false -o (Join-Path $StageDir "nanofuse.exe") ./cmd/nanofuse
+    if ($LASTEXITCODE -ne 0) { throw "nanofuse.exe build failed" }
 
-Write-Host "Building Windows tray..."
-go build -buildvcs=false -ldflags "-H=windowsgui" -o (Join-Path $StageDir "nanofuse-tray.exe") ./cmd/nanofuse-tray
-if ($LASTEXITCODE -ne 0) { throw "nanofuse-tray.exe build failed" }
+    Write-Host "Building Windows tray..."
+    go build -buildvcs=false -ldflags "-H=windowsgui" -o (Join-Path $StageDir "nanofuse-tray.exe") ./cmd/nanofuse-tray
+    if ($LASTEXITCODE -ne 0) { throw "nanofuse-tray.exe build failed" }
+} finally {
+    $env:GOOS = $savedGoos; $env:GOARCH = $savedGoarch; $env:CGO_ENABLED = $savedCgo
+}
 
 Copy-Item scripts\install-windows.ps1 (Join-Path $StageDir "install-windows.ps1")
 Copy-Item docs\WINDOWS_RESUME.md (Join-Path $StageDir "WINDOWS_RESUME.md")

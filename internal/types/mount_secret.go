@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"path"
 	"strings"
 )
 
@@ -33,6 +34,8 @@ func NormalizeAndValidateMounts(mounts []Mount) ([]Mount, error) {
 		if !strings.HasPrefix(m.Target, "/") {
 			return nil, fmt.Errorf("mount[%d]: target %q must be an absolute path", i, m.Target)
 		}
+		// Normalize so equivalent paths (/data, /data/, /a//b) dedupe consistently.
+		m.Target = path.Clean(m.Target)
 		if _, dup := seenTargets[m.Target]; dup {
 			return nil, fmt.Errorf("mount[%d]: duplicate target %q", i, m.Target)
 		}
@@ -89,6 +92,8 @@ func NormalizeAndValidateSecrets(secrets []SecretRef) ([]SecretRef, error) {
 			if !strings.HasPrefix(s.Target, "/") {
 				return nil, fmt.Errorf("secret[%d]: file secret target %q must be an absolute path", i, s.Target)
 			}
+			// Normalize so equivalent paths refer to one stable inventory entry.
+			s.Target = path.Clean(s.Target)
 		default:
 			return nil, fmt.Errorf("secret[%d]: unsupported type %q (want env|file)", i, s.Type)
 		}

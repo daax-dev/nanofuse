@@ -26,6 +26,12 @@ func TestNormalizeAndValidateMounts(t *testing.T) {
 		{name: "relative target", in: []Mount{{Source: "/srv", Target: "data"}}, wantErr: true},
 		{name: "bad type", in: []Mount{{Source: "/srv", Target: "/d", Type: "nfs"}}, wantErr: true},
 		{name: "duplicate target", in: []Mount{{Source: "/a", Target: "/d"}, {Source: "/b", Target: "/d"}}, wantErr: true},
+		{name: "duplicate target trailing slash", in: []Mount{{Source: "/a", Target: "/d"}, {Source: "/b", Target: "/d/"}}, wantErr: true},
+		{name: "target normalized", in: []Mount{{Source: "/a", Target: "/data//sub/"}}, check: func(t *testing.T, out []Mount) {
+			if out[0].Target != "/data/sub" {
+				t.Fatalf("want cleaned target, got %q", out[0].Target)
+			}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -64,6 +70,11 @@ func TestNormalizeAndValidateSecrets(t *testing.T) {
 			}
 		}},
 		{name: "file ok", in: []SecretRef{{Name: "tls", Type: "file", Target: "/etc/tls/key.pem", Source: "spire://"}}},
+		{name: "file target normalized", in: []SecretRef{{Name: "tls", Type: "file", Target: "/etc/tls//key.pem/"}}, check: func(t *testing.T, out []SecretRef) {
+			if out[0].Target != "/etc/tls/key.pem" {
+				t.Fatalf("want cleaned target, got %q", out[0].Target)
+			}
+		}},
 		{name: "file missing target", in: []SecretRef{{Name: "tls", Type: "file"}}, wantErr: true},
 		{name: "file relative target", in: []SecretRef{{Name: "tls", Type: "file", Target: "rel"}}, wantErr: true},
 		{name: "missing name", in: []SecretRef{{Source: "vault://x"}}, wantErr: true},

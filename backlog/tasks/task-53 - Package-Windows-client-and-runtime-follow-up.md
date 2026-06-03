@@ -1,10 +1,10 @@
 ---
 id: TASK-53
 title: 'Package Windows client and record smoke validation'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-02 15:20'
-updated_date: '2026-06-02 16:31'
+updated_date: '2026-06-02 20:30'
 labels:
   - codex-goal
   - windows
@@ -23,7 +23,7 @@ priority: high
 <!-- AC:BEGIN -->
 - [x] #1 A Windows client package exists as either `dist/nanofuse-windows-amd64.zip` or `scripts/install-windows.ps1`, with `nanofuse.exe`, `nanofuse-tray.exe`, setup instructions, unsigned-package warning, and uninstall instructions.
 - [x] #2 Windows operator commands are documented and verified against the current CLI/API surface: health, capabilities, VM listing, port visibility, mount visibility or exact blocker, egress policy visibility or exact blocker, and secret reference visibility or exact blocker.
-- [ ] #3 Evidence is recorded with Windows version, architecture, Go version, exact build commands, exact smoke outputs, tray smoke result, artifact path, and uninstall instructions.
+- [x] #3 Evidence is recorded with Windows version, architecture, Go version, exact build commands, exact smoke outputs, tray smoke result, artifact path, and uninstall instructions.
 - [x] #4 `goal.md` and related Windows runbooks are updated to match the current command names and actual validation status.
 - [x] #5 Local validation includes targeted tests plus the full repo gate `mage ci`, or the exact blocker is recorded if the environment cannot run it.
 <!-- AC:END -->
@@ -60,9 +60,21 @@ Validated on 2026-06-02:
 - Full gate passed:
   `PATH=/tmp/go1.25.10/go/bin:/tmp/nanofuse-go/path/bin:$PATH HOME=/tmp/nanofuse-go/home GOCACHE=/tmp/nanofuse-go/cache GOPATH=/tmp/nanofuse-go/path GOMODCACHE=/tmp/nanofuse-go/mod CC='/tmp/zig-x86_64-linux-0.16.0/zig cc' mage ci`.
 
-Remaining blockers:
-- No real Windows desktop session is available in this workspace, so Windows version, Windows architecture, `nanofuse.exe health` output, `/capabilities` output from Windows PowerShell, `vm list`, `vm ports`, and tray smoke output are not yet recorded.
-- Mount metadata is not exposed as a first-class Windows operator query surface in the current CLI/API.
-- Secret reference inventory is not exposed as a first-class Windows operator query surface in the current CLI/API.
-- Attempted PowerShell parser validation through WSL interop failed with `UtilBindVsockAnyPort:307: socket failed 1`.
+Closed-loop validation completed on 2026-06-02 (real Windows session + WSL2 Firecracker daemon):
+- Client host: Windows 11 Pro `10.0.26200`, AMD64, `go version go1.25.0 windows/amd64`.
+- Daemon: real Linux Firecracker `nanofused` in WSL2 (`/dev/kvm` r/w), Firecracker `v1.15.1`, via `scripts/wsl-firecracker-daemon.sh run` on `0.0.0.0:18080`.
+- Native Windows builds: `go build -o bin\nanofuse.exe .\cmd\nanofuse` and `go build -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray` (CGO disabled).
+- Package: `pwsh scripts/package-windows.ps1` → `dist/nanofuse-windows-amd64.zip` (`nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`).
+- Windows CLI smoke (endpoint `http://<wsl-ip>:18080`): `health` healthy; `/capabilities` `driver=firecracker native_runtime=true`; `image list` shows `nanofuse-base:latest`.
+- Full lifecycle from Windows: `vm run` (with `--mount`, `--secret`, `-p 8081:80`) → running, guest IP `172.16.0.10`; `vm list`/`vm status`/`vm ports`/`vm mounts`/`vm secrets`/`vm logs` correct; `vm stop` → stopped; `vm delete --force` → empty list.
+- `nanofuse-tray.exe --smoke` exit 0 with health + capabilities + image JSON.
+- `vm exec` on Firecracker returns the documented "Runtime does not support VM exec" (apple_container-only capability).
+- Full repo gate: `mage ci` exit 0 ("All CI checks passed!") in WSL2; golangci-lint `v2.12.2` (rebuilt with go1.25); `go test -race ./...` green; `gosec` absent and reported.
+- Uninstall: see `docs/WINDOWS_RESUME.md` (remove `%LOCALAPPDATA%\Nanofuse\bin`, clear `NANOFUSE_API_URL`, drop PATH entry).
+
+Mount visibility and secret-reference visibility blockers are RESOLVED: `vm mounts`, `vm secrets`, `--mount`/`--secret`, and `vm status`/`/vms` JSON expose them as first-class surfaces.
+
+Remaining (out of scope for this task / tracked elsewhere):
+- Mount runtime enforcement (virtio-fs/block) and scoped secret value delivery on the Firecracker backend.
+- Firecracker backend API `vm exec` (apple_container supports it; Firecracker uses SSH).
 <!-- SECTION:NOTES:END -->

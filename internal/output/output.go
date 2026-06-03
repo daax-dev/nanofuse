@@ -148,42 +148,8 @@ func (f *Formatter) PrintVM(vm *client.VM) error {
 	if vm.Config.KernelArgs != "" {
 		fmt.Printf("  Kernel Args:   %s\n", vm.Config.KernelArgs)
 	}
-	if len(vm.Config.Mounts) > 0 {
-		fmt.Println("  Mounts:")
-		for _, m := range vm.Config.Mounts {
-			mode := "rw"
-			if m.ReadOnly {
-				mode = "ro"
-			}
-			typ := m.Type
-			if typ == "" {
-				typ = "bind"
-			}
-			source := m.Source
-			if source == "" {
-				source = "-"
-			}
-			fmt.Printf("    %s %s -> %s (%s)\n", typ, source, m.Target, mode)
-		}
-	}
-	if len(vm.Config.Secrets) > 0 {
-		fmt.Println("  Secret Refs:")
-		for _, s := range vm.Config.Secrets {
-			typ := s.Type
-			if typ == "" {
-				typ = "env"
-			}
-			target := s.Target
-			if target == "" {
-				target = s.Name
-			}
-			source := s.Source
-			if source == "" {
-				source = "-"
-			}
-			fmt.Printf("    %s (%s) source=%s target=%s\n", s.Name, typ, source, target)
-		}
-	}
+	printVMMounts(vm.Config.Mounts)
+	printVMSecrets(vm.Config.Secrets)
 
 	if vm.Runtime != nil {
 		fmt.Println()
@@ -217,6 +183,52 @@ func (f *Formatter) PrintVM(vm *client.VM) error {
 	fmt.Printf("  Last Updated:  %s\n", formatTime(vm.UpdatedAt))
 
 	return nil
+}
+
+// printVMMounts renders the operator-visible mount inventory for a VM.
+func printVMMounts(mounts []client.Mount) {
+	if len(mounts) == 0 {
+		return
+	}
+	fmt.Println("  Mounts:")
+	for _, m := range mounts {
+		mode := "rw"
+		if m.ReadOnly {
+			mode = "ro"
+		}
+		typ := m.Type
+		if typ == "" {
+			typ = "bind"
+		}
+		source := m.Source
+		if source == "" {
+			source = "-"
+		}
+		fmt.Printf("    %s %s -> %s (%s)\n", typ, source, m.Target, mode)
+	}
+}
+
+// printVMSecrets renders the secret-reference inventory for a VM (never values).
+func printVMSecrets(secrets []client.SecretRef) {
+	if len(secrets) == 0 {
+		return
+	}
+	fmt.Println("  Secret Refs:")
+	for _, s := range secrets {
+		typ := s.Type
+		if typ == "" {
+			typ = "env"
+		}
+		target := s.Target
+		if target == "" {
+			target = s.Name
+		}
+		source := s.Source
+		if source == "" {
+			source = "-"
+		}
+		fmt.Printf("    %s (%s) source=%s target=%s\n", s.Name, typ, source, target)
+	}
 }
 
 func formatPortForwards(portForwards []client.PortForward) string {

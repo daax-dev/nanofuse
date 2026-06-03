@@ -34,13 +34,12 @@ Known-good compatibility runtime path:
 
 Current Windows status:
 
-- Windows is currently a client/tray host target, not a validated local runtime host.
-- `dist/nanofuse-windows-amd64.zip` and `scripts/install-windows.ps1` now exist as the first package slice.
-- The Windows CLI and tray now default to `http://127.0.0.1:18080` when no endpoint is provided.
-- Real Windows smoke execution is still blocked on the absence of a Windows desktop session in this workspace.
-- MSI, winget, signing, and native Windows local runtime can follow after the client path works.
-
-No remote push has been performed for this handoff state.
+- Closed-loop validation completed on Windows 11 Pro (10.0.26200, AMD64, Go 1.25.0) against a real Linux Firecracker `nanofused` running in WSL2 (`/dev/kvm` present).
+- `nanofuse.exe` and `nanofuse-tray.exe` were built natively on Windows and packaged into `dist/nanofuse-windows-amd64.zip` (also produced by `scripts/package-windows.ps1`).
+- Full lifecycle was driven from the Windows CLI: health, capabilities, image list, `vm run` (with mounts + secrets + port forward), list, status, ports, mounts, secrets, logs, stop, delete, and tray `--smoke`.
+- Mount visibility and secret-reference visibility are now first-class operator query surfaces (`vm mounts`, `vm secrets`, `--mount`, `--secret`, and `vm status`/`/vms` JSON). Both former blockers are resolved.
+- `nanofuse vm exec` is an apple_container (macOS) backend capability; the Firecracker backend returns a clear unsupported error and uses SSH for in-guest exec. The client command surface is identical across platforms.
+- MSI, winget, signing, and a native Windows local runtime remain out of scope.
 
 ## Source Files Already Updated
 
@@ -156,11 +155,10 @@ The Windows work maps to the larger objective as follows:
 
 The broad objective is not complete until these are resolved:
 
-- Full Windows smoke validation has not been run on a Windows desktop session from this workspace.
-- Native Windows local runtime is not implemented.
-- Scoped secret broker/handoff delivery is not implemented.
-- Mount metadata is not exposed as a first-class Windows operator query surface.
-- Secret reference inventory is not exposed as a first-class Windows operator query surface.
+- Native Windows local runtime is not implemented (out of scope; WSL2 Firecracker is the local Linux backend).
+- Scoped secret broker/handoff value delivery is not implemented (the secret-reference inventory surface is implemented; value delivery is the remaining runtime layer).
+- Mount runtime enforcement (virtio-fs/block attachment) is not implemented on the Firecracker backend (the mount inventory surface is implemented).
+- Firecracker backend `vm exec` is not implemented (apple_container supports it; Firecracker uses SSH).
 - The macOS compatibility path egress implementation is not fail-closed.
 - M3/M4/M5 Firecracker-on-macOS path is unvalidated on supported Apple Silicon hardware.
 - Linux Firecracker jailer is not yet the default hardened launch path.

@@ -5,8 +5,8 @@ This document is the Windows operator handoff for the current Nanofuse client pa
 ## Scope
 
 - Windows is a CLI and tray client host.
-- Windows is not a validated local Firecracker runtime host in this repo.
-- The daemon must run on a reachable Linux or macOS host.
+- Windows is not a local Firecracker runtime host: `nanofused` rejects a Windows host OS by design.
+- The daemon must run on a reachable Linux or macOS host. On a Windows workstation, WSL2 (which exposes `/dev/kvm`) is a supported local Linux backend — see "Closed-Loop Backend (WSL2 Firecracker)" below.
 
 ## Package Contents
 
@@ -72,7 +72,26 @@ Use the current CLI surface:
 Invoke-RestMethod "$env:NANOFUSE_API_URL/capabilities"
 .\nanofuse.exe vm list
 .\nanofuse.exe vm ports
+.\nanofuse.exe vm mounts
+.\nanofuse.exe vm secrets
 .\nanofuse-tray.exe --smoke --api-url "$env:NANOFUSE_API_URL"
+```
+
+Full lifecycle, including the mount and secret-reference surfaces:
+
+```powershell
+.\nanofuse.exe vm run nanofuse-base:latest demo --memory 512 --vcpus 1 `
+  -p 8081:80 `
+  --mount "src=/srv/data,dst=/data,type=bind,ro" `
+  --mount "type=tmpfs,dst=/scratch" `
+  --secret "name=API_TOKEN,source=vault://kv/token" `
+  --secret "name=tls,type=file,target=/etc/tls/key.pem,source=spire://"
+.\nanofuse.exe vm status demo
+.\nanofuse.exe vm mounts demo
+.\nanofuse.exe vm secrets demo
+.\nanofuse.exe vm logs demo --tail 20
+.\nanofuse.exe vm stop demo
+.\nanofuse.exe vm delete demo --force
 ```
 
 Inspect one VM in more detail:
@@ -85,10 +104,53 @@ Inspect one VM in more detail:
 
 - Ingress ports: visible through `nanofuse.exe vm ports` and `vm status`.
 - Egress policy intent: visible through `vm status` or `/vms` JSON under `config.network.egress_policy`.
-- Mount visibility: blocker. The current CLI and API do not expose mount metadata as a first-class operator query surface.
-- Secret reference visibility: blocker. The current CLI has no `secret` command, and the VM query surface does not expose first-class secret reference inventory.
+- Mount visibility: working. Declared with `--mount` on `vm create`/`vm run`, queried with `nanofuse.exe vm mounts`, and shown in `vm status` and `/vms` JSON under `config.mounts`.
+- Secret reference visibility: working. Declared with `--secret` on `vm create`/`vm run`, queried with `nanofuse.exe vm secrets`, and shown in `vm status` and `/vms` JSON under `config.secrets`. Secret references never carry values — only the name, source reference, delivery type, and in-guest target.
 
-These blockers must be recorded as blockers, not treated as working features.
+### Backend capability note
+
+`nanofuse.exe vm exec` is an apple_container (macOS) runtime capability. The
+Firecracker backend is a bare microVM and returns a clear "Runtime does not
+support VM exec" error; in-guest command execution on Firecracker is via SSH to
+the guest. The CLI command surface is identical across platforms; only the
+daemon backend differs.
+
+Mount and secret references are operator-visibility/inventory surfaces:
+declared, validated, persisted, and queryable on every backend. Runtime
+enforcement (virtio-fs/block attachment, scoped secret value delivery) is
+performed by the backend where supported and remains tracked runtime work.
+
+## Closed-Loop Backend (WSL2 Firecracker)
+
+On a Windows workstation with WSL2, a real Linux Firecracker `nanofused` can run
+inside WSL2 (which exposes `/dev/kvm`) and serve the Windows client over TCP.
+This gives a full closed loop on a single machine, equivalent to the macOS
+`apple_container` path.
+
+Bring-up (run inside WSL2 as root — `wsl -d Ubuntu -u root`):
+
+```bash
+cd /mnt/c/path/to/nanofuse
+bash scripts/wsl-firecracker-daemon.sh setup   # Go + Firecracker + CI fixtures + build + register image
+bash scripts/wsl-firecracker-daemon.sh run     # network + daemon on 0.0.0.0:18080
+```
+
+From Windows, point the client at the WSL endpoint. WSL2 mirrored-localhost is
+not always available, so the WSL IP (the "direct management network" pattern)
+is the reliable default:
+
+```powershell
+$wsl = (wsl hostname -I).Trim().Split(" ")[0]
+$env:NANOFUSE_API_URL = "http://$wsl`:18080"
+.\nanofuse.exe health
+```
+
+To keep the documented `http://127.0.0.1:18080` default, add a port proxy
+(elevated PowerShell) or an SSH tunnel:
+
+```powershell
+netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=18080 connectaddress=$wsl connectport=18080
+```
 
 ## Uninstall
 

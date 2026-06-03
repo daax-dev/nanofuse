@@ -352,7 +352,7 @@ func TestConfigFromEnv(t *testing.T) {
 	}
 }
 
-func TestConfigDefaultsToUnixSocket(t *testing.T) {
+func TestConfigDefaultEndpointIsPlatformDependent(t *testing.T) {
 	cfg := (Config{}).Normalize()
 	// The default endpoint is platform-dependent: Windows clients default to the
 	// TCP API, while Unix hosts default to the daemon Unix socket.

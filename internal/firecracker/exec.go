@@ -3,6 +3,7 @@ package firecracker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -108,9 +109,20 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 		return result, ctxErr
 	}
 
-	// No sentinel: the remote shell never ran. This is an ssh transport failure
-	// (connection/auth) or the ssh client could not start — a host-side problem,
-	// not a guest command result. Surface it as an error with exit code 255.
+	// No sentinel. It may have been truncated away by the output cap (>1 MiB of
+	// stdout) even though the command ran, so fall back to ssh's own exit code:
+	// a non-255 ExitError is the guest's code; only 255 (or a failure to start
+	// ssh) is the ambiguous transport case the sentinel exists to disambiguate.
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		if code := exitErr.ExitCode(); code != 255 {
+			result.ExitCode = code
+			return result, nil
+		}
+	}
+
+	// ssh transport failure (connection/auth) or the ssh client could not start —
+	// a host-side problem, not a guest command result.
 	result.ExitCode = 255
 	msg := strings.TrimSpace(stderr.String())
 	if msg == "" {

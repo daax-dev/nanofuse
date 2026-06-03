@@ -252,7 +252,7 @@ cmd_run() {
   write_config
   case "${NF_TCP_BIND}" in
     0.0.0.0:* | :::* | "[::]:"*)
-      log "WARNING: binding the API to ${NF_TCP_BIND} exposes full VM control on all interfaces with no authentication. On a non-isolated host prefer NF_TCP_BIND=127.0.0.1:18080 and reach it via the WSL IP or an SSH tunnel."
+      log "WARNING: binding the API to ${NF_TCP_BIND} exposes full VM control on all interfaces with no authentication. On a non-isolated host prefer NF_TCP_BIND=127.0.0.1:18080 and reach it from Windows via an SSH tunnel or WSL2 localhost forwarding (a loopback bind is NOT reachable on the WSL NIC IP)."
       ;;
   esac
   log "starting nanofused (firecracker) on ${NF_TCP_BIND}"

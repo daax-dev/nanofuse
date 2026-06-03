@@ -18,7 +18,10 @@ import (
 
 // exitSentinelPrefix begins the trailing line the remote shell prints so the
 // daemon can recover the guest command's true exit code independent of ssh's
-// status. A per-exec random nonce is appended so guest output cannot forge it.
+// status. A per-exec random nonce is appended as a best-effort guard against a
+// guest accidentally (or deliberately) emitting the marker; it is not a hard
+// security boundary, since a guest process can read the marker from its own
+// command line via /proc. Exit-code reporting is best-effort, not trusted.
 const exitSentinelPrefix = "__NANOFUSE_EXIT_"
 
 // newExitMarker returns a unique end-of-output marker for one exec invocation.
@@ -90,6 +93,8 @@ func (m *Manager) Exec(ctx context.Context, vm *types.VM, command []string) (*ty
 	// trailing sentinel reports the command's true exit code: ssh collapses both
 	// its own transport failures and a remote "exit 255" onto status 255, so the
 	// sentinel is the only reliable way to recover the real guest exit code.
+	// The marker is a best-effort exit-code channel (see exitSentinelPrefix); a
+	// guest could read it from argv, so it is not a trust boundary.
 	marker := newExitMarker()
 	remoteCommand := shellJoin(command) + "; printf '\\n" + marker + "%d\\n' \"$?\""
 	hostKeyOpts := m.hostKeyOptions(vm.ID)

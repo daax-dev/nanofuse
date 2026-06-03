@@ -117,7 +117,7 @@ Windows packaging result on 2026-06-02:
 - Resulting artifact: `dist/nanofuse-windows-amd64.zip`.
 - ZIP contents were verified with `python3 -m zipfile -l dist/nanofuse-windows-amd64.zip`.
 - Package contents:
-  `nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`.
+  `nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`, `QUICKSTART-WINDOWS.md`.
 - The full local repo gate passed with:
   `PATH=/tmp/go1.25.10/go/bin:/tmp/nanofuse-go/path/bin:$PATH HOME=/tmp/nanofuse-go/home GOCACHE=/tmp/nanofuse-go/cache GOPATH=/tmp/nanofuse-go/path GOMODCACHE=/tmp/nanofuse-go/mod CC='/tmp/zig-x86_64-linux-0.16.0/zig cc' mage ci`.
 - `gosec` was not installed; the existing mage target reported that and continued.
@@ -131,7 +131,7 @@ Windows closed-loop result on 2026-06-02:
 - Windows binaries were built natively:
   `go build -o bin\nanofuse.exe .\cmd\nanofuse` and
   `go build -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray` (CGO disabled).
-- Package produced natively: `pwsh scripts/package-windows.ps1` → `dist/nanofuse-windows-amd64.zip` containing `nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`.
+- Package produced natively: `pwsh scripts/package-windows.ps1` → `dist/nanofuse-windows-amd64.zip` containing `nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`, `QUICKSTART-WINDOWS.md`.
 - The Windows client reached the WSL daemon via the WSL IP (`$env:NANOFUSE_API_URL = "http://<wsl-ip>:18080"`, the "direct management network" pattern).
 - `nanofuse.exe health` returned `healthy`; `/capabilities` reported `driver=firecracker`, `native_runtime=true`, `firecracker_available=true`.
 - `nanofuse.exe vm run nanofuse-base:latest winwm -p 8081:80 --mount src=/srv/data,dst=/data,type=bind,ro --mount type=tmpfs,dst=/scratch --secret name=API_TOKEN,source=vault://kv/token --secret name=tls,type=file,target=/etc/tls/key.pem,source=spire://` created and started a real microVM (state `running`, guest IP `172.16.0.10`).

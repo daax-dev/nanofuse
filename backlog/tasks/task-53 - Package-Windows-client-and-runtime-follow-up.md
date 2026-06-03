@@ -64,7 +64,7 @@ Closed-loop validation completed on 2026-06-02 (real Windows session + WSL2 Fire
 - Client host: Windows 11 Pro `10.0.26200`, AMD64, `go version go1.25.0 windows/amd64`.
 - Daemon: real Linux Firecracker `nanofused` in WSL2 (`/dev/kvm` r/w), Firecracker `v1.15.1`, via `scripts/wsl-firecracker-daemon.sh run` on `0.0.0.0:18080`.
 - Native Windows builds: `go build -o bin\nanofuse.exe .\cmd\nanofuse` and `go build -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray` (CGO disabled).
-- Package: `pwsh scripts/package-windows.ps1` → `dist/nanofuse-windows-amd64.zip` (`nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`).
+- Package: `pwsh scripts/package-windows.ps1` → `dist/nanofuse-windows-amd64.zip` (`nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`, `QUICKSTART-WINDOWS.md`).
 - Windows CLI smoke (endpoint `http://<wsl-ip>:18080`): `health` healthy; `/capabilities` `driver=firecracker native_runtime=true`; `image list` shows `nanofuse-base:latest`.
 - Full lifecycle from Windows: `vm run` (with `--mount`, `--secret`, `-p 8081:80`) → running, guest IP `172.16.0.10`; `vm list`/`vm status`/`vm ports`/`vm mounts`/`vm secrets`/`vm logs` correct; `vm stop` → stopped; `vm delete --force` → empty list.
 - `nanofuse-tray.exe --smoke` exit 0 with health + capabilities + image JSON.

@@ -4,7 +4,8 @@
 
 .DESCRIPTION
   Produces dist/nanofuse-windows-amd64.zip containing nanofuse.exe,
-  nanofuse-tray.exe, install-windows.ps1, and WINDOWS_RESUME.md.
+  nanofuse-tray.exe, install-windows.ps1, WINDOWS_RESUME.md, and
+  QUICKSTART-WINDOWS.md.
 
   This is the Windows-native counterpart to scripts/package-windows.sh
   (which cross-builds from Linux/macOS). Run from the repo root:

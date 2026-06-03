@@ -12,15 +12,29 @@ FIXTURES="$PROJECT_ROOT/test/fixtures/debug-kernel"
 # versioned channel (firecracker-ci/v1.15/x86_64/) is kept current by the
 # Firecracker team and carries Ubuntu 24.04 + kernel 5.10/6.1.
 CI_VERSION="v1.15"
-ARCH="x86_64"
+
+# Derive the Firecracker CI arch from the host (override with FIXTURES_ARCH).
+ARCH="${FIXTURES_ARCH:-}"
+if [[ -z "$ARCH" ]]; then
+    case "$(uname -m)" in
+        x86_64 | amd64) ARCH="x86_64" ;;
+        aarch64 | arm64) ARCH="aarch64" ;;
+        *) echo "ERROR: unsupported architecture $(uname -m); set FIXTURES_ARCH" >&2; exit 1 ;;
+    esac
+fi
 S3_BASE="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/${CI_VERSION}/${ARCH}"
 
 # Image versions
-# NOTE: Use -no-acpi kernel variant because standard CI kernels require CONFIG_PCI
-# which is only available in Amazon Linux microvm patches. The -no-acpi variant
+# NOTE: On x86_64 use the -no-acpi kernel variant because standard CI kernels
+# require CONFIG_PCI (only in Amazon Linux microvm patches); the -no-acpi variant
 # uses legacy MPTable boot that works with virtio-mmio block devices.
 # See: https://github.com/firecracker-microvm/firecracker/issues/4881
-KERNEL_VERSION="5.10.245-no-acpi"
+# aarch64 boots via device tree and uses the plain kernel.
+if [[ "$ARCH" == "x86_64" ]]; then
+    KERNEL_VERSION="${KERNEL_VERSION:-5.10.245-no-acpi}"
+else
+    KERNEL_VERSION="${KERNEL_VERSION:-5.10.245}"
+fi
 UBUNTU_VERSION="24.04"
 
 echo "=== NanoFuse Fixture Downloader ==="

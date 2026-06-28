@@ -183,12 +183,10 @@ func (m *Manager) issueAndPersist(ctx context.Context) error {
 	if svid == nil {
 		return fmt.Errorf("source returned a nil SVID without an error")
 	}
-	if err := svid.Validate(); err != nil {
-		return fmt.Errorf("issued SVID is invalid: %w", err)
-	}
-	// Verify enforces both the chain and the advertised IssuedAt/ExpiresAt
-	// window at the current time, so a source cannot hand us an already-expired
-	// or not-yet-valid SVID even if the leaf's own window is wider.
+	// Verify is the single verification path: it runs all structural/SPIFFE
+	// checks (Validate) plus chain verification and the advertised
+	// IssuedAt/ExpiresAt window at the current time, so a source cannot hand us a
+	// structurally invalid, already-expired, or not-yet-valid SVID.
 	now := m.clk.Now()
 	if err := svid.Verify(now); err != nil {
 		return fmt.Errorf("issued SVID failed verification: %w", err)
@@ -255,11 +253,18 @@ func (m *Manager) run(ctx context.Context) {
 			// drop it from state so consumers fail closed rather than presenting
 			// an expired identity. Rotation keeps retrying so it can recover.
 			if m.currentExpired() {
-				m.invalidate()
-				m.log.Error("SVID expired while rotation is failing; removed credential (fail-safe)",
-					slog.String("error", err.Error()),
-					slog.String("path", m.path),
-				)
+				if rmErr := m.invalidate(); rmErr != nil {
+					m.log.Error("SVID expired but removal failed; credential still on disk, will keep retrying",
+						slog.String("rotation_error", err.Error()),
+						slog.String("removal_error", rmErr.Error()),
+						slog.String("path", m.path),
+					)
+				} else {
+					m.log.Error("SVID expired while rotation is failing; removed credential (fail-safe)",
+						slog.String("error", err.Error()),
+						slog.String("path", m.path),
+					)
+				}
 			} else {
 				m.log.Error("SVID rotation failed; retaining still-valid SVID and retrying",
 					slog.String("error", err.Error()),
@@ -301,17 +306,19 @@ func (m *Manager) currentExpired() bool {
 	return !m.clk.Now().Before(cur.ExpiresAt)
 }
 
-// invalidate removes the mounted credential and clears in-memory state.
-func (m *Manager) invalidate() {
+// invalidate removes the mounted credential and, only if removal succeeds,
+// clears in-memory state. If removal fails it returns the error and KEEPS
+// m.current set so the rotation loop keeps retrying removal — the manager must
+// not report a credential as gone while an expired private-key document is still
+// on disk for consumers to read.
+func (m *Manager) invalidate() error {
 	if err := os.Remove(m.path); err != nil && !os.IsNotExist(err) {
-		m.log.Error("failed to remove expired SVID document",
-			slog.String("error", err.Error()),
-			slog.String("path", m.path),
-		)
+		return fmt.Errorf("remove expired SVID document %q: %w", m.path, err)
 	}
 	m.mu.Lock()
 	m.current = nil
 	m.mu.Unlock()
+	return nil
 }
 
 // refreshDelay returns how long to wait before the next rotation: the time from
@@ -333,10 +340,15 @@ func (m *Manager) refreshDelay() time.Duration {
 // failing: retryInterval, but never longer than the time remaining until the
 // current SVID expires, so the loop wakes exactly at expiry to remove a stale
 // credential. Clamped to >= 0.
+// failureDelay returns how long to wait before the next retry while rotation is
+// failing. While the current SVID is still valid, it caps the wait at the time
+// remaining until expiry so the loop wakes exactly at expiry to remove a stale
+// credential. Once the SVID has already expired (untilExpiry <= 0) it uses the
+// full retryInterval to avoid busy-looping on repeated refresh/removal retries.
 func (m *Manager) failureDelay() time.Duration {
 	d := m.retryInterval
 	if cur := m.Current(); cur != nil {
-		if untilExpiry := cur.ExpiresAt.Sub(m.clk.Now()); untilExpiry < d {
+		if untilExpiry := cur.ExpiresAt.Sub(m.clk.Now()); untilExpiry > 0 && untilExpiry < d {
 			d = untilExpiry
 		}
 	}

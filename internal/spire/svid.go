@@ -226,11 +226,15 @@ func hasCriticalExtension(cert *x509.Certificate, oid asn1.ObjectIdentifier) boo
 	return false
 }
 
-// Verify confirms the leaf chains to the trust bundle and that both the
-// advertised SVID window and the leaf certificate are valid at now. The
-// advertised window is checked explicitly because rotation is scheduled from it
-// and it may be narrower than the leaf's own validity.
+// Verify is the single public verification path: it first enforces all
+// structural/SPIFFE constraints (Validate), then confirms the leaf chains to the
+// trust bundle and that both the advertised SVID window and the leaf certificate
+// are valid at now. The advertised window is checked explicitly because rotation
+// is scheduled from it and it may be narrower than the leaf's own validity.
 func (s *SVID) Verify(now time.Time) error {
+	if err := s.Validate(); err != nil {
+		return err
+	}
 	leaf := s.leaf()
 	if leaf == nil {
 		return fmt.Errorf("svid: certificate chain is empty")

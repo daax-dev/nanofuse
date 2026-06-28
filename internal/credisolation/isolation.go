@@ -138,6 +138,19 @@ func (r Report) Pass() bool {
 	return r.Subjects > 0 && r.allPass()
 }
 
+// HasFailure reports whether any recorded check actively failed. It is distinct
+// from !Pass(): a report that verified nothing concrete (Subjects == 0) has no
+// failure but does not Pass. Callers that must treat "nothing verified" as a
+// non-error (e.g. a lenient health check) use HasFailure for the exit decision.
+func (r Report) HasFailure() bool {
+	for _, res := range r.Results {
+		if !res.Pass {
+			return true
+		}
+	}
+	return false
+}
+
 // StatusLine returns the canonical status line consumed by status tooling:
 // "credential isolation: PASS" when at least one subject was verified and all
 // checks passed, "credential isolation: NOT VERIFIED" when checks passed but no

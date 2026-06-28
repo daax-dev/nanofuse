@@ -92,11 +92,12 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Fprintln(out, report.StatusLine())
 
-	if !report.Pass() {
-		if report.Subjects == 0 {
-			return fmt.Errorf("nothing concrete verified: run inside a guest (or pass --secrets-dir " +
-				"to a live store) so the 0700 store contract can be checked")
-		}
+	// Exit non-zero only on an actual failed check. "Nothing verified" (the store
+	// is legitimately absent and --strict was not set) is a lenient skip that
+	// exits 0 — a CI health check on a host where the store is not provisioned
+	// yet must not be treated as a failure. An absent store under --strict
+	// already returned an error above.
+	if report.HasFailure() {
 		return fmt.Errorf("credential isolation verification failed")
 	}
 	return nil

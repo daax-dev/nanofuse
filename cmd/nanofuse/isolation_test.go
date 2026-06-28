@@ -33,6 +33,32 @@ func TestRunIsolationVerifyRejectsEmptySecretsDir(t *testing.T) {
 	}
 }
 
+func TestRunIsolationVerifyAbsentStoreNonStrictExitsZero(t *testing.T) {
+	absent := filepath.Join(t.TempDir(), "no-such-store")
+	withIsolationFlags(t, absent, false, false) // non-strict
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	// Lenient: an absent store under non-strict is a skip, not a failure.
+	if err := runIsolationVerify(cmd, nil); err != nil {
+		t.Fatalf("non-strict + absent store should exit 0, got error: %v", err)
+	}
+	if !strings.Contains(out.String(), "credential isolation: NOT VERIFIED") {
+		t.Errorf("output should report NOT VERIFIED; got: %s", out.String())
+	}
+}
+
+func TestRunIsolationVerifyAbsentStoreStrictFails(t *testing.T) {
+	absent := filepath.Join(t.TempDir(), "no-such-store")
+	withIsolationFlags(t, absent, false, true) // strict
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := runIsolationVerify(cmd, nil); err == nil {
+		t.Fatal("strict + absent store should return an error, got nil")
+	}
+}
+
 func TestRunIsolationVerifyPassesOnGoodStore(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "secrets")
 	if err := os.Mkdir(dir, 0o700); err != nil {

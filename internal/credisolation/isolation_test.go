@@ -27,6 +27,8 @@ func TestValidateVMID(t *testing.T) {
 		"vm 2",                            // space
 		"vm;rm -rf",                       // shell metacharacters
 		"vm$2",                            // expansion
+		"vm1\n",                           // trailing newline (RE2 $ is end-of-text, not before-\n)
+		"\nvm1",                           // leading newline
 		strings.Repeat("a", maxVMIDLen+1), // too long
 	}
 	for _, id := range bad {

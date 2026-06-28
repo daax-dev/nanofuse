@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/daax-dev/nanofuse/internal/credisolation"
 	"github.com/spf13/cobra"
@@ -51,6 +52,12 @@ func init() {
 
 func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
+
+	// Reject an explicitly empty --secrets-dir (cobra permits it) rather than
+	// silently treating it as an absent store and emitting empty-path messages.
+	if strings.TrimSpace(isolationSecretsDir) == "" {
+		return fmt.Errorf("--secrets-dir must not be empty")
+	}
 
 	opts := credisolation.HostCheckOptions{
 		SecretsDir:  isolationSecretsDir,

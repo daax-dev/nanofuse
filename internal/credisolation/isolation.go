@@ -295,10 +295,13 @@ func VerifyDistinctIdentities(ids []VMIdentity) (VerifyResult, error) {
 }
 
 // VerifyDirPerms verifies that the directory at p has mode exactly 0700 with no
-// group or world bits. When requireRoot is true it additionally verifies
-// root:root ownership; that check is only meaningful when the caller runs as
-// root (i.e. the production daemon), and is a no-op on platforms that do not
-// expose POSIX ownership.
+// group or world bits. When requireRoot is true it additionally asserts the
+// directory is owned by root:root. That ownership assertion is independent of
+// who runs the check — any caller can confirm root:root ownership on platforms
+// that expose POSIX stat ownership; it is a no-op only on platforms that do not
+// (see statOwner). requireRoot is named for the production invariant it
+// enforces (the daemon runs as root, so the store must be root-owned), not for a
+// requirement that the caller be root.
 func VerifyDirPerms(p string, requireRoot bool) (VerifyResult, error) {
 	res := VerifyResult{Name: "store-perms"}
 	info, err := os.Stat(p)

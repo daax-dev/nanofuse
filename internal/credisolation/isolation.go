@@ -321,6 +321,13 @@ func VerifyDirPerms(p string, requireRoot bool) (VerifyResult, error) {
 		res.Detail = fmt.Sprintf("%s is not a directory", p)
 		return res, nil
 	}
+	// The contract is exactly 0700, so reject special mode bits that Perm()
+	// does not surface (setuid/setgid/sticky) — a setgid store directory in
+	// particular changes the group semantics of files created inside it.
+	if special := info.Mode() & (fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky); special != 0 {
+		res.Detail = fmt.Sprintf("%s has special mode bits %v set (require plain 0700)", p, special)
+		return res, nil
+	}
 	mode := info.Mode().Perm()
 	if mode&0o077 != 0 {
 		res.Detail = fmt.Sprintf("%s mode %#o grants group/world access (require 0700)", p, mode)

@@ -179,36 +179,70 @@ func TestVerifyDirPerms(t *testing.T) {
 			t.Error("a regular file must not pass the store-perms check")
 		}
 	})
-	t.Run("symlink is rejected (no following)", func(t *testing.T) {
-		real := mkStore(t, 0o700)
-		link := filepath.Join(t.TempDir(), "secrets-link")
-		if err := os.Symlink(real, link); err != nil {
+}
+
+func TestVerifyDirPermsRejectsSpecialBits(t *testing.T) {
+	t.Parallel()
+	for _, special := range []os.FileMode{os.ModeSetgid, os.ModeSetuid, os.ModeSticky} {
+		dir := filepath.Join(t.TempDir(), "secrets")
+		if err := os.Mkdir(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		res, err := VerifyDirPerms(link, false)
+		if err := os.Chmod(dir, 0o700|special); err != nil {
+			t.Fatal(err)
+		}
+		// Some filesystems silently strip special bits; only assert when the bit
+		// actually stuck, so the test is meaningful where it can be.
+		info, err := os.Lstat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode()&special == 0 {
+			t.Logf("filesystem stripped %v; skipping that case", special)
+			continue
+		}
+		res, err := VerifyDirPerms(dir, false)
 		if err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
 		if res.Pass {
-			t.Error("a symlinked store path must fail (verifier must not follow symlinks)")
+			t.Errorf("dir with %v set must fail (require plain 0700)", special)
 		}
-		if !strings.Contains(res.Detail, "symlink") {
-			t.Errorf("detail = %q, want it to mention symlink", res.Detail)
-		}
-	})
-	t.Run("require-root rejects non-root owner", func(t *testing.T) {
-		if os.Geteuid() == 0 {
-			t.Skip("running as root; cannot exercise the non-root-owner rejection path")
-		}
-		dir := mkStore(t, 0o700)
-		res, err := VerifyDirPerms(dir, true)
-		if err != nil {
-			t.Fatalf("unexpected err: %v", err)
-		}
-		if res.Pass {
-			t.Error("require-root must fail when the store is not owned by root:root")
-		}
-	})
+	}
+}
+
+func TestVerifyDirPermsRejectsSymlink(t *testing.T) {
+	t.Parallel()
+	real := mkStore(t, 0o700)
+	link := filepath.Join(t.TempDir(), "secrets-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	res, err := VerifyDirPerms(link, false)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if res.Pass {
+		t.Error("a symlinked store path must fail (verifier must not follow symlinks)")
+	}
+	if !strings.Contains(res.Detail, "symlink") {
+		t.Errorf("detail = %q, want it to mention symlink", res.Detail)
+	}
+}
+
+func TestVerifyDirPermsRequireRootRejectsNonRootOwner(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; cannot exercise the non-root-owner rejection path")
+	}
+	dir := mkStore(t, 0o700)
+	res, err := VerifyDirPerms(dir, true)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if res.Pass {
+		t.Error("require-root must fail when the store is not owned by root:root")
+	}
 }
 
 // TestCrossVMLeakagePrevented is the core invariant test. It builds two

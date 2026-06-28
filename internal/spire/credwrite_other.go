@@ -1,0 +1,51 @@
+//go:build !unix
+
+package spire
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// writeCredentialAtomic is the portable fallback for non-unix platforms. It
+// performs best-effort symlink/mode checks (POSIX ownership semantics are not
+// available here) and an atomic temp-then-rename write. The SVID mount target
+// is a Linux guest path; the fd-anchored implementation in credwrite_unix.go is
+// the production path.
+func writeCredentialAtomic(dir, name string, data []byte) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("lstat SVID directory %q: %w", dir, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("SVID directory %q is a symlink; refusing to write credential through it", dir)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("SVID directory path %q is not a directory", dir)
+	}
+
+	tmp, err := os.CreateTemp(dir, "."+name+"-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp SVID file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }() // no-op after a successful rename
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp SVID file: %w", err)
+	}
+	if err := tmp.Chmod(svidFileMode); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temp SVID file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp SVID file: %w", err)
+	}
+	dest := filepath.Join(dir, name)
+	if err := os.Rename(tmpName, dest); err != nil {
+		return fmt.Errorf("rename SVID file into place: %w", err)
+	}
+	return nil
+}

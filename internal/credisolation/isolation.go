@@ -156,10 +156,12 @@ func (r Report) StatusLine() string {
 // predicate the runtime consults; it is intentionally deny-by-default.
 func Authorize(requestingVMID, targetVMID string) error {
 	if err := ValidateVMID(requestingVMID); err != nil {
-		return fmt.Errorf("%w: requesting vm: %v", ErrCrossVMAccess, err)
+		// Wrap both sentinels so callers can distinguish an invalid ID
+		// (ErrInvalidVMID) from a plain cross-VM denial via errors.Is.
+		return fmt.Errorf("%w: requesting vm: %w", ErrCrossVMAccess, err)
 	}
 	if err := ValidateVMID(targetVMID); err != nil {
-		return fmt.Errorf("%w: target vm: %v", ErrCrossVMAccess, err)
+		return fmt.Errorf("%w: target vm: %w", ErrCrossVMAccess, err)
 	}
 	if requestingVMID != targetVMID {
 		return fmt.Errorf("%w: VM %q may not access VM %q credentials",

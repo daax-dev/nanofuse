@@ -2,6 +2,7 @@ package credisolation
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -43,9 +44,14 @@ func TestAuthorize(t *testing.T) {
 	if err := Authorize("vm1", "vm2"); !errors.Is(err, ErrCrossVMAccess) {
 		t.Errorf("Authorize(vm1, vm2) = %v, want ErrCrossVMAccess", err)
 	}
-	// Invalid identifiers must not be silently authorized.
-	if err := Authorize("../vm2", "../vm2"); !errors.Is(err, ErrCrossVMAccess) {
+	// Invalid identifiers must not be silently authorized, and the underlying
+	// ErrInvalidVMID must stay inspectable alongside ErrCrossVMAccess.
+	err := Authorize("../vm2", "../vm2")
+	if !errors.Is(err, ErrCrossVMAccess) {
 		t.Errorf("Authorize with invalid id = %v, want ErrCrossVMAccess", err)
+	}
+	if !errors.Is(err, ErrInvalidVMID) {
+		t.Errorf("Authorize with invalid id = %v, want errors.Is(err, ErrInvalidVMID) (chain preserved)", err)
 	}
 }
 
@@ -280,13 +286,31 @@ func TestMonitorHandleCrossVMAttempt(t *testing.T) {
 		logs := buf.String()
 		for _, want := range []string{
 			"cred_isolation.cross_vm_access_attempt",
-			"cred_isolation.vm_terminated",
+			"cred_isolation.failsafe_response",
 			"requesting_vm_valid", "target_vm_valid",
 			"vm1", "vm2", "svid.json",
 		} {
 			if !strings.Contains(logs, want) {
 				t.Errorf("audit log missing %q; got: %s", want, logs)
 			}
+		}
+	})
+	t.Run("auto-populated timestamp is UTC", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&buf, nil))
+		mon := NewMonitor(logger, func(string) error { return nil })
+		// Omit When so the monitor auto-populates it; it must be UTC, which slog
+		// renders with a trailing "Z" rather than a numeric offset.
+		_ = mon.HandleCrossVMAttempt(AccessAttempt{RequestingVMID: "vm1", TargetVMID: "vm2"})
+		var rec struct {
+			Timestamp string `json:"timestamp"`
+		}
+		dec := json.NewDecoder(bytes.NewReader(buf.Bytes()))
+		if err := dec.Decode(&rec); err != nil {
+			t.Fatalf("decode audit log: %v", err)
+		}
+		if rec.Timestamp == "" || !strings.HasSuffix(rec.Timestamp, "Z") {
+			t.Errorf("auto timestamp = %q, want a UTC value ending in Z", rec.Timestamp)
 		}
 	})
 	t.Run("propagates terminator failure (inspectable chain)", func(t *testing.T) {

@@ -50,7 +50,9 @@ func NewMonitor(logger *slog.Logger, terminate Terminator) *Monitor {
 func (mon *Monitor) HandleCrossVMAttempt(a AccessAttempt) error {
 	when := a.When
 	if when.IsZero() {
-		when = time.Now()
+		// UTC to match the repo's "UTC everywhere internally" convention so
+		// audit timestamps correlate across hosts.
+		when = time.Now().UTC()
 	}
 	reqValid := ValidateVMID(a.RequestingVMID) == nil
 	targetValid := ValidateVMID(a.TargetVMID) == nil
@@ -73,8 +75,11 @@ func (mon *Monitor) HandleCrossVMAttempt(a AccessAttempt) error {
 		}
 	}
 
+	// Event name reflects the action (the fail-safe response ran); the
+	// "terminated" boolean carries the outcome so downstream alerting is not
+	// misled when termination was unavailable or failed.
 	mon.log.Error("credential isolation fail-safe response",
-		slog.String("event", "cred_isolation.vm_terminated"),
+		slog.String("event", "cred_isolation.failsafe_response"),
 		slog.String("requesting_vm", a.RequestingVMID),
 		slog.Bool("terminated", terminated),
 	)

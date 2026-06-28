@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/daax-dev/nanofuse/internal/credisolation"
@@ -55,13 +57,20 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 		RequireRoot: isolationRequireRoot,
 	}
 
-	if _, err := os.Stat(isolationSecretsDir); err == nil {
+	switch _, err := os.Stat(isolationSecretsDir); {
+	case err == nil:
 		opts.CheckDir = true
-	} else if isolationStrict {
-		return fmt.Errorf("credential store %s is absent: %w", isolationSecretsDir, err)
-	} else {
+	case errors.Is(err, fs.ErrNotExist):
+		// Genuinely absent: skip the perms check (or fail under --strict).
+		if isolationStrict {
+			return fmt.Errorf("credential store %s is absent: %w", isolationSecretsDir, err)
+		}
 		fmt.Fprintf(out, "  [skip] store-perms — %s not present on this host (use --strict to fail)\n",
 			isolationSecretsDir)
+	default:
+		// Permission denied, I/O error, etc. — do not misreport as "absent";
+		// a verifier that cannot read the store has not verified it.
+		return fmt.Errorf("cannot stat credential store %s: %w", isolationSecretsDir, err)
 	}
 
 	report := credisolation.VerifyHost(opts)

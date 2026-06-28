@@ -69,7 +69,6 @@ func TestGuardMounts(t *testing.T) {
 		{"unrelated bind", MountSpec{Target: "/data", Source: "/host/data", Type: "bind"}, false},
 		{"sibling path", MountSpec{Target: "/var/run/secrets/other", Source: "/h", Type: "bind"}, false},
 		{"prefix-but-not-ancestor", MountSpec{Target: "/var/run/secrets/daaxxy", Source: "/h", Type: "bind"}, false},
-		{"relative target ignored", MountSpec{Target: "relative/path", Source: "/h", Type: "bind"}, false},
 		{"empty target", MountSpec{}, false},
 	}
 	for _, tc := range tests {
@@ -83,6 +82,16 @@ func TestGuardMounts(t *testing.T) {
 				t.Errorf("GuardMounts(%+v) = %v, want nil", tc.spec, err)
 			}
 		})
+	}
+}
+
+func TestGuardMountsFailsClosedOnRelativeTarget(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{"relative/path", "secrets/daax", "../escape"} {
+		err := GuardMounts([]MountSpec{{Target: target, Source: "/h", Type: "bind"}})
+		if !errors.Is(err, ErrInvalidMountTarget) {
+			t.Errorf("GuardMounts(target=%q) = %v, want ErrInvalidMountTarget (fail closed)", target, err)
+		}
 	}
 }
 
@@ -272,6 +281,7 @@ func TestMonitorHandleCrossVMAttempt(t *testing.T) {
 		for _, want := range []string{
 			"cred_isolation.cross_vm_access_attempt",
 			"cred_isolation.vm_terminated",
+			"requesting_vm_valid", "target_vm_valid",
 			"vm1", "vm2", "svid.json",
 		} {
 			if !strings.Contains(logs, want) {
@@ -279,14 +289,17 @@ func TestMonitorHandleCrossVMAttempt(t *testing.T) {
 			}
 		}
 	})
-	t.Run("propagates terminator failure", func(t *testing.T) {
-		mon := NewMonitor(nil, func(string) error { return errors.New("kill failed") })
+	t.Run("propagates terminator failure (inspectable chain)", func(t *testing.T) {
+		errKill := errors.New("kill failed")
+		mon := NewMonitor(nil, func(string) error { return errKill })
 		err := mon.HandleCrossVMAttempt(AccessAttempt{RequestingVMID: "vm1", TargetVMID: "vm2"})
 		if !errors.Is(err, ErrCrossVMAccess) {
-			t.Errorf("err = %v, want ErrCrossVMAccess wrapping terminate failure", err)
+			t.Errorf("err = %v, want it to wrap ErrCrossVMAccess", err)
 		}
-		if !strings.Contains(err.Error(), "kill failed") {
-			t.Errorf("err = %v, want it to mention the termination failure", err)
+		// The underlying terminator error must remain inspectable via errors.Is,
+		// not merely be stringified.
+		if !errors.Is(err, errKill) {
+			t.Errorf("err = %v, want errors.Is(err, errKill) true (chain preserved)", err)
 		}
 	})
 	t.Run("nil terminator still audits and reports", func(t *testing.T) {

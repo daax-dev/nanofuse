@@ -68,6 +68,11 @@ var (
 	// store with a host path or shared volume.
 	ErrSharedSecretsMount = errors.New("shared/host mount targeting credential store is forbidden")
 
+	// ErrInvalidMountTarget indicates a mount target the guard cannot reason
+	// about safely (a non-empty, non-absolute target). The guard fails closed on
+	// these rather than assume a caller validated them.
+	ErrInvalidMountTarget = errors.New("mount target must be an absolute path")
+
 	// ErrInvalidVMID indicates a VM identifier failed validation.
 	ErrInvalidVMID = errors.New("invalid VM identifier")
 )
@@ -180,7 +185,10 @@ type MountSpec struct {
 //
 // This is the preventative control behind issue requirement "secrets cannot be
 // mounted from host or from a shared volume". Mount-injection subsystems must
-// call it before applying operator-supplied mounts.
+// call it before applying operator-supplied mounts. It fails closed: a
+// non-empty target that is not an absolute path is rejected with
+// ErrInvalidMountTarget rather than waved through, so a caller that forgets to
+// validate paths cannot create a bypass.
 func GuardMounts(specs []MountSpec) error {
 	for i := range specs {
 		if err := guardOne(specs[i]); err != nil {
@@ -192,10 +200,15 @@ func GuardMounts(specs []MountSpec) error {
 
 func guardOne(m MountSpec) error {
 	target := strings.TrimSpace(m.Target)
-	if target == "" || !strings.HasPrefix(target, "/") {
-		// Non-absolute targets are rejected by the mount layer's own validation;
-		// they cannot resolve to the credential store here.
+	if target == "" {
+		// An empty target cannot mount anything; the mount layer rejects it on
+		// its own and it definitionally cannot reach the credential store.
 		return nil
+	}
+	if !strings.HasPrefix(target, "/") {
+		// Fail closed: a relative target cannot be reasoned about by absolute
+		// path comparison, so the guard refuses it rather than waving it through.
+		return fmt.Errorf("%w: %q", ErrInvalidMountTarget, target)
 	}
 	clean := path.Clean(target)
 	if !pathOverlapsSecrets(clean) {

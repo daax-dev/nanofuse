@@ -42,18 +42,25 @@ func NewMonitor(logger *slog.Logger, terminate Terminator) *Monitor {
 // event with both VM identifiers and a timestamp, terminates the offending VM,
 // and returns an error wrapping ErrCrossVMAccess so callers can react.
 //
-// Input is validated at this boundary: a malformed identifier is audited as a
-// violation rather than trusted.
+// The supplied identifiers are validated at this boundary and the audit record
+// notes whether each was well-formed; a malformed identifier never grants the
+// benefit of the doubt — the fail-safe termination runs regardless. When
+// termination fails, the underlying terminator error is wrapped (not just
+// stringified) so callers can inspect it with errors.Is / errors.As.
 func (mon *Monitor) HandleCrossVMAttempt(a AccessAttempt) error {
 	when := a.When
 	if when.IsZero() {
 		when = time.Now()
 	}
+	reqValid := ValidateVMID(a.RequestingVMID) == nil
+	targetValid := ValidateVMID(a.TargetVMID) == nil
 
 	mon.log.Warn("credential isolation violation detected",
 		slog.String("event", "cred_isolation.cross_vm_access_attempt"),
 		slog.String("requesting_vm", a.RequestingVMID),
+		slog.Bool("requesting_vm_valid", reqValid),
 		slog.String("target_vm", a.TargetVMID),
+		slog.Bool("target_vm_valid", targetValid),
 		slog.String("path", a.Path),
 		slog.Time("timestamp", when),
 	)
@@ -73,7 +80,9 @@ func (mon *Monitor) HandleCrossVMAttempt(a AccessAttempt) error {
 	)
 
 	if termErr != nil {
-		return fmt.Errorf("%w: terminate offending VM %q: %v",
+		// Wrap both sentinels so errors.Is works for ErrCrossVMAccess and the
+		// underlying termination failure.
+		return fmt.Errorf("%w: terminate offending VM %q: %w",
 			ErrCrossVMAccess, a.RequestingVMID, termErr)
 	}
 	if mon.terminate == nil {

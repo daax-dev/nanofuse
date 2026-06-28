@@ -64,7 +64,9 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 		RequireRoot: isolationRequireRoot,
 	}
 
-	switch _, err := os.Stat(isolationSecretsDir); {
+	// Lstat (not Stat) so a symlinked store path is handed to the verifier,
+	// which fails it, instead of being silently followed.
+	switch _, err := os.Lstat(isolationSecretsDir); {
 	case err == nil:
 		opts.CheckDir = true
 	case errors.Is(err, fs.ErrNotExist):

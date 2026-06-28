@@ -78,8 +78,10 @@ var (
 )
 
 // safeIDPattern matches identifiers containing only alphanumerics, hyphen, and
-// underscore. It mirrors the validation used by internal/spire so SPIFFE IDs and
-// isolation checks agree on what a legal VM identifier is.
+// underscore — the same character class internal/spire accepts, so SPIFFE IDs
+// and isolation checks agree on which characters are legal. ValidateVMID is
+// stricter than internal/spire in one respect: it also bounds the length
+// (maxVMIDLen) since a VM identifier here flows into paths and audit records.
 var safeIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // ValidateVMID validates a VM identifier at the trust boundary. A VM identifier
@@ -304,9 +306,16 @@ func VerifyDistinctIdentities(ids []VMIdentity) (VerifyResult, error) {
 // requirement that the caller be root.
 func VerifyDirPerms(p string, requireRoot bool) (VerifyResult, error) {
 	res := VerifyResult{Name: "store-perms"}
-	info, err := os.Stat(p)
+	// Lstat, not Stat: a security verifier must not follow a symlink. A symlinked
+	// store path could point at a 0700 directory elsewhere and yield a
+	// false-positive PASS while the real store is attacker-controlled.
+	info, err := os.Lstat(p)
 	if err != nil {
 		return res, fmt.Errorf("stat credential store %s: %w", p, err)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		res.Detail = fmt.Sprintf("%s is a symlink; the credential store must be a real directory", p)
+		return res, nil
 	}
 	if !info.IsDir() {
 		res.Detail = fmt.Sprintf("%s is not a directory", p)

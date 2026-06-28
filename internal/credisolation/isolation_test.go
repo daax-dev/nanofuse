@@ -179,6 +179,23 @@ func TestVerifyDirPerms(t *testing.T) {
 			t.Error("a regular file must not pass the store-perms check")
 		}
 	})
+	t.Run("symlink is rejected (no following)", func(t *testing.T) {
+		real := mkStore(t, 0o700)
+		link := filepath.Join(t.TempDir(), "secrets-link")
+		if err := os.Symlink(real, link); err != nil {
+			t.Fatal(err)
+		}
+		res, err := VerifyDirPerms(link, false)
+		if err != nil {
+			t.Fatalf("unexpected err: %v", err)
+		}
+		if res.Pass {
+			t.Error("a symlinked store path must fail (verifier must not follow symlinks)")
+		}
+		if !strings.Contains(res.Detail, "symlink") {
+			t.Errorf("detail = %q, want it to mention symlink", res.Detail)
+		}
+	})
 	t.Run("require-root rejects non-root owner", func(t *testing.T) {
 		if os.Geteuid() == 0 {
 			t.Skip("running as root; cannot exercise the non-root-owner rejection path")

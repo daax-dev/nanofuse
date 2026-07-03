@@ -95,11 +95,41 @@ func TestGuardMounts(t *testing.T) {
 
 func TestGuardMountsFailsClosedOnRelativeTarget(t *testing.T) {
 	t.Parallel()
-	for _, target := range []string{"relative/path", "secrets/daax", "../escape"} {
+	// A leading-whitespace target is relative on Linux (byte-string paths): the
+	// guard must not trim it into an absolute path, it must fail closed.
+	for _, target := range []string{"relative/path", "secrets/daax", "../escape", " /var/run/secrets/daax", "   "} {
 		err := GuardMounts([]MountSpec{{Target: target, Source: "/h", Type: "bind"}})
 		if !errors.Is(err, ErrInvalidMountTarget) {
 			t.Errorf("GuardMounts(target=%q) = %v, want ErrInvalidMountTarget (fail closed)", target, err)
 		}
+	}
+}
+
+// TestGuardMountsPreservesTargetByteSemantics locks in that the guard reasons
+// about the exact target bytes rather than a whitespace-trimmed approximation.
+func TestGuardMountsPreservesTargetByteSemantics(t *testing.T) {
+	t.Parallel()
+	// A trailing-space path is a distinct path from the store, not the store, so
+	// a host bind there does not overlap the credential store and is permitted.
+	if err := GuardMounts([]MountSpec{{Target: GuestSecretsDir + " ", Source: "/h", Type: "bind"}}); err != nil {
+		t.Errorf("trailing-space sibling path = %v, want nil (it is not the store)", err)
+	}
+}
+
+// TestGuardMountsTmpfsExceptionIsNarrow proves the private-tmpfs exception cannot
+// be widened by smuggling whitespace into Source: a "tmpfs" mount over the store
+// with a non-empty (even whitespace) source is treated as backed and denied.
+func TestGuardMountsTmpfsExceptionIsNarrow(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{" ", "\t", "/host/leak"} {
+		err := GuardMounts([]MountSpec{{Target: GuestSecretsDir, Source: source, Type: "tmpfs"}})
+		if !errors.Is(err, ErrSharedSecretsMount) {
+			t.Errorf("tmpfs over store with source=%q = %v, want ErrSharedSecretsMount", source, err)
+		}
+	}
+	// The genuine exception (exactly-empty source) is still admitted.
+	if err := GuardMounts([]MountSpec{{Target: GuestSecretsDir, Source: "", Type: "tmpfs"}}); err != nil {
+		t.Errorf("private tmpfs (empty source) over store = %v, want nil", err)
 	}
 }
 

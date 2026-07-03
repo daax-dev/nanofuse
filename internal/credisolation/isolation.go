@@ -216,28 +216,39 @@ func GuardMounts(specs []MountSpec) error {
 }
 
 func guardOne(m MountSpec) error {
-	target := strings.TrimSpace(m.Target)
+	// Do not trim the target: on Linux a mount target is a byte-string path where
+	// leading and trailing whitespace is significant (" /x" is a relative path,
+	// "/x " is a path distinct from "/x"). Trimming would misclassify both — a
+	// leading-space path would be waved past the absolute-path gate and a
+	// trailing-space sibling would be conflated with the store. Reason about the
+	// exact bytes the mount layer will use.
+	target := m.Target
 	if target == "" {
 		// An empty target cannot mount anything; the mount layer rejects it on
 		// its own and it definitionally cannot reach the credential store.
 		return nil
 	}
 	if !strings.HasPrefix(target, "/") {
-		// Fail closed: a relative target cannot be reasoned about by absolute
-		// path comparison, so the guard refuses it rather than waving it through.
+		// Fail closed: a non-absolute target (including one that only appears
+		// relative because of leading whitespace) cannot be reasoned about by
+		// absolute path comparison, so the guard refuses it rather than waving it
+		// through.
 		return fmt.Errorf("%w: %q", ErrInvalidMountTarget, target)
 	}
 	clean := path.Clean(target)
 	if !pathOverlapsSecrets(clean) {
 		return nil
 	}
-	mtype := strings.ToLower(strings.TrimSpace(m.Type))
-	source := strings.TrimSpace(m.Source)
-	if mtype == "tmpfs" && source == "" {
+	// Keep the tmpfs exception as narrow as possible: the type must be exactly
+	// "tmpfs" (case-folded only) and the source must be exactly empty. A non-empty
+	// source — even whitespace — is treated as a backing source and denied, so the
+	// exception cannot be widened by smuggling whitespace into Source.
+	mtype := strings.ToLower(m.Type)
+	if mtype == "tmpfs" && m.Source == "" {
 		return nil
 	}
 	return fmt.Errorf("%w: target %q (type=%q, source=%q) overlaps %s",
-		ErrSharedSecretsMount, clean, mtype, source, GuestSecretsDir)
+		ErrSharedSecretsMount, clean, mtype, m.Source, GuestSecretsDir)
 }
 
 // pathOverlapsSecrets reports whether p is the credential store, an ancestor of

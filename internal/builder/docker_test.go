@@ -105,3 +105,30 @@ func TestDockerBuilderExtract(t *testing.T) {
 	// Note: alpine doesn't have a kernel, so this test will fail on kernel extraction
 	// In a real test, we'd use a nanofuse base image
 }
+
+func TestValidateFallbackKernel(t *testing.T) {
+	dir := t.TempDir()
+
+	regular := dir + "/vmlinux"
+	if err := os.WriteFile(regular, []byte("kernel"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Run("regular readable file", func(t *testing.T) {
+		if err := validateFallbackKernel(regular); err != nil {
+			t.Errorf("expected nil for a readable regular file, got: %v", err)
+		}
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		if err := validateFallbackKernel(dir + "/does-not-exist"); err == nil {
+			t.Error("expected an error for a missing file, got nil")
+		}
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		if err := validateFallbackKernel(dir); err == nil {
+			t.Error("expected an error for a directory, got nil")
+		}
+	})
+}

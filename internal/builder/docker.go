@@ -385,8 +385,12 @@ func (b *DockerBuilder) createRootfsMount(ctx context.Context, tarPath, rootfsPa
 
 	// Extract tar into mounted filesystem.
 	// --numeric-owner avoids failures mapping uid/gid names that don't exist on
-	// the host; capture tar's combined output so failures are actionable.
-	tarCmd := exec.CommandContext(ctx, "tar", "--numeric-owner", "-xf", tarPath, "-C", mountPoint)
+	// the host. --xattrs/--xattrs-include preserve security.capability (file
+	// capabilities) so binaries like ping keep their caps in the rootfs — this
+	// pairs with CAP_SETFCAP granted to the daemon. Capture combined output so
+	// failures are actionable.
+	tarCmd := exec.CommandContext(ctx, "tar", "--numeric-owner",
+		"--xattrs", "--xattrs-include=*", "-xf", tarPath, "-C", mountPoint)
 	if out, err := tarCmd.CombinedOutput(); err != nil {
 		if msg := strings.TrimSpace(string(out)); msg != "" {
 			return fmt.Errorf("tar extraction failed: %w: %s", err, msg)

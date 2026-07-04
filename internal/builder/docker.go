@@ -175,22 +175,35 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 	return result, nil
 }
 
+// truncateForError trims whitespace and caps a captured command output at max
+// bytes so untrusted/verbose tool output cannot flood error messages or logs.
+func truncateForError(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) > max {
+		return s[:max] + "… (truncated)"
+	}
+	return s
+}
+
 // validateFallbackKernel ensures the configured fallback kernel is a readable
 // regular file, so a misconfigured kernel_path (a directory, or an unreadable
 // file) fails here with a clear message instead of later at VM start.
 func validateFallbackKernel(path string) error {
-	info, err := os.Stat(path)
+	// Open first, then stat the open descriptor, so the validated object is the
+	// same one that was opened (avoids a Stat/Open TOCTOU on the path string).
+	f, err := os.Open(path) //nolint:gosec // operator-configured fallback kernel path
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	info, err := f.Stat()
 	if err != nil {
 		return err
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("not a regular file")
 	}
-	f, err := os.Open(path) //nolint:gosec // operator-configured fallback kernel path
-	if err != nil {
-		return err
-	}
-	return f.Close()
+	return nil
 }
 
 // pullImage pulls a container image.
@@ -393,7 +406,9 @@ func (b *DockerBuilder) createRootfsMount(ctx context.Context, tarPath, rootfsPa
 	tarCmd := exec.CommandContext(ctx, "tar", "--numeric-owner",
 		"--xattrs", "--xattrs-include=security.capability", "-xf", tarPath, "-C", mountPoint)
 	if out, err := tarCmd.CombinedOutput(); err != nil {
-		if msg := strings.TrimSpace(string(out)); msg != "" {
+		// Bound the captured output: a malformed/untrusted rootfs can produce very
+		// large or many-line tar output that would otherwise flood logs.
+		if msg := truncateForError(string(out), 2048); msg != "" {
 			return fmt.Errorf("tar extraction failed: %w: %s", err, msg)
 		}
 		return fmt.Errorf("tar extraction failed: %w", err)

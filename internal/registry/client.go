@@ -209,7 +209,9 @@ func (c *Client) PullImage(ctx context.Context, imageRef string, progressChan ch
 			},
 		}
 
-		result, err := c.builder.Extract(ctx, imageRef, extractOpts)
+		// Use pullCtx so the extract step is bounded by the configured PullTimeout,
+		// not just the caller's context.
+		result, err := c.builder.Extract(pullCtx, imageRef, extractOpts)
 		if err != nil {
 			c.logger.Error("Failed to extract image layers: %v", err)
 			return nil, fmt.Errorf("failed to extract image layers: %w", err)

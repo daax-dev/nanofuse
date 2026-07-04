@@ -309,9 +309,10 @@ func (b *DockerBuilder) extractKernel(ctx context.Context, tarPath, outputDir st
 				}
 			}
 		} else {
-			// Exact path
-			tarPath := strings.TrimPrefix(searchPath, "/")
-			if err := b.extractFileFromTar(ctx, tarPath, tarPath, kernelDest); err == nil {
+			// Exact path: extract srcPath from the tar archive (tarPath). Use a
+			// distinct name so it does not shadow the archive path argument.
+			srcPath := strings.TrimPrefix(searchPath, "/")
+			if err := b.extractFileFromTar(ctx, tarPath, srcPath, kernelDest); err == nil {
 				version := extractVersionFromPath(searchPath)
 				b.log("Found kernel: %s", searchPath)
 				return kernelDest, version, nil
@@ -454,9 +455,14 @@ func (b *DockerBuilder) createRootfsFuse(ctx context.Context, tarPath, rootfsPat
 		_ = umountCmd.Run()                                       // Best effort cleanup
 	}()
 
-	// Extract tar
-	tarCmd := exec.CommandContext(ctx, "tar", "-xf", tarPath, "-C", mountPoint)
-	if err := tarCmd.Run(); err != nil {
+	// Extract tar (same flags/diagnostics as the root loop-mount path, so behavior
+	// does not silently differ between privileged and unprivileged extraction).
+	tarCmd := exec.CommandContext(ctx, "tar", "--numeric-owner",
+		"--xattrs", "--xattrs-include=security.capability", "-xf", tarPath, "-C", mountPoint)
+	if out, err := tarCmd.CombinedOutput(); err != nil {
+		if msg := truncateForError(string(out), 2048); msg != "" {
+			return fmt.Errorf("tar extraction failed: %w: %s", err, msg)
+		}
 		return fmt.Errorf("tar extraction failed: %w", err)
 	}
 

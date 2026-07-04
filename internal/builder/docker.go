@@ -133,7 +133,7 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 				kernelVersion = extractVersionFromPath(opts.FallbackKernelPath)
 				b.log("Using fallback kernel: %s (version: %s)", kernelPath, kernelVersion)
 			} else {
-				return nil, fmt.Errorf("kernel not found in image and fallback not available: %w", err)
+				return nil, fmt.Errorf("kernel not found in image and configured fallback kernel %q is not accessible (%v): %w", opts.FallbackKernelPath, statErr, err)
 			}
 		} else {
 			return nil, fmt.Errorf("failed to extract kernel (no fallback configured): %w", err)

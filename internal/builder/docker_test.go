@@ -3,6 +3,7 @@ package builder
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -137,10 +138,7 @@ func TestTruncateForError(t *testing.T) {
 	if got := truncateForError("  hi  ", 2048); got != "hi" {
 		t.Errorf("short input: got %q, want %q", got, "hi")
 	}
-	long := ""
-	for i := 0; i < 5000; i++ {
-		long += "x"
-	}
+	long := strings.Repeat("x", 5000)
 	got := truncateForError(long, 2048)
 	if len(got) > 2048 {
 		t.Errorf("result %d bytes exceeds max 2048", len(got))

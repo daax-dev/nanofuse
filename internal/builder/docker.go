@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,35 @@ import (
 	"strings"
 	"time"
 )
+
+// capWriter captures at most max bytes of a command's output and discards the
+// rest, so untrusted/noisy tool output cannot cause large allocations. It always
+// reports a full write so the command does not fail on a short write.
+type capWriter struct {
+	buf bytes.Buffer
+	max int
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if remaining := w.max - w.buf.Len(); remaining > 0 {
+		if len(p) > remaining {
+			w.buf.Write(p[:remaining])
+		} else {
+			w.buf.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+// runCapturingOutput runs cmd, capturing up to maxBytes of combined stdout+stderr
+// for diagnostics without buffering unbounded untrusted output in memory.
+func runCapturingOutput(cmd *exec.Cmd, maxBytes int) (string, error) {
+	cw := &capWriter{max: maxBytes}
+	cmd.Stdout = cw
+	cmd.Stderr = cw
+	err := cmd.Run()
+	return cw.buf.String(), err
+}
 
 // DockerBuilder extracts OCI images using Docker or Podman.
 // This is the recommended builder for development and devcontainer environments.
@@ -176,8 +206,9 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 }
 
 // truncateForError trims whitespace and caps a captured command output so the
-// returned string never exceeds max bytes (suffix included), preventing
-// untrusted/verbose tool output from flooding error messages or logs.
+// returned string never exceeds max bytes; when truncated it ends with a
+// "(truncated)" marker (unless max is smaller than the marker itself). This
+// prevents untrusted/verbose tool output from flooding error messages or logs.
 func truncateForError(s string, max int) string {
 	s = strings.TrimSpace(s)
 	if len(s) <= max {
@@ -411,10 +442,10 @@ func (b *DockerBuilder) createRootfsMount(ctx context.Context, tarPath, rootfsPa
 	// actionable.
 	tarCmd := exec.CommandContext(ctx, "tar", "--numeric-owner",
 		"--xattrs", "--xattrs-include=security.capability", "-xf", tarPath, "-C", mountPoint)
-	if out, err := tarCmd.CombinedOutput(); err != nil {
-		// Bound the captured output: a malformed/untrusted rootfs can produce very
-		// large or many-line tar output that would otherwise flood logs.
-		if msg := truncateForError(string(out), 2048); msg != "" {
+	// Capture at most a bounded amount of output so a malformed/untrusted rootfs
+	// cannot flood logs or balloon daemon memory.
+	if out, err := runCapturingOutput(tarCmd, 2048); err != nil {
+		if msg := truncateForError(out, 2048); msg != "" {
 			return fmt.Errorf("tar extraction failed: %w: %s", err, msg)
 		}
 		return fmt.Errorf("tar extraction failed: %w", err)
@@ -464,8 +495,8 @@ func (b *DockerBuilder) createRootfsFuse(ctx context.Context, tarPath, rootfsPat
 	// does not silently differ between privileged and unprivileged extraction).
 	tarCmd := exec.CommandContext(ctx, "tar", "--numeric-owner",
 		"--xattrs", "--xattrs-include=security.capability", "-xf", tarPath, "-C", mountPoint)
-	if out, err := tarCmd.CombinedOutput(); err != nil {
-		if msg := truncateForError(string(out), 2048); msg != "" {
+	if out, err := runCapturingOutput(tarCmd, 2048); err != nil {
+		if msg := truncateForError(out, 2048); msg != "" {
 			return fmt.Errorf("tar extraction failed: %w: %s", err, msg)
 		}
 		return fmt.Errorf("tar extraction failed: %w", err)

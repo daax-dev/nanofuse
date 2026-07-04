@@ -127,8 +127,9 @@ else
             if [ -f "${BUILD_DIR}/vmlinux" ]; then
                 log_info "Kernel built successfully: $(du -h ${BUILD_DIR}/vmlinux | cut -f1)"
             else
-                # Try to find in /tmp again
-                for kernel_path in /tmp/vmlinux-fresh-build /tmp/vmlinux-final /tmp/vmlinux-*; do
+                # build-kernel-docker.sh writes to scripts/archives/build/vmlinux
+                # (its own SCRIPT_DIR/build); check that first, then /tmp fallbacks.
+                for kernel_path in ./scripts/archives/build/vmlinux /tmp/vmlinux-fresh-build /tmp/vmlinux-final /tmp/vmlinux-*; do
                     if [ -f "$kernel_path" ]; then
                         cp "$kernel_path" "${BUILD_DIR}/vmlinux"
                         log_info "Kernel built and copied: $(du -h ${BUILD_DIR}/vmlinux | cut -f1)"

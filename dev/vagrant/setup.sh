@@ -182,14 +182,17 @@ install_firecracker() {
     tmpdir=$(mktemp -d)
 
     local fc_base_url="https://github.com/firecracker-microvm/firecracker/releases/download/v${FIRECRACKER_VERSION}"
-    curl -fsSL "${fc_base_url}/firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}.tgz" \
-        -o "$tmpdir/firecracker.tgz"
-    curl -fsSL "${fc_base_url}/SHA256SUMS" -o "$tmpdir/SHA256SUMS"
+    local fc_tarball="firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}.tgz"
+    # Firecracker publishes a per-asset "<tarball>.sha256.txt" checksum file, not
+    # a combined SHA256SUMS. The checksum file references the tarball by its real
+    # asset name, so download the tarball under that name for `sha256sum -c`.
+    curl -fsSL "${fc_base_url}/${fc_tarball}" -o "$tmpdir/${fc_tarball}"
+    curl -fsSL "${fc_base_url}/${fc_tarball}.sha256.txt" -o "$tmpdir/${fc_tarball}.sha256.txt"
 
     info "Verifying Firecracker tarball checksum..."
-    (cd "$tmpdir" && grep "firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}.tgz" SHA256SUMS | sha256sum -c -)
+    (cd "$tmpdir" && sha256sum -c "${fc_tarball}.sha256.txt")
 
-    tar -C "$tmpdir" -xzf "$tmpdir/firecracker.tgz"
+    tar -C "$tmpdir" -xzf "$tmpdir/${fc_tarball}"
 
     local release_dir="$tmpdir/release-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}"
     cp "$release_dir/firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}" /usr/local/bin/firecracker

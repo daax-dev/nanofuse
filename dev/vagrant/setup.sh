@@ -180,6 +180,10 @@ install_firecracker() {
     info "Installing Firecracker v${FIRECRACKER_VERSION}..."
     local tmpdir
     tmpdir=$(mktemp -d)
+    # Clean up the temp dir on any exit path, including early exit under `set -e`
+    # (curl/checksum/tar failure), so iterative provisioning does not leak /tmp
+    # dirs. Cleared on the success path below once cleanup has already run.
+    trap 'rm -rf "$tmpdir"' EXIT
 
     local fc_base_url="https://github.com/firecracker-microvm/firecracker/releases/download/v${FIRECRACKER_VERSION}"
     local fc_tarball="firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}.tgz"
@@ -200,6 +204,7 @@ install_firecracker() {
     chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer
 
     rm -rf "$tmpdir"
+    trap - EXIT
     info "Firecracker v${FIRECRACKER_VERSION} installed"
 }
 
@@ -330,10 +335,13 @@ register_base_image() {
             "${NANOFUSE_IMAGE_ARCH:-x86_64}" >/dev/null; then
             info "Base image registered in DB as $canonical_tag (usable via: nanofuse vm run base <name>)"
         else
-            warn "Base image DB registration failed; use a raw sha256 digest until resolved"
+            # Hard failure: the closed loop is only "working" if the documented
+            # `nanofuse vm run base` shorthand resolves. verify.sh does not catch a
+            # missing DB tag, so a silent warning would leave a broken environment.
+            error "Base image DB registration failed (register-local-image $canonical_tag). Closed loop would be broken."
         fi
     else
-        warn "register-local-image not on PATH; base image DB tag not registered"
+        error "register-local-image not on PATH; cannot register base image DB tag. Rebuild nanofuse (mage all) first."
     fi
 }
 

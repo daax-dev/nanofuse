@@ -106,9 +106,10 @@ echo "[5/6] Building Firecracker kernel..."
 if [ -f "${BUILD_DIR}/vmlinux" ]; then
     log_info "Using pre-built kernel: $(du -h ${BUILD_DIR}/vmlinux | cut -f1)"
 else
-    # Check for kernel in /tmp with standard names
+    # Check for a cached kernel: the sub-script's deterministic output first
+    # (so repeat runs reuse it instead of rebuilding), then /tmp fallbacks.
     TEMP_KERNEL=""
-    for kernel_path in /tmp/vmlinux-fresh-build /tmp/vmlinux-final /tmp/vmlinux-*; do
+    for kernel_path in ./scripts/archives/build/vmlinux /tmp/vmlinux-fresh-build /tmp/vmlinux-final /tmp/vmlinux-*; do
         if [ -f "$kernel_path" ]; then
             TEMP_KERNEL="$kernel_path"
             break

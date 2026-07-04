@@ -175,14 +175,19 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 	return result, nil
 }
 
-// truncateForError trims whitespace and caps a captured command output at max
-// bytes so untrusted/verbose tool output cannot flood error messages or logs.
+// truncateForError trims whitespace and caps a captured command output so the
+// returned string never exceeds max bytes (suffix included), preventing
+// untrusted/verbose tool output from flooding error messages or logs.
 func truncateForError(s string, max int) string {
 	s = strings.TrimSpace(s)
-	if len(s) > max {
-		return s[:max] + "… (truncated)"
+	if len(s) <= max {
+		return s
 	}
-	return s
+	const suffix = "...(truncated)"
+	if max < len(suffix) {
+		return s[:max]
+	}
+	return s[:max-len(suffix)] + suffix
 }
 
 // validateFallbackKernel ensures the configured fallback kernel is a readable

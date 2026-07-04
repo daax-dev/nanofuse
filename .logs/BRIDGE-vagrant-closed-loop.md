@@ -47,7 +47,26 @@ real inside a **vagrant nested-KVM sandbox** (only way to get ephemeral root +
   ExecMainStatus=0. Real bind errors still exit non-zero. api tests pass.
   NOTE: this fix is on the #141 branch (off main), NOT the #140 branch.
 
+## DONE iteration 4 (validated; issue #142; branch fix/issue-142-arbitrary-container-kernel; commit b0bb12e)
+- **FIXED "run any container we build".** `nanofuse image pull docker.io/library/alpine:latest`
+  → "Pull complete!"; `nanofuse vm run <alpine>` boots as a microVM. Three fixes:
+  (1) shared fallback kernel wired through registry → builder, default
+  `<data_dir>/images/vmlinux`, overridable via new `firecracker.kernel_path`;
+  (2) tar `--numeric-owner` + surface tar stderr in errors;
+  (3) `nanofused.service` granted CAP_CHOWN/FOWNER/DAC_OVERRIDE/MKNOD/SETFCAP
+  (bounding set previously dropped CAP_CHOWN → tar EPERM on etc/shadow even as root).
+  Base-image regression: run → running (ping 0% loss) → stop → delete. go test config/builder/api pass.
+  NOTE: on #142 branch (off main), NOT #140.
+
+## CORE GOAL STATUS: startup ✅  shutdown ✅ (exit 0, #141)  reliable container via API ✅ (base, ping 0%)  any container ✅ (pull+run alpine, #142)
+
 ## OPEN DEFECTS (fix next)
+- **[#142 follow-up] non-systemd container networking:** running an arbitrary container
+  whose init != /lib/systemd/systemd needs `--kernel-args` override, which clobbers the
+  daemon-generated `ip=` autoconfig arg → guest loses networking. Daemon should
+  merge/append `ip=`/`root=`/`console=` even when kernel args are user-overridden.
+- **[#142 follow-up] two divergent systemd units:** repo-root `nanofused.service`
+  (installed by setup.sh) vs `systemd/nanofused.service` (different ExecStart/caps). Reconcile.
 - **[HARNESS, #140] daemon left stopped after provision:** verify.sh cleanup trap
   (verify.sh:29 `systemctl stop nanofused`) stops it; env should end with nanofused
   running+enabled so `vm run base` works immediately after `vagrant up`.

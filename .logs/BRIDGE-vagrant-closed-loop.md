@@ -40,13 +40,14 @@ real inside a **vagrant nested-KVM sandbox** (only way to get ephemeral root +
   (atomic rename) so `vagrant provision` is idempotent while nanofused runs.
 - `vagrant provision` now completes clean: PASS 19/0/0, "fully verified!".
 
-## OPEN DEFECTS (fix next; see decisions 036)
-- **[PRODUCT, new issue+branch] nanofused exits status=1 on graceful SIGTERM.**
-  `server.go:471 return httpServer.Serve(...)` returns `http.ErrServerClosed` →
-  `log.Fatal` (cmd/nanofused/main.go:23) → exit 1. Treat ErrServerClosed as clean
-  (return nil) in both serve sites (goroutine ~466 + main ~471). Makes `systemctl stop`
-  clean. FULLY DIAGNOSED — just implement + validate (rebuild nanofused in guest,
-  `systemctl stop nanofused` should exit 0 / unit inactive not failed).
+## DONE iteration 3 (validated; issue #141; branch fix/issue-141-graceful-shutdown-exit; commit 890cbca)
+- **FIXED nanofused status=1 on graceful SIGTERM.** server.go treats
+  `http.ErrServerClosed` as a clean exit at both serve sites. Validated in guest:
+  `systemctl stop nanofused` → rc=0, unit inactive (not failed), Result=success,
+  ExecMainStatus=0. Real bind errors still exit non-zero. api tests pass.
+  NOTE: this fix is on the #141 branch (off main), NOT the #140 branch.
+
+## OPEN DEFECTS (fix next)
 - **[HARNESS, #140] daemon left stopped after provision:** verify.sh cleanup trap
   (verify.sh:29 `systemctl stop nanofused`) stops it; env should end with nanofused
   running+enabled so `vm run base` works immediately after `vagrant up`.

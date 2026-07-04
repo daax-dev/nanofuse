@@ -40,7 +40,7 @@ real inside a **vagrant nested-KVM sandbox** (only way to get ephemeral root +
   (atomic rename) so `vagrant provision` is idempotent while nanofused runs.
 - `vagrant provision` now completes clean: PASS 19/0/0, "fully verified!".
 
-## DONE iteration 3 (validated; issue #141; branch fix/issue-141-graceful-shutdown-exit; commit 890cbca)
+## DONE iteration 3 (validated; issue #141; branch fix/issue-141-graceful-shutdown-exit; commit 0b74a60)
 - **FIXED nanofused status=1 on graceful SIGTERM.** server.go treats
   `http.ErrServerClosed` as a clean exit at both serve sites. Validated in guest:
   `systemctl stop nanofused` → rc=0, unit inactive (not failed), Result=success,

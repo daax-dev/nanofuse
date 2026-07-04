@@ -222,13 +222,22 @@ build_nanofuse() {
         exit 1
     }
 
-    # Install to /usr/local/bin so they're on PATH for all users
-    cp bin/nanofuse /usr/local/bin/nanofuse
-    cp bin/nanofused /usr/local/bin/nanofused
+    # Install to /usr/local/bin so they're on PATH for all users.
+    # Copy to a temp path then rename over the target: a plain `cp` over a running
+    # binary (e.g. nanofused during `vagrant provision`) fails with ETXTBSY
+    # ("Text file busy"). rename() swaps the path to a new inode while the running
+    # process keeps the old one, so re-provisioning stays idempotent.
+    install_binary() {
+        local src=$1 dst=$2
+        cp "$src" "$dst.new"
+        chmod +x "$dst.new"
+        mv -f "$dst.new" "$dst"
+    }
+    install_binary bin/nanofuse /usr/local/bin/nanofuse
+    install_binary bin/nanofused /usr/local/bin/nanofused
     if [[ -f bin/register-local-image ]]; then
-        cp bin/register-local-image /usr/local/bin/register-local-image
+        install_binary bin/register-local-image /usr/local/bin/register-local-image
     fi
-    chmod +x /usr/local/bin/nanofuse /usr/local/bin/nanofused
 
     info "nanofuse built and installed:"
     info "  $(nanofuse version 2>&1 || echo 'version check skipped')"
@@ -304,7 +313,28 @@ register_base_image() {
         cp "$build_dir/manifest.json" /var/lib/nanofuse/images/manifest.json
     fi
 
-    info "Base image registered at /var/lib/nanofuse/images/"
+    info "Base image artifacts staged at /var/lib/nanofuse/images/"
+
+    # Register into the daemon DB under the canonical default tag so the documented
+    # shorthand `nanofuse vm run base|default <name>` resolves to this local image.
+    # The CLI expands `base`/`default` to ghcr.io/daax-dev/nanofuse/base:latest, and
+    # the daemon looks that tag up in the DB — without this, only a raw sha256 digest
+    # would resolve. register-local-image creates the DB/schema if absent and is
+    # idempotent (UpsertImage); the daemon reads tags live, so no restart is needed.
+    local db_path="/var/lib/nanofuse/nanofuse.db"
+    local canonical_tag="ghcr.io/daax-dev/nanofuse/base:latest"
+    if command -v register-local-image >/dev/null 2>&1; then
+        if register-local-image "$db_path" "$canonical_tag" \
+            /var/lib/nanofuse/images/rootfs.ext4 \
+            /var/lib/nanofuse/images/vmlinux \
+            "${NANOFUSE_IMAGE_ARCH:-x86_64}" >/dev/null; then
+            info "Base image registered in DB as $canonical_tag (usable via: nanofuse vm run base <name>)"
+        else
+            warn "Base image DB registration failed; use a raw sha256 digest until resolved"
+        fi
+    else
+        warn "register-local-image not on PATH; base image DB tag not registered"
+    fi
 }
 
 # ─── 9. nanofuse config + systemd service ──────────────────────────────────

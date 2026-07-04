@@ -31,13 +31,25 @@ real inside a **vagrant nested-KVM sandbox** (only way to get ephemeral root +
 4. Full API lifecycle proven: register-local-image → `vm run <digest>` → running +
    IP 172.16.0.11 + ping 0% loss → `vm stop` (0.13s, process gone) → `vm delete`.
 
-## OPEN DEFECTS (fix next; see .logs/decisions/sandbox-objective.jsonl 030-033)
-- **Image-ref shorthand mismatch (real bug):** `vm create base|default|base:latest`
-  normalizes to `ghcr.io/daax-dev/nanofuse/base:latest`, which does NOT match the
-  locally-registered unprefixed `base:latest`. Only the raw `sha256:` digest resolves.
-  `vm create --help` advertises `base`/`default` shorthands → interface-contract bug.
-  Investigate ref normalization in `internal/image` + `cmd/register-local-image`
-  (register under canonical ghcr tag, OR make resolver match local unprefixed tags).
+## DONE iteration 2 (validated in sandbox; decisions 034-035; on branch fix/issue-140)
+- **FIXED image-ref shorthand:** `setup.sh register_base_image` now registers the base
+  image in the daemon DB under canonical tag `ghcr.io/daax-dev/nanofuse/base:latest`
+  (via register-local-image). `nanofuse vm run base|default <name>` works out of the box.
+  Validated warm + cold-DB + full `vagrant provision`.
+- **FIXED ETXTBSY on re-provision:** `setup.sh` installs binaries via copy-to-temp + `mv`
+  (atomic rename) so `vagrant provision` is idempotent while nanofused runs.
+- `vagrant provision` now completes clean: PASS 19/0/0, "fully verified!".
+
+## OPEN DEFECTS (fix next; see decisions 036)
+- **[PRODUCT, new issue+branch] nanofused exits status=1 on graceful SIGTERM.**
+  `server.go:471 return httpServer.Serve(...)` returns `http.ErrServerClosed` →
+  `log.Fatal` (cmd/nanofused/main.go:23) → exit 1. Treat ErrServerClosed as clean
+  (return nil) in both serve sites (goroutine ~466 + main ~471). Makes `systemctl stop`
+  clean. FULLY DIAGNOSED — just implement + validate (rebuild nanofused in guest,
+  `systemctl stop nanofused` should exit 0 / unit inactive not failed).
+- **[HARNESS, #140] daemon left stopped after provision:** verify.sh cleanup trap
+  (verify.sh:29 `systemctl stop nanofused`) stops it; env should end with nanofused
+  running+enabled so `vm run base` works immediately after `vagrant up`.
 - **vm exec unsupported** on firecracker driver but CLI exposes it unconditionally.
 - **ttyS0 boot delay** ~90s (`dev-ttyS0.device/start`) though net comes up early.
 - Stale `scripts/e2e-test.sh` uses OLD CLI (`vm create <name> --image base`,

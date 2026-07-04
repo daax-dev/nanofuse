@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -302,6 +303,16 @@ func setupGracefulShutdown(httpServer *http.Server, logger *logging.Logger) {
 	}()
 }
 
+// serveHTTP runs srv.Serve(l) and treats http.ErrServerClosed — the expected
+// sentinel returned after a graceful Shutdown — as a clean exit (nil), so
+// `systemctl stop` reports success instead of a failed unit.
+func serveHTTP(srv *http.Server, l net.Listener) error {
+	if err := srv.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
 // StartWithOverrides starts the API server with CLI flag overrides
 func StartWithOverrides(configPath, tcpBind, unixSocket string) error {
 	// Load configuration
@@ -459,16 +470,17 @@ func startServer(cfg *config.Config) error {
 		// Setup graceful shutdown for this server
 		setupGracefulShutdown(httpServer, logger)
 
-		// Start server in goroutine (except last one)
+		// Start server in goroutine (except last one). serveHTTP treats
+		// http.ErrServerClosed (the graceful-shutdown sentinel) as a clean exit.
 		if i < len(listeners)-1 {
 			go func(l net.Listener, srv *http.Server) {
 				logger.Info("Starting server on listener: %s", l.Addr())
-				errChan <- srv.Serve(l)
+				errChan <- serveHTTP(srv, l)
 			}(serveListener, httpServer)
 		} else {
 			// Start last server in main goroutine
 			logger.Info("NanoFuse API Daemon started successfully")
-			return httpServer.Serve(serveListener)
+			return serveHTTP(httpServer, serveListener)
 		}
 	}
 

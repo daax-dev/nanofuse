@@ -21,6 +21,9 @@ type ClientOptions struct {
 	LayerTimeout time.Duration // Timeout per layer download
 	UseDocker    bool          // Use Docker/Podman for extraction (default: true)
 	Verbose      bool          // Enable verbose logging
+	// FallbackKernelPath is the shared guest kernel used when a pulled container
+	// image bundles no kernel of its own (the common case for OCI images).
+	FallbackKernelPath string
 }
 
 // Client represents an OCI registry client
@@ -188,9 +191,10 @@ func (c *Client) PullImage(ctx context.Context, imageRef string, progressChan ch
 		c.logger.Info("Extracting image layers using Docker/Podman...")
 
 		extractOpts := builder.ExtractOptions{
-			OutputDir:    imageDir,
-			RootfsSizeMB: 2048,
-			Verbose:      c.opts.Verbose,
+			OutputDir:          imageDir,
+			RootfsSizeMB:       2048,
+			Verbose:            c.opts.Verbose,
+			FallbackKernelPath: c.opts.FallbackKernelPath,
 			OnProgress: func(stage string, percent int) {
 				c.logger.Debug("Extraction: %s (%d%%)", stage, percent)
 				if progressChan != nil {

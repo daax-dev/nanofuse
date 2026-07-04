@@ -23,9 +23,12 @@ NoNewPrivileges=false
 ProtectHome=true
 PrivateTmp=true
 
-# Capabilities for networking
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+# Capabilities: networking (VM tap/NAT) + container-rootfs extraction.
+# CAP_CHOWN/FOWNER/DAC_OVERRIDE/MKNOD/SETFCAP let the daemon reconstruct a pulled
+# container's filesystem faithfully (e.g. chown etc/shadow to root:shadow, device
+# nodes, file capabilities); without them tar extraction fails as EPERM even as root.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_MKNOD CAP_SETFCAP
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_MKNOD CAP_SETFCAP
 
 # User/Group (runs as root for Firecracker and KVM access)
 User=root

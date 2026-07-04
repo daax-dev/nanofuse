@@ -367,10 +367,12 @@ func (b *DockerBuilder) createRootfsMount(ctx context.Context, tarPath, rootfsPa
 		_ = umountCmd.Run()                             // Best effort cleanup
 	}()
 
-	// Extract tar into mounted filesystem
-	tarCmd := exec.CommandContext(ctx, "tar", "-xf", tarPath, "-C", mountPoint)
-	if err := tarCmd.Run(); err != nil {
-		return fmt.Errorf("tar extraction failed: %w", err)
+	// Extract tar into mounted filesystem.
+	// --numeric-owner avoids failures mapping uid/gid names that don't exist on
+	// the host; capture stderr so failures are actionable.
+	tarCmd := exec.CommandContext(ctx, "tar", "--numeric-owner", "-xf", tarPath, "-C", mountPoint)
+	if out, err := tarCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("tar extraction failed: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 
 	return nil

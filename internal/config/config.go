@@ -84,6 +84,10 @@ type StorageConfig struct {
 type FirecrackerConfig struct {
 	BinaryPath string `yaml:"binary_path"`
 	JailerPath string `yaml:"jailer_path,omitempty"`
+	// KernelPath is the shared guest kernel used as a fallback when a pulled
+	// container image does not bundle its own kernel (the common case for OCI
+	// images). Empty means the daemon derives <data_dir>/images/vmlinux.
+	KernelPath string `yaml:"kernel_path,omitempty"`
 }
 
 // LimitsConfig represents resource limits

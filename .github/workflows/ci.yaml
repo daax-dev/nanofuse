@@ -388,8 +388,17 @@ jobs:
         working-directory: images/base
         run: |
           echo "Building Linux 6.1.90 kernel with Firecracker microVM config..."
-          chmod +x build-kernel-docker.sh
-          ./build-kernel-docker.sh
+          # build-kernel-docker.sh was moved to scripts/archives/ (issue #160);
+          # build.sh already invokes it from this path.
+          chmod +x scripts/archives/build-kernel-docker.sh
+          ./scripts/archives/build-kernel-docker.sh
+          # The script writes to its own scripts/archives/build/vmlinux; mirror
+          # build.sh by placing the kernel at build/vmlinux for verify/upload.
+          mkdir -p build
+          for k in scripts/archives/build/vmlinux /tmp/vmlinux-fresh-build; do
+            if [ -f "$k" ]; then cp "$k" build/vmlinux; break; fi
+          done
+          test -f build/vmlinux || { echo "ERROR: kernel not produced at build/vmlinux" >&2; exit 1; }
 
       - name: Verify kernel binary
         working-directory: images/base

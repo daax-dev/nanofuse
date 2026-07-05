@@ -7,7 +7,7 @@ on:
 jobs:
   comment-build-info:
     name: Comment Build Info
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       pull-requests: write
 

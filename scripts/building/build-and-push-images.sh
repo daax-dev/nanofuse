@@ -70,6 +70,13 @@ if [ ! -f "./build/vmlinux" ] || [ $(stat -c%s "./build/vmlinux") -lt 1000000 ];
     log_info "Building kernel 6.1.90 (this takes 10-15 minutes)..."
     ./scripts/build-kernel-docker.sh
 
+    # build-kernel-docker.sh writes to scripts/build/vmlinux; stage it at ./build/vmlinux
+    # (where the check below and build.sh expect it) before validating.
+    mkdir -p build
+    for k in scripts/build/vmlinux /tmp/vmlinux-fresh-build; do
+        if [ -f "$k" ]; then cp "$k" build/vmlinux; break; fi
+    done
+
     if [ ! -f "./build/vmlinux" ] || [ $(stat -c%s "./build/vmlinux") -lt 1000000 ]; then
         log_error "Kernel build failed or produced invalid kernel"
         exit 1

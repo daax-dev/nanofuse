@@ -81,6 +81,11 @@ func (mon *Monitor) HandleCrossVMAttempt(a AccessAttempt) error {
 	mon.log.Error("credential isolation fail-safe response",
 		slog.String("event", "cred_isolation.failsafe_response"),
 		slog.String("requesting_vm", a.RequestingVMID),
+		slog.Bool("requesting_vm_valid", reqValid),
+		slog.String("target_vm", a.TargetVMID),
+		slog.Bool("target_vm_valid", targetValid),
+		slog.String("path", a.Path),
+		slog.Time("timestamp", when),
 		slog.Bool("terminated", terminated),
 	)
 

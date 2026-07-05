@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Absolute path to this script's directory (images/base), for portable user hints.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 BUILD_DIR="./build"
 mkdir -p "$BUILD_DIR"
 
@@ -42,7 +45,7 @@ echo "Failed to download pre-built kernel."
 echo "Pre-built 6.1.x kernels are not available from Firecracker."
 echo ""
 echo "Build the kernel instead:"
-echo "  cd /home/jpoley/ps/nanofuse/images/base"
+echo "  cd $SCRIPT_DIR"
 echo "  sudo ./scripts/build-kernel-docker.sh"
 echo ""
 exit 1

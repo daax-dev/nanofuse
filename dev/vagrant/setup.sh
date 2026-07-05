@@ -180,16 +180,23 @@ install_firecracker() {
     info "Installing Firecracker v${FIRECRACKER_VERSION}..."
     local tmpdir
     tmpdir=$(mktemp -d)
+    # Clean up the temp dir on any exit path, including early exit under `set -e`
+    # (curl/checksum/tar failure), so iterative provisioning does not leak /tmp
+    # dirs. Cleared on the success path below once cleanup has already run.
+    trap 'rm -rf "$tmpdir"' EXIT
 
     local fc_base_url="https://github.com/firecracker-microvm/firecracker/releases/download/v${FIRECRACKER_VERSION}"
-    curl -fsSL "${fc_base_url}/firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}.tgz" \
-        -o "$tmpdir/firecracker.tgz"
-    curl -fsSL "${fc_base_url}/SHA256SUMS" -o "$tmpdir/SHA256SUMS"
+    local fc_tarball="firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}.tgz"
+    # Firecracker publishes a per-asset "<tarball>.sha256.txt" checksum file, not
+    # a combined SHA256SUMS. The checksum file references the tarball by its real
+    # asset name, so download the tarball under that name for `sha256sum -c`.
+    curl -fsSL "${fc_base_url}/${fc_tarball}" -o "$tmpdir/${fc_tarball}"
+    curl -fsSL "${fc_base_url}/${fc_tarball}.sha256.txt" -o "$tmpdir/${fc_tarball}.sha256.txt"
 
     info "Verifying Firecracker tarball checksum..."
-    (cd "$tmpdir" && grep "firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}.tgz" SHA256SUMS | sha256sum -c -)
+    (cd "$tmpdir" && sha256sum -c "${fc_tarball}.sha256.txt")
 
-    tar -C "$tmpdir" -xzf "$tmpdir/firecracker.tgz"
+    tar -C "$tmpdir" -xzf "$tmpdir/${fc_tarball}"
 
     local release_dir="$tmpdir/release-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}"
     cp "$release_dir/firecracker-v${FIRECRACKER_VERSION}-${FIRECRACKER_ARCH}" /usr/local/bin/firecracker
@@ -197,6 +204,7 @@ install_firecracker() {
     chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer
 
     rm -rf "$tmpdir"
+    trap - EXIT
     info "Firecracker v${FIRECRACKER_VERSION} installed"
 }
 
@@ -219,13 +227,22 @@ build_nanofuse() {
         exit 1
     }
 
-    # Install to /usr/local/bin so they're on PATH for all users
-    cp bin/nanofuse /usr/local/bin/nanofuse
-    cp bin/nanofused /usr/local/bin/nanofused
+    # Install to /usr/local/bin so they're on PATH for all users.
+    # Copy to a temp path then rename over the target: a plain `cp` over a running
+    # binary (e.g. nanofused during `vagrant provision`) fails with ETXTBSY
+    # ("Text file busy"). rename() swaps the path to a new inode while the running
+    # process keeps the old one, so re-provisioning stays idempotent.
+    install_binary() {
+        local src=$1 dst=$2
+        cp "$src" "$dst.new"
+        chmod +x "$dst.new"
+        mv -f "$dst.new" "$dst"
+    }
+    install_binary bin/nanofuse /usr/local/bin/nanofuse
+    install_binary bin/nanofused /usr/local/bin/nanofused
     if [[ -f bin/register-local-image ]]; then
-        cp bin/register-local-image /usr/local/bin/register-local-image
+        install_binary bin/register-local-image /usr/local/bin/register-local-image
     fi
-    chmod +x /usr/local/bin/nanofuse /usr/local/bin/nanofused
 
     info "nanofuse built and installed:"
     info "  $(nanofuse version 2>&1 || echo 'version check skipped')"
@@ -301,7 +318,31 @@ register_base_image() {
         cp "$build_dir/manifest.json" /var/lib/nanofuse/images/manifest.json
     fi
 
-    info "Base image registered at /var/lib/nanofuse/images/"
+    info "Base image artifacts staged at /var/lib/nanofuse/images/"
+
+    # Register into the daemon DB under the canonical default tag so the documented
+    # shorthand `nanofuse vm run base|default <name>` resolves to this local image.
+    # The CLI expands `base`/`default` to ghcr.io/daax-dev/nanofuse/base:latest, and
+    # the daemon looks that tag up in the DB — without this, only a raw sha256 digest
+    # would resolve. register-local-image creates the DB/schema if absent and is
+    # idempotent (UpsertImage); the daemon reads tags live, so no restart is needed.
+    local db_path="/var/lib/nanofuse/nanofuse.db"
+    local canonical_tag="ghcr.io/daax-dev/nanofuse/base:latest"
+    if command -v register-local-image >/dev/null 2>&1; then
+        if register-local-image "$db_path" "$canonical_tag" \
+            /var/lib/nanofuse/images/rootfs.ext4 \
+            /var/lib/nanofuse/images/vmlinux \
+            "${NANOFUSE_IMAGE_ARCH:-x86_64}" >/dev/null; then
+            info "Base image registered in DB as $canonical_tag (usable via: nanofuse vm run base <name>)"
+        else
+            # Hard failure: the closed loop is only "working" if the documented
+            # `nanofuse vm run base` shorthand resolves. verify.sh does not catch a
+            # missing DB tag, so a silent warning would leave a broken environment.
+            error "Base image DB registration failed (register-local-image $canonical_tag). Closed loop would be broken."
+        fi
+    else
+        error "register-local-image not on PATH; cannot register base image DB tag. Rebuild nanofuse (mage all) first."
+    fi
 }
 
 # ─── 9. nanofuse config + systemd service ──────────────────────────────────

@@ -12,7 +12,8 @@ env:
 jobs:
   create-release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on:
+      group: Default
     permissions:
       contents: write
 

@@ -27,6 +27,25 @@ type VMConfig struct {
 	SSHPublicKey string        `json:"ssh_public_key,omitempty"` // Base64-encoded SSH public key
 	Network      NetworkConfig `json:"network"`
 	Disks        []DiskConfig  `json:"disks,omitempty"`
+	Mounts       []Mount       `json:"mounts,omitempty"`
+	Secrets      []SecretRef   `json:"secrets,omitempty"`
+}
+
+// Mount declares an operator-visible filesystem mount for a VM.
+type Mount struct {
+	Source   string `json:"source,omitempty"` // host path or volume name; empty for tmpfs
+	Target   string `json:"target"`           // absolute guest mount point
+	Type     string `json:"type,omitempty"`   // bind|volume|tmpfs (default bind)
+	ReadOnly bool   `json:"read_only,omitempty"`
+}
+
+// SecretRef references a secret made available to a VM. It never carries the
+// value: only the logical name, source reference, delivery type, and target.
+type SecretRef struct {
+	Name   string `json:"name"`             // logical secret name
+	Source string `json:"source"`           // required provider reference (spire://, vault://, env://NAME)
+	Type   string `json:"type,omitempty"`   // env|file (default env)
+	Target string `json:"target,omitempty"` // env var name or absolute file path in guest
 }
 
 // NetworkConfig represents network configuration

@@ -869,6 +869,59 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DiskConfig'
+        mounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mount'
+        secrets:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecretRef'
+
+    Mount:
+      type: object
+      required:
+        - target
+      properties:
+        source:
+          type: string
+          description: Host path or volume name; empty for tmpfs.
+          example: /srv/data
+        target:
+          type: string
+          description: Absolute guest mount point.
+          example: /data
+        type:
+          type: string
+          enum: [bind, volume, tmpfs]
+          default: bind
+        read_only:
+          type: boolean
+          default: false
+
+    SecretRef:
+      type: object
+      required:
+        - name
+        - source
+      description: Reference to a secret made available to a VM. Never carries the value.
+      properties:
+        name:
+          type: string
+          description: Logical secret name.
+          example: API_TOKEN
+        source:
+          type: string
+          description: Provider reference (e.g. spire://, vault://, env://NAME).
+          example: vault://kv/token
+        type:
+          type: string
+          enum: [env, file]
+          default: env
+        target:
+          type: string
+          description: Env var name or absolute file path in the guest.
+          example: API_TOKEN
 
     NetworkConfig:
       type: object
@@ -1120,6 +1173,16 @@ components:
           nullable: true
         network:
           $ref: '#/components/schemas/NetworkConfigRequest'
+        mounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mount'
+          nullable: true
+        secrets:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecretRef'
+          nullable: true
 
     NetworkConfigRequest:
       type: object

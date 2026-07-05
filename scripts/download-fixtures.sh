@@ -1,5 +1,6 @@
 #!/bin/bash
-# download-fixtures.sh - Download official Firecracker CI images (Ubuntu 24.04 + kernel 6.1)
+# download-fixtures.sh - Download official Firecracker CI images (Ubuntu 24.04;
+# kernel 5.10.x/6.1.x, defaulting to 5.10.245 — see KERNEL_VERSION below).
 # These are updated regularly by the Firecracker team and tested for compatibility
 set -e
 
@@ -7,17 +8,46 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 FIXTURES="$PROJECT_ROOT/test/fixtures/debug-kernel"
 
-# Firecracker CI release - December 2025
-CI_VERSION="20251218-f2f293f67e5f-0"
-ARCH="x86_64"
+# Use sudo only when not already root, so this works on minimal root WSL/containers
+# (where sudo may not be installed) as well as normal non-root shells.
+SUDO=""
+if [[ "$(id -u)" -ne 0 ]]; then
+    if ! command -v sudo >/dev/null 2>&1; then
+        echo "ERROR: not running as root and 'sudo' is not installed; run this script as root or install sudo." >&2
+        exit 1
+    fi
+    SUDO="sudo"
+fi
+
+# Firecracker CI channel - use the maintained v1.15 channel prefix.
+# The dated snapshot prefixes are pruned over time and 404 on the rootfs; the
+# versioned channel (firecracker-ci/v1.15/x86_64/) is kept current by the
+# Firecracker team and carries Ubuntu 24.04 plus 5.10.x and 6.1.x kernels.
+# This script defaults to the 5.10.245 kernel (see KERNEL_VERSION below).
+CI_VERSION="v1.15"
+
+# Derive the Firecracker CI arch from the host (override with FIXTURES_ARCH).
+ARCH="${FIXTURES_ARCH:-}"
+if [[ -z "$ARCH" ]]; then
+    case "$(uname -m)" in
+        x86_64 | amd64) ARCH="x86_64" ;;
+        aarch64 | arm64) ARCH="aarch64" ;;
+        *) echo "ERROR: unsupported architecture $(uname -m); set FIXTURES_ARCH" >&2; exit 1 ;;
+    esac
+fi
 S3_BASE="https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/${CI_VERSION}/${ARCH}"
 
 # Image versions
-# NOTE: Use -no-acpi kernel variant because standard CI kernels require CONFIG_PCI
-# which is only available in Amazon Linux microvm patches. The -no-acpi variant
+# NOTE: On x86_64 use the -no-acpi kernel variant because standard CI kernels
+# require CONFIG_PCI (only in Amazon Linux microvm patches); the -no-acpi variant
 # uses legacy MPTable boot that works with virtio-mmio block devices.
 # See: https://github.com/firecracker-microvm/firecracker/issues/4881
-KERNEL_VERSION="5.10.245-no-acpi"
+# aarch64 boots via device tree and uses the plain kernel.
+if [[ "$ARCH" == "x86_64" ]]; then
+    KERNEL_VERSION="${KERNEL_VERSION:-5.10.245-no-acpi}"
+else
+    KERNEL_VERSION="${KERNEL_VERSION:-5.10.245}"
+fi
 UBUNTU_VERSION="24.04"
 
 echo "=== NanoFuse Fixture Downloader ==="
@@ -78,13 +108,17 @@ else
     dd if=/dev/zero of="$FIXTURES/$EXT4_FILE" bs=1M count=$ROOTFS_SIZE_MB status=progress
     mkfs.ext4 -F "$FIXTURES/$EXT4_FILE"
 
-    # Mount and copy
+    # Mount and copy. Install a cleanup trap before/right after mounting so a
+    # failure under set -e always unmounts and removes the temp dir.
     MOUNT_DIR=$(mktemp -d)
-    sudo mount -o loop "$FIXTURES/$EXT4_FILE" "$MOUNT_DIR"
+    trap '$SUDO umount "$MOUNT_DIR" 2>/dev/null || true; rmdir "$MOUNT_DIR" 2>/dev/null || true; rm -rf "$TEMP_DIR"' EXIT
+    $SUDO mount -o loop "$FIXTURES/$EXT4_FILE" "$MOUNT_DIR"
     echo "  Copying files..."
-    sudo cp -a "$TEMP_DIR/rootfs/." "$MOUNT_DIR/"
-    sudo umount "$MOUNT_DIR"
+    $SUDO cp -a "$TEMP_DIR/rootfs/." "$MOUNT_DIR/"
+    $SUDO umount "$MOUNT_DIR"
     rmdir "$MOUNT_DIR"
+    # Restore the original TEMP_DIR-only cleanup now that the mount is released.
+    trap 'rm -rf "$TEMP_DIR"' EXIT
 
     # Cleanup squashfs (optional - comment out to keep)
     rm "$FIXTURES/$SQUASHFS_FILE"

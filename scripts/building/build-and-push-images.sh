@@ -68,7 +68,7 @@ cd "$BASE_IMAGE_DIR"
 # Check if kernel already built
 if [ ! -f "./build/vmlinux" ] || [ $(stat -c%s "./build/vmlinux") -lt 1000000 ]; then
     log_info "Building kernel 6.1.90 (this takes 10-15 minutes)..."
-    ./scripts/archives/build-kernel-docker.sh
+    ./scripts/build-kernel-docker.sh
 
     if [ ! -f "./build/vmlinux" ] || [ $(stat -c%s "./build/vmlinux") -lt 1000000 ]; then
         log_error "Kernel build failed or produced invalid kernel"

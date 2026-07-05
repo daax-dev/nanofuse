@@ -109,7 +109,7 @@ else
     # Check for a cached kernel: the sub-script's deterministic output first
     # (so repeat runs reuse it instead of rebuilding), then /tmp fallbacks.
     TEMP_KERNEL=""
-    for kernel_path in ./scripts/archives/build/vmlinux /tmp/vmlinux-fresh-build /tmp/vmlinux-final /tmp/vmlinux-*; do
+    for kernel_path in ./scripts/build/vmlinux /tmp/vmlinux-fresh-build /tmp/vmlinux-final /tmp/vmlinux-*; do
         if [ -f "$kernel_path" ]; then
             TEMP_KERNEL="$kernel_path"
             break
@@ -123,14 +123,14 @@ else
     else
         # Build kernel
         log_info "No pre-built kernel found, building with Firecracker config..."
-        if ./scripts/archives/build-kernel-docker.sh; then
+        if ./scripts/build-kernel-docker.sh; then
             # Check again for kernel in /tmp or build dir
             if [ -f "${BUILD_DIR}/vmlinux" ]; then
                 log_info "Kernel built successfully: $(du -h ${BUILD_DIR}/vmlinux | cut -f1)"
             else
-                # build-kernel-docker.sh writes to scripts/archives/build/vmlinux
+                # build-kernel-docker.sh writes to scripts/build/vmlinux
                 # (its own SCRIPT_DIR/build); check that first, then /tmp fallbacks.
-                for kernel_path in ./scripts/archives/build/vmlinux /tmp/vmlinux-fresh-build /tmp/vmlinux-final /tmp/vmlinux-*; do
+                for kernel_path in ./scripts/build/vmlinux /tmp/vmlinux-fresh-build /tmp/vmlinux-final /tmp/vmlinux-*; do
                     if [ -f "$kernel_path" ]; then
                         cp "$kernel_path" "${BUILD_DIR}/vmlinux"
                         log_info "Kernel built and copied: $(du -h ${BUILD_DIR}/vmlinux | cut -f1)"

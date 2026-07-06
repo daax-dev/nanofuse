@@ -5,6 +5,7 @@ import (
 	"net"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/daax-dev/nanofuse/internal/client"
 	"gopkg.in/yaml.v3"
@@ -370,6 +371,14 @@ func isLiteralHost(host string) bool {
 	}
 	if strings.Contains(host, "://") {
 		return false
+	}
+	// Reject any control character or other whitespace (tab/newline/etc.): such a
+	// value is not a valid hostname and, if resolved, would carry the control
+	// char into a rule Description and enable terminal line-spoofing.
+	for _, r := range host {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return false
+		}
 	}
 	return true
 }

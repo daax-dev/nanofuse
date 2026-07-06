@@ -446,3 +446,14 @@ func TestConvert_LeavesKernelArgsToDaemon(t *testing.T) {
 		t.Errorf("KernelArgs should be left unset for the daemon; got %q", req.Config.KernelArgs)
 	}
 }
+
+func TestIsLiteralHostRejectsControlChars(t *testing.T) {
+	for _, h := range []string{"api\tgithub.com", "api\ngithub.com", "api github.com", "a\x1bb.com"} {
+		if isLiteralHost(h) {
+			t.Errorf("isLiteralHost(%q) = true, want false (control/whitespace)", h)
+		}
+	}
+	if !isLiteralHost("api.github.com") {
+		t.Error("a normal hostname should be literal")
+	}
+}

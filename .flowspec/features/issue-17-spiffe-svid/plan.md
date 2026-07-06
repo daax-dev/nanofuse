@@ -9,7 +9,7 @@ The operator selected **Topology B**. The alternatives were evaluated as follows
 | # | Topology | Where the SVID private key lives | Attestation | Blast radius of a host/control-plane compromise | Verdict |
 |---|----------|----------------------------------|-------------|--------------------------------------------------|---------|
 | A | Host mints the SVID and injects it into the guest filesystem | Key generated host-side, copied into guest | Host asserts guest identity | Host holds every guest's private key; one host compromise forges all identities | Rejected — contradicts per-VM isolation; host becomes a universal key custodian |
-| **B** | **SPIRE agent runs inside each guest, node-attested; SVID key generated and kept in-guest; SVID delivered to the guest at a fixed path** | **In-guest only by design (target: key never leaves the VM)** | **Node attestation of the guest** | **By design, a compromised host cannot read a running guest's private key; identities are per-VM** | **Selected** |
+| **B** | **SPIRE agent runs inside each guest, node-attested; SVID key generated and kept in-guest; SVID delivered to the guest at a fixed path** | **In-guest only by design (target: key never leaves the VM)** | **Node attestation of the guest** | **Target: once the in-guest agent replaces the current host-side path, a compromised host cannot read a running guest's private key; identities are per-VM. NOT true of today's integration (see note below).** | **Selected (target); not yet realized** |
 | C | Guest calls host-side Workload API for each handshake (no in-guest key) | No persistent key; per-call signing on host | Host asserts identity per call | Host sees all signing operations; strong coupling and a host-side oracle | Rejected — host-side signing oracle; heavier runtime coupling |
 
 **Topology B rationale**: keeping the private key inside the VM boundary is the
@@ -23,6 +23,16 @@ confined to the guest — the isolation guarantee lands only when the deferred
 in-guest source is built. The SVID document is delivered to the guest at
 `/var/run/secrets/spiffe/svid.json`. A trusted in-guest time source is a
 documented prerequisite (see spec Prerequisites).
+
+**Note — relationship to the existing vsock-proxy path.** The repo today reaches
+SPIRE via `internal/firecracker/vsock_proxy.go`, which forwards a guest vsock
+connection to a **host-side** service (e.g. a host SPIRE agent). Under that
+current model the host mediates issuance and can observe the key material, so
+the "host cannot read the key" property above does **not** hold today — it is a
+host-side-agent arrangement closer to topologies A/C. Selecting topology B is a
+deliberate future change that moves the agent (and key generation) inside the
+guest, replacing the vsock-proxy-to-host-agent path for identity; until that
+production in-guest source exists, the host-side path remains in effect.
 
 ## What This Increment Delivers
 

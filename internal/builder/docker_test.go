@@ -1,8 +1,10 @@
 package builder
 
 import (
+	"archive/tar"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -113,9 +115,14 @@ func TestDockerBuilderExtract(t *testing.T) {
 	t.Logf("  Rootfs: %s", result.RootfsPath)
 	t.Logf("  Duration: %v", result.Duration)
 
-	// alpine has no kernel, so the fallback must have been used.
-	if result.KernelPath != fallbackKernel {
-		t.Errorf("expected fallback kernel %q to be used, got %q", fallbackKernel, result.KernelPath)
+	// alpine has no kernel, so the fallback must have been used. Extract returns
+	// KernelPath as an absolute path, so compare against the resolved form.
+	wantKernel, err := filepath.Abs(fallbackKernel)
+	if err != nil {
+		t.Fatalf("resolve fallback kernel path: %v", err)
+	}
+	if result.KernelPath != wantKernel {
+		t.Errorf("expected fallback kernel %q to be used, got %q", wantKernel, result.KernelPath)
 	}
 }
 
@@ -144,4 +151,48 @@ func TestValidateFallbackKernel(t *testing.T) {
 			t.Error("expected an error for a directory, got nil")
 		}
 	})
+}
+
+// TestExtractKernelExactPath locks in the fix for the shadowed-tarPath bug: an
+// exact (non-glob) search path must extract a kernel that exists in the image
+// tar. Regressing the shadowing would make this fail.
+func TestExtractKernelExactPath(t *testing.T) {
+	if _, err := exec.LookPath("tar"); err != nil {
+		t.Skip("tar binary not available")
+	}
+	dir := t.TempDir()
+
+	// Build a tar containing a member at boot/vmlinux.
+	tarPath := filepath.Join(dir, "image.tar")
+	f, err := os.Create(tarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	const content = "FAKE-KERNEL"
+	if err := tw.WriteHeader(&tar.Header{Name: "boot/vmlinux", Mode: 0o644, Size: int64(len(content))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	b := NewDockerBuilder(dir, false)
+	kernelPath, _, err := b.extractKernel(context.Background(), tarPath, dir, []string{"/boot/vmlinux"})
+	if err != nil {
+		t.Fatalf("extractKernel exact path failed (shadowing regression?): %v", err)
+	}
+	got, err := os.ReadFile(kernelPath)
+	if err != nil {
+		t.Fatalf("read extracted kernel: %v", err)
+	}
+	if string(got) != content {
+		t.Errorf("extracted kernel = %q, want %q", got, content)
+	}
 }

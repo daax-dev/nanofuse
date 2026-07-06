@@ -23,7 +23,7 @@ type VM struct {
 type VMConfig struct {
 	VCPUs        int           `json:"vcpus"`
 	MemoryMiB    int           `json:"memory_mib"`
-	KernelArgs   string        `json:"kernel_args"`
+	KernelArgs   string        `json:"kernel_args,omitempty"`
 	SSHPublicKey string        `json:"ssh_public_key,omitempty"` // Base64-encoded SSH public key
 	Network      NetworkConfig `json:"network"`
 	Disks        []DiskConfig  `json:"disks,omitempty"`

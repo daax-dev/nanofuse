@@ -1,0 +1,48 @@
+# gondolin mirror sandbox (nanofuse-authored).
+#
+# gondolin (earendil-works/gondolin) has NO declarative config file: its
+# sandbox is defined imperatively via `gondolin bash|exec` CLI flags. This file
+# mirrors that flag surface so `nanofuse convert gondolin` can report exactly
+# how each gondolin feature maps onto nanofuse.
+#
+# Equivalent gondolin invocation:
+#   gondolin bash \
+#     --image ghcr.io/acme/agent:latest \
+#     --vmm krun \
+#     --cwd /workspace \
+#     --env LOG_LEVEL=info \
+#     --allow-host api.github.com \
+#     --allow-host '*.pypi.org' \
+#     --host-secret GITHUB_TOKEN \
+#     --mount-hostfs /srv/data:/mnt/data:ro \
+#     --mount-memfs /tmp/scratch \
+#     --ssh-allow-host git.internal:22 \
+#     --tcp-map db.internal:5432=10.0.0.5:5432 \
+#     --dns synthetic \
+#     --rootfs-size 8G
+
+image: ghcr.io/acme/agent:latest
+vmm: krun
+cwd: /workspace
+env:
+  LOG_LEVEL: info
+allow_host:
+  - api.github.com
+  - "*.pypi.org"
+host_secret:
+  - GITHUB_TOKEN
+mount_hostfs:
+  - "/srv/data:/mnt/data:ro"
+mount_memfs:
+  - /tmp/scratch
+ssh_allow_host:
+  - "git.internal:22"
+tcp_map:
+  - "db.internal:5432=10.0.0.5:5432"
+dns: synthetic
+rootfs_size: 8G
+
+# nanofuse resource hints (gondolin has no CPU/memory model).
+resources:
+  vcpus: 4
+  memory_mib: 2048

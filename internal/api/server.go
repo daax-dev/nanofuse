@@ -109,9 +109,17 @@ func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*stor
 
 	// Initialize registry client with logging and timeouts
 	registryLogger := logger.WithComponent("registry")
+	// Shared guest kernel used when a pulled container image bundles no kernel of
+	// its own (the common case for OCI images). Defaults to the base kernel staged
+	// at <data_dir>/images/vmlinux unless firecracker.kernel_path overrides it.
+	fallbackKernelPath := cfg.Firecracker.KernelPath
+	if fallbackKernelPath == "" {
+		fallbackKernelPath = filepath.Join(cfg.Storage.DataDir, "images", "vmlinux")
+	}
 	registryClient := registry.NewClient(cfg.Storage.DataDir, registryLogger, registry.ClientOptions{
-		PullTimeout:  time.Duration(cfg.Registry.PullTimeoutSecs) * time.Second,
-		LayerTimeout: time.Duration(cfg.Registry.LayerTimeoutSecs) * time.Second,
+		PullTimeout:        time.Duration(cfg.Registry.PullTimeoutSecs) * time.Second,
+		LayerTimeout:       time.Duration(cfg.Registry.LayerTimeoutSecs) * time.Second,
+		FallbackKernelPath: fallbackKernelPath,
 	})
 
 	return db, runtimeManager, registryClient, nil

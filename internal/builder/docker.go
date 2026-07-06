@@ -126,18 +126,16 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 	b.progress(opts, "Locating kernel", 50)
 	kernelPath, kernelVersion, err := b.extractKernel(ctx, tarPath, outputDir, opts.KernelSearchPaths)
 	if err != nil {
-		// Try fallback kernel if specified
-		if opts.FallbackKernelPath != "" {
-			if _, statErr := os.Stat(opts.FallbackKernelPath); statErr == nil {
-				kernelPath = opts.FallbackKernelPath
-				kernelVersion = extractVersionFromPath(opts.FallbackKernelPath)
-				b.log("Using fallback kernel: %s (version: %s)", kernelPath, kernelVersion)
-			} else {
-				return nil, fmt.Errorf("kernel not found in image and fallback not available: %w", err)
-			}
-		} else {
+		// No kernel in the image — fall back to the configured shared kernel.
+		if opts.FallbackKernelPath == "" {
 			return nil, fmt.Errorf("failed to extract kernel (no fallback configured): %w", err)
 		}
+		if fbErr := validateFallbackKernel(opts.FallbackKernelPath); fbErr != nil {
+			return nil, fmt.Errorf("kernel not found in image and configured fallback kernel %q is unusable: %w", opts.FallbackKernelPath, fbErr)
+		}
+		kernelPath = opts.FallbackKernelPath
+		kernelVersion = extractVersionFromPath(opts.FallbackKernelPath)
+		b.log("Using fallback kernel: %s (version: %s)", kernelPath, kernelVersion)
 	}
 
 	// Step 5: Create ext4 rootfs
@@ -175,6 +173,27 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 	b.log("  Rootfs: %s", rootfsPath)
 
 	return result, nil
+}
+
+// validateFallbackKernel ensures the configured fallback kernel is a readable
+// regular file, so a misconfigured kernel_path (missing, a directory, or an
+// unreadable file) fails here with a clear message instead of later at VM start.
+func validateFallbackKernel(path string) error {
+	// Open first, then stat the open descriptor, so the validated object is the
+	// same one that was opened (avoids a Stat/Open TOCTOU on the path string).
+	f, err := os.Open(path) //nolint:gosec // operator-configured fallback kernel path
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file")
+	}
+	return nil
 }
 
 // pullImage pulls a container image.

@@ -118,3 +118,22 @@ func TestIsolationCommandsSkipAPIClientSetup(t *testing.T) {
 		}
 	}
 }
+
+func TestRunIsolationVerifyRejectsRelativeSecretsDir(t *testing.T) {
+	// A relative path resolves against the CWD, so verifying it could report on
+	// the wrong directory; it is a usage error with no status line.
+	withIsolationFlags(t, "secrets/daax", false, false)
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	err := runIsolationVerify(cmd, nil)
+	if err == nil {
+		t.Fatal("expected an error for a relative --secrets-dir, got nil")
+	}
+	if !strings.Contains(err.Error(), "must be an absolute path") {
+		t.Errorf("error = %v, want absolute-path rejection", err)
+	}
+	if out.String() != "" {
+		t.Errorf("a usage error must not print a status line; got: %s", out.String())
+	}
+}

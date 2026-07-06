@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/daax-dev/nanofuse/internal/credisolation"
@@ -69,6 +70,11 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	// value would silently verify the wrong location. Require the exact path.
 	if isolationSecretsDir != strings.TrimSpace(isolationSecretsDir) {
 		return fmt.Errorf("--secrets-dir %q has leading or trailing whitespace; pass the exact path", isolationSecretsDir)
+	}
+	// Require an absolute path: a relative value resolves against the current
+	// working directory, so the verifier could report on the wrong location.
+	if !filepath.IsAbs(isolationSecretsDir) {
+		return fmt.Errorf("--secrets-dir %q must be an absolute path", isolationSecretsDir)
 	}
 
 	opts := credisolation.HostCheckOptions{

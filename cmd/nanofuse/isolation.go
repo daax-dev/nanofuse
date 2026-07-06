@@ -82,12 +82,15 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	case err == nil:
 		opts.CheckDir = true
 	case errors.Is(err, fs.ErrNotExist):
-		// Genuinely absent: skip the perms check (or fail under --strict).
+		// Genuinely absent: skip the perms check, or under --strict run it so the
+		// store-perms check fails and a FAIL status line is printed (matching the
+		// documented terminal states) rather than returning before any status line.
 		if isolationStrict {
-			return fmt.Errorf("credential store %q is absent: %w", isolationSecretsDir, err)
+			opts.CheckDir = true
+		} else {
+			fmt.Fprintf(out, "  [skip] store-perms — %q not present on this host (use --strict to fail)\n",
+				isolationSecretsDir)
 		}
-		fmt.Fprintf(out, "  [skip] store-perms — %q not present on this host (use --strict to fail)\n",
-			isolationSecretsDir)
 	default:
 		// Permission denied, I/O error, etc. — do not misreport as "absent";
 		// a verifier that cannot read the store has not verified it.

@@ -80,7 +80,7 @@ func (mon *Monitor) HandleCrossVMAttempt(a AccessAttempt) error {
 	// Event name reflects the action (the fail-safe response ran); the
 	// "terminated" boolean carries the outcome so downstream alerting is not
 	// misled when termination was unavailable or failed.
-	mon.log.Error("credential isolation fail-safe response",
+	failsafeAttrs := []any{
 		slog.String("event", "cred_isolation.failsafe_response"),
 		slog.String("requesting_vm", a.RequestingVMID),
 		slog.Bool("requesting_vm_valid", reqValid),
@@ -89,7 +89,13 @@ func (mon *Monitor) HandleCrossVMAttempt(a AccessAttempt) error {
 		slog.String("path", a.Path),
 		slog.Time("timestamp", when),
 		slog.Bool("terminated", terminated),
-	)
+	}
+	if termErr != nil {
+		// Record why termination failed so incident triage does not depend on the
+		// returned error being captured.
+		failsafeAttrs = append(failsafeAttrs, slog.String("termination_error", termErr.Error()))
+	}
+	mon.log.Error("credential isolation fail-safe response", failsafeAttrs...)
 
 	if termErr != nil {
 		// Wrap both sentinels so errors.Is works for ErrCrossVMAccess and the

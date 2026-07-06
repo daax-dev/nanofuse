@@ -263,7 +263,7 @@ func (s *TieredStore) Get(ctx context.Context, id, destDir string) (*Manifest, e
 	g.SetLimit(s.parallelism)
 	for _, fe := range manifest.Files {
 		fe := fe
-		g.Go(func() error { return s.getFile(gctx, destDir, fe) })
+		g.Go(func() error { return s.getFile(gctx, id, destDir, fe) })
 	}
 	if err := g.Wait(); err != nil {
 		return nil, fmt.Errorf("snapshotstore: restore snapshot %q: %w", id, err)
@@ -272,20 +272,25 @@ func (s *TieredStore) Get(ctx context.Context, id, destDir string) (*Manifest, e
 }
 
 // getFile downloads, decompresses, verifies, and atomically writes one file.
-func (s *TieredStore) getFile(ctx context.Context, destDir string, fe FileEntry) error {
+func (s *TieredStore) getFile(ctx context.Context, id, destDir string, fe FileEntry) error {
 	// Path-traversal guard: the manifest is untrusted input on restore.
 	if err := validateName(fe.Name); err != nil {
 		return err
 	}
-	rc, err := s.blob.Get(ctx, fe.Key)
+	// Derive the object key deterministically from the snapshot id and the
+	// validated file name rather than trusting the manifest-provided Key: a
+	// tampered manifest must not be able to point the download at an arbitrary
+	// backend object.
+	key := objectKey(id, fe.Name+".zst")
+	rc, err := s.blob.Get(ctx, key)
 	if err != nil {
-		return fmt.Errorf("download %q: %w", fe.Key, err)
+		return fmt.Errorf("download %q: %w", key, err)
 	}
 	defer func() { _ = rc.Close() }()
 
 	dec, err := zstd.NewReader(rc)
 	if err != nil {
-		return fmt.Errorf("create zstd reader for %q: %w", fe.Key, err)
+		return fmt.Errorf("create zstd reader for %q: %w", key, err)
 	}
 	defer dec.Close()
 
@@ -309,7 +314,7 @@ func (s *TieredStore) getFile(ctx context.Context, destDir string, fe FileEntry)
 
 	n, err := io.Copy(io.MultiWriter(tmp, hasher), limited)
 	if err != nil {
-		return fmt.Errorf("decompress %q: %w", fe.Key, err)
+		return fmt.Errorf("decompress %q: %w", key, err)
 	}
 	if n != fe.Size {
 		return fmt.Errorf("%w: %q expected %d bytes, got %d", ErrSizeMismatch, fe.Name, fe.Size, n)

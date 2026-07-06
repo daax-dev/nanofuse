@@ -63,6 +63,11 @@ func (b *FSBlob) keyPath(key string) (string, error) {
 	if key == "" {
 		return "", fmt.Errorf("snapshotstore: empty object key")
 	}
+	// Confine the key under the root: prepending "/" and cleaning collapses any
+	// leading ".." traversal (e.g. "../../x" -> "/x"), and filepath.Join then
+	// roots it under b.root. Note filepath.Join does NOT discard b.root when the
+	// second argument is absolute — it treats each element as a segment, so
+	// Join("/root", "/x") == "/root/x". The Rel check below is belt-and-suspenders.
 	clean := filepath.Clean("/" + filepath.FromSlash(key))
 	full := filepath.Join(b.root, clean)
 	rel, err := filepath.Rel(b.root, full)

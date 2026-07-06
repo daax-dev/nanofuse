@@ -379,3 +379,44 @@ func TestEmptyFileRoundTrip(t *testing.T) {
 	}
 	assertFileEqual(t, filepath.Join(dest, "empty.snap"), []byte{})
 }
+
+// A tampered manifest Key must not redirect the download: getFile derives the
+// object key deterministically from the snapshot id + validated file name.
+func TestGetIgnoresTamperedManifestKey(t *testing.T) {
+	ctx := context.Background()
+	store, root := newStore(t)
+	src := t.TempDir()
+	data := []byte("real vmstate payload")
+	files := []SourceFile{{Name: "vm.snap", Role: "vmstate", Path: writeFile(t, src, "vm.snap", data)}}
+	if _, err := store.Put(ctx, "snap-t", files, RuntimeVersions{}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// Tamper the manifest so the file entry's Key points at an attacker object.
+	mpath := filepath.Join(root, "snap-t", manifestObject)
+	raw, err := os.ReadFile(mpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	m.Files[0].Key = "snap-t/../evil"
+	out, _ := json.MarshalIndent(&m, "", "  ")
+	if err := os.WriteFile(mpath, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dest := t.TempDir()
+	if _, err := store.Get(ctx, "snap-t", dest); err != nil {
+		t.Fatalf("Get should still succeed using the derived key: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "vm.snap"))
+	if err != nil {
+		t.Fatalf("restored file missing: %v", err)
+	}
+	if string(got) != string(data) {
+		t.Errorf("restored content = %q, want %q (tampered key must be ignored)", got, data)
+	}
+}

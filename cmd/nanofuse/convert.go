@@ -1,14 +1,34 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
+	"strings"
+	"time"
+	"unicode"
 
 	"github.com/daax-dev/nanofuse/internal/gondolin"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
+
+// sanitizeForTerminal strips control characters (including ANSI escape
+// sequences' ESC) from strings that may derive from untrusted input files,
+// preventing terminal escape/control-character injection when the divergence
+// report is printed. Tabs are kept; all other control runes are dropped.
+func sanitizeForTerminal(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return r
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
 
 var convertCmd = &cobra.Command{
 	Use:   "convert",
@@ -73,7 +93,14 @@ Examples:
 			ResolveEgress: convertResolveEgress,
 		}
 		if convertResolveEgress {
-			opts.Resolver = net.LookupHost
+			resolver := &net.Resolver{}
+			opts.Resolver = func(host string) ([]string, error) {
+				// Bound each lookup and honour command cancellation (net.LookupHost
+				// cannot be canceled or timed out).
+				lookupCtx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
+				defer cancel()
+				return resolver.LookupHost(lookupCtx, host)
+			}
 		}
 
 		req, divs, convErr := gondolin.Convert(sb, opts)
@@ -144,8 +171,8 @@ func printDivergences(divs []gondolin.Divergence) {
 		default:
 			c = cyan
 		}
-		c.Fprintf(os.Stdout, "  [%s] %s\n", d.Severity, d.Feature)
-		fmt.Printf("      %s\n", d.Detail)
+		c.Fprintf(os.Stdout, "  [%s] %s\n", d.Severity, sanitizeForTerminal(d.Feature))
+		fmt.Printf("      %s\n", sanitizeForTerminal(d.Detail))
 	}
 }
 

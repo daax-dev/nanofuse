@@ -85,3 +85,19 @@ func TestConvertGondolin_MissingFile(t *testing.T) {
 		t.Errorf("error = %v, want read failure", err)
 	}
 }
+
+func TestSanitizeForTerminal(t *testing.T) {
+	// ANSI escape + bell + carriage return must be stripped; tab kept.
+	in := "host\x1b[31mRED\x07\r end\tkeep"
+	got := sanitizeForTerminal(in)
+	if strings.ContainsAny(got, "\x1b\x07\r") {
+		t.Errorf("control chars survived: %q", got)
+	}
+	if !strings.Contains(got, "\t") {
+		t.Errorf("tab should be preserved: %q", got)
+	}
+	// The ESC/BEL/CR bytes are removed; the printable "[31m" text remains.
+	if got != "host[31mRED end\tkeep" {
+		t.Errorf("unexpected sanitized output: %q", got)
+	}
+}

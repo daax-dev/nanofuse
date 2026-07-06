@@ -141,9 +141,15 @@ func (s *Server) validateAndResolveImage(imageRef string) (*types.Image, string,
 // buildVMConfig creates base config and applies user overrides
 func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfig {
 	config := types.VMConfig{
-		VCPUs:      2,
-		MemoryMiB:  512,
-		KernelArgs: "console=ttyS0 root=/dev/vda rw init=/lib/systemd/systemd",
+		VCPUs:     2,
+		MemoryMiB: 512,
+		// Do not force init=. The kernel's default init search (/sbin/init,
+		// /etc/init, /bin/init, /bin/sh) works for both systemd images (where
+		// /sbin/init -> /lib/systemd/systemd) and non-systemd containers such as
+		// Alpine/BusyBox that provide /sbin/init or /bin/sh. Hardcoding
+		// init=/lib/systemd/systemd panicked arbitrary containers before
+		// userspace (issue #193).
+		KernelArgs: "console=ttyS0 root=/dev/vda rw",
 		Network: types.NetworkConfig{
 			Mode: "nat",
 		},
@@ -167,7 +173,11 @@ func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfi
 		if req.Config.MemoryMiB != nil {
 			config.MemoryMiB = *req.Config.MemoryMiB
 		}
-		if req.Config.KernelArgs != nil {
+		// Only override the default kernel args when a non-empty value is
+		// supplied. The CLI always sends kernel_args (empty string when the
+		// --kernel-args flag is unset), and an empty override would drop the
+		// essential console=/root= boot parameters (issue #193).
+		if req.Config.KernelArgs != nil && strings.TrimSpace(*req.Config.KernelArgs) != "" {
 			config.KernelArgs = *req.Config.KernelArgs
 		}
 		if req.Config.SSHPublicKey != nil {
@@ -444,6 +454,73 @@ func (s *Server) validateVMResourceLimits(config types.VMConfig) error {
 	return nil
 }
 
+// managedNetworkKernelArgKeys are the kernel cmdline parameter keys that this
+// managed static-IP networking owns. Pre-existing occurrences are stripped
+// before the canonical values are appended, so repeated setup or conflicting
+// caller input cannot produce duplicate/contradictory tokens.
+var managedNetworkKernelArgKeys = map[string]struct{}{
+	"ip":          {},
+	"net.ifnames": {},
+	"biosdevname": {},
+}
+
+// splitKernelArgs splits a kernel command line into whitespace-separated
+// parameters, honouring double-quoted values that legitimately contain spaces
+// (e.g. `rootflags="subvol=root foo"` is one parameter). This mirrors how the
+// kernel parses quotes, so a quoted value can never be mistaken for a separate
+// managed token.
+func splitKernelArgs(s string) []string {
+	var tokens []string
+	var cur strings.Builder
+	inQuote := false
+	started := false
+	for _, r := range s {
+		switch {
+		case r == '"':
+			inQuote = !inQuote
+			cur.WriteRune(r)
+			started = true
+		case !inQuote && (r == ' ' || r == '\t' || r == '\n' || r == '\r'):
+			if started {
+				tokens = append(tokens, cur.String())
+				cur.Reset()
+				started = false
+			}
+		default:
+			cur.WriteRune(r)
+			started = true
+		}
+	}
+	if started {
+		tokens = append(tokens, cur.String())
+	}
+	return tokens
+}
+
+// composeNetworkKernelArgs merges the managed static-IP networking tokens onto
+// the existing kernel args, preserving all other boot parameters (console,
+// root, init, etc.) verbatim — including quoted values that contain spaces. It
+// strips only top-level parameters whose key is managed, never a substring
+// inside a quoted value. Pure function to keep the merge logic testable.
+func composeNetworkKernelArgs(existing, ip, gateway string) string {
+	kept := make([]string, 0)
+	for _, tok := range splitKernelArgs(existing) {
+		key := tok
+		if i := strings.IndexByte(tok, '='); i >= 0 {
+			key = tok[:i]
+		}
+		if _, managed := managedNetworkKernelArgKeys[key]; managed {
+			continue
+		}
+		kept = append(kept, tok)
+	}
+	netArgs := fmt.Sprintf("ip=%s::%s:255.255.255.0::eth0:off net.ifnames=0 biosdevname=0", ip, gateway)
+	if len(kept) == 0 {
+		return netArgs
+	}
+	return strings.Join(kept, " ") + " " + netArgs
+}
+
 // setupVMNetworking configures networking for a VM
 func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 	if selectedRuntimeDriver(s.config) != "firecracker" {
@@ -503,13 +580,12 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 	config.Network.Gateway = network.BridgeGateway
 	config.Network.Netmask = "255.255.255.0"
 
-	// Update kernel args to include IP configuration
-	// Force classic interface naming so the kernel 'ip=' setting targets eth0 as expected
-	// Otherwise Ubuntu's predictable names (en*) may prevent the static IP from applying
-	config.KernelArgs = fmt.Sprintf(
-		"console=ttyS0 root=/dev/vda rw init=/lib/systemd/systemd ip=%s::%s:255.255.255.0::eth0:off net.ifnames=0 biosdevname=0",
-		ip, network.BridgeGateway,
-	)
+	// Compose the static-IP kernel args onto the existing KernelArgs instead of
+	// replacing them, so we preserve the image/user-supplied root, init, and
+	// other boot parameters (issue #193). Force classic interface naming so the
+	// kernel 'ip=' setting targets eth0 as expected; otherwise Ubuntu's
+	// predictable names (en*) may prevent the static IP from applying.
+	config.KernelArgs = composeNetworkKernelArgs(config.KernelArgs, ip, network.BridgeGateway)
 
 	s.logger.Printf("INFO: Configured network for VM %s: IP=%s TAP=%s MAC=%s",
 		vmID[:8], ip, tapName, config.Network.MACAddress)

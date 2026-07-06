@@ -1,0 +1,10 @@
+image: ghcr.io/acme/agent:latest
+config:
+    vcpus: 4
+    memory_mib: 2048
+    network:
+        mode: nat
+        egress_policy:
+            enabled: true
+            default_action: deny
+            allow_dns: true

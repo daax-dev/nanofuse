@@ -96,6 +96,7 @@ It provides simple commands for VM lifecycle management, snapshots, and image ha
 			"version":    true,
 			"layer":      true,
 			"isolation":  true, // local-only credential-store checks; no API client needed
+			"convert":    true, // local-only file conversion; no API client needed
 		}
 		if skipCommands[cmd.Name()] {
 			return nil
@@ -185,7 +186,10 @@ func envTruthy(value string) bool {
 }
 
 func cliUseColor() bool {
-	if os.Getenv("NO_COLOR") != "" {
+	// Honor both the standard NO_COLOR and NANOFUSE_NO_COLOR here (not only in
+	// applyClientEnvironment) so local-only commands that skip client setup —
+	// e.g. `nanofuse convert` — still respect a user's color preference.
+	if os.Getenv("NO_COLOR") != "" || envTruthy(os.Getenv("NANOFUSE_NO_COLOR")) {
 		return false
 	}
 	return !noColor && isTerminal()
@@ -209,6 +213,7 @@ func init() {
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(completionCmd)
 	rootCmd.AddCommand(layerCmd)
+	rootCmd.AddCommand(convertCmd)
 
 	// Customize version output
 	rootCmd.SetVersionTemplate(`{{.Version}}

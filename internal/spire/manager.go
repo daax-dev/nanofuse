@@ -130,9 +130,12 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 // Fail-safe: if the initial SVID cannot be obtained, Start returns an error that
 // names SPIRE unreachability and starts no background work. Callers MUST treat
 // this as fatal (refuse to launch the workload) rather than continuing without
-// an identity. Start must be called at most once: the single-call guard is set
-// atomically at entry, so any subsequent call is rejected with an error even if
-// the first call failed. Callers must construct a new Manager to retry.
+// an identity. Start must be called at most once: the single-call guard is
+// consumed atomically once inputs are valid, so any subsequent call is rejected
+// with an error even if that first call failed — construct a new Manager to
+// retry. Invalid input is the one exception: a nil ctx is rejected before the
+// guard is consumed, so it does not burn the one-shot and Start may be retried
+// with a valid context.
 func (m *Manager) Start(ctx context.Context) error {
 	// Reject a nil context before consuming the single-call guard. issueAndPersist
 	// dereferences ctx (ctx.Err()), so a nil ctx would panic; rejecting it here —

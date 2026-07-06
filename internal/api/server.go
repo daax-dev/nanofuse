@@ -122,6 +122,9 @@ func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*stor
 	// and break across restarts. Pin it to an absolute path up front.
 	if abs, err := filepath.Abs(fallbackKernelPath); err == nil {
 		fallbackKernelPath = abs
+	} else {
+		registryLogger.Warn("could not resolve fallback kernel path %q to absolute; using as-is: %v",
+			fallbackKernelPath, err)
 	}
 	registryClient := registry.NewClient(cfg.Storage.DataDir, registryLogger, registry.ClientOptions{
 		PullTimeout:        time.Duration(cfg.Registry.PullTimeoutSecs) * time.Second,

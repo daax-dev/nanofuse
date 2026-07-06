@@ -135,8 +135,15 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 			// the original in-image search context to aid diagnosis.
 			return nil, fmt.Errorf("kernel not found in image (%v) and configured fallback kernel %q is unusable: %w", err, opts.FallbackKernelPath, fbErr)
 		}
-		kernelPath = opts.FallbackKernelPath
-		kernelVersion = extractVersionFromPath(opts.FallbackKernelPath)
+		// Return an absolute path: ExtractResult.KernelPath is contracted to be
+		// absolute (it is persisted and later handed to Firecracker), so a
+		// relative fallback must be resolved regardless of the caller.
+		absFallback, absErr := filepath.Abs(opts.FallbackKernelPath)
+		if absErr != nil {
+			return nil, fmt.Errorf("resolve fallback kernel %q to an absolute path: %w", opts.FallbackKernelPath, absErr)
+		}
+		kernelPath = absFallback
+		kernelVersion = extractVersionFromPath(absFallback)
 		b.log("Using fallback kernel: %s (version: %s)", kernelPath, kernelVersion)
 	}
 

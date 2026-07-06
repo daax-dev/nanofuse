@@ -109,6 +109,14 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 		}
 		outputDir = filepath.Join(b.dataDir, "images", sanitizeDigest(digest))
 	}
+	// Resolve outputDir to an absolute path so every path derived from it
+	// (the extracted kernel and the rootfs) satisfies ExtractResult's absolute
+	// contract regardless of a relative opts.OutputDir.
+	if abs, err := filepath.Abs(outputDir); err == nil {
+		outputDir = abs
+	} else {
+		return nil, fmt.Errorf("resolve output directory %q to an absolute path: %w", outputDir, err)
+	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
@@ -126,18 +134,27 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 	b.progress(opts, "Locating kernel", 50)
 	kernelPath, kernelVersion, err := b.extractKernel(ctx, tarPath, outputDir, opts.KernelSearchPaths)
 	if err != nil {
-		// Try fallback kernel if specified
-		if opts.FallbackKernelPath != "" {
-			if _, statErr := os.Stat(opts.FallbackKernelPath); statErr == nil {
-				kernelPath = opts.FallbackKernelPath
-				kernelVersion = extractVersionFromPath(opts.FallbackKernelPath)
-				b.log("Using fallback kernel: %s (version: %s)", kernelPath, kernelVersion)
-			} else {
-				return nil, fmt.Errorf("kernel not found in image and fallback not available: %w", err)
-			}
-		} else {
+		// No kernel in the image — fall back to the configured shared kernel.
+		if opts.FallbackKernelPath == "" {
 			return nil, fmt.Errorf("failed to extract kernel (no fallback configured): %w", err)
 		}
+		// Resolve to an absolute path first, then validate that exact path — so
+		// the file we validate is the same one persisted and later handed to
+		// Firecracker (ExtractResult.KernelPath is contracted to be absolute), and
+		// a working-directory change cannot make us validate a different file than
+		// we use.
+		absFallback, absErr := filepath.Abs(opts.FallbackKernelPath)
+		if absErr != nil {
+			return nil, fmt.Errorf("resolve fallback kernel %q to an absolute path: %w", opts.FallbackKernelPath, absErr)
+		}
+		if fbErr := validateFallbackKernel(absFallback); fbErr != nil {
+			// Keep fbErr as the wrapped error (the actionable cause) but preserve
+			// the original in-image search context to aid diagnosis.
+			return nil, fmt.Errorf("kernel not found in image (%v) and configured fallback kernel %q is unusable: %w", err, absFallback, fbErr)
+		}
+		kernelPath = absFallback
+		kernelVersion = extractVersionFromPath(absFallback)
+		b.log("Using fallback kernel: %s (version: %s)", kernelPath, kernelVersion)
 	}
 
 	// Step 5: Create ext4 rootfs
@@ -175,6 +192,27 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 	b.log("  Rootfs: %s", rootfsPath)
 
 	return result, nil
+}
+
+// validateFallbackKernel ensures the configured fallback kernel is a readable
+// regular file, so a misconfigured kernel_path (missing, a directory, or an
+// unreadable file) fails here with a clear message instead of later at VM start.
+func validateFallbackKernel(path string) error {
+	// Open first, then stat the open descriptor, so the validated object is the
+	// same one that was opened (avoids a Stat/Open TOCTOU on the path string).
+	f, err := os.Open(path) //nolint:gosec // operator-configured fallback kernel path
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file (mode %s)", info.Mode())
+	}
+	return nil
 }
 
 // pullImage pulls a container image.
@@ -280,9 +318,12 @@ func (b *DockerBuilder) extractKernel(ctx context.Context, tarPath, outputDir st
 				}
 			}
 		} else {
-			// Exact path
-			tarPath := strings.TrimPrefix(searchPath, "/")
-			if err := b.extractFileFromTar(ctx, tarPath, tarPath, kernelDest); err == nil {
+			// Exact path: the tar member is the search path without a leading
+			// slash. (Previously a local var shadowed the tarPath parameter, so
+			// the archive path was replaced by the member name and every exact
+			// path failed to extract even when the image contained the kernel.)
+			member := strings.TrimPrefix(searchPath, "/")
+			if err := b.extractFileFromTar(ctx, tarPath, member, kernelDest); err == nil {
 				version := extractVersionFromPath(searchPath)
 				b.log("Found kernel: %s", searchPath)
 				return kernelDest, version, nil

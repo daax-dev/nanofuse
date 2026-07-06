@@ -1,8 +1,11 @@
 package builder
 
 import (
+	"archive/tar"
 	"context"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -77,10 +80,19 @@ func TestDockerBuilderExtract(t *testing.T) {
 		t.Skip("Set INTEGRATION_TEST=1 to run integration tests")
 	}
 
-	builder := NewDockerBuilder("/tmp/nanofuse-test", true)
+	dataDir := t.TempDir()
+	builder := NewDockerBuilder(dataDir, true)
 
 	if err := builder.Available(); err != nil {
 		t.Skipf("Docker not available: %v", err)
+	}
+
+	// alpine (like most OCI images) contains no kernel, so a fallback kernel is
+	// required. Provide one via NANOFUSE_TEST_FALLBACK_KERNEL; skip otherwise so
+	// the test stays meaningful instead of reliably failing on kernel extraction.
+	fallbackKernel := os.Getenv("NANOFUSE_TEST_FALLBACK_KERNEL")
+	if fallbackKernel == "" {
+		t.Skip("Set NANOFUSE_TEST_FALLBACK_KERNEL to a kernel path to run this integration test")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -88,9 +100,10 @@ func TestDockerBuilderExtract(t *testing.T) {
 
 	// Use a simple image for testing
 	result, err := builder.Extract(ctx, "alpine:latest", ExtractOptions{
-		OutputDir:    "/tmp/nanofuse-test/extract-test",
-		RootfsSizeMB: 256,
-		Verbose:      true,
+		OutputDir:          filepath.Join(t.TempDir(), "extract-test"),
+		RootfsSizeMB:       256,
+		Verbose:            true,
+		FallbackKernelPath: fallbackKernel,
 	})
 
 	if err != nil {
@@ -102,6 +115,84 @@ func TestDockerBuilderExtract(t *testing.T) {
 	t.Logf("  Rootfs: %s", result.RootfsPath)
 	t.Logf("  Duration: %v", result.Duration)
 
-	// Note: alpine doesn't have a kernel, so this test will fail on kernel extraction
-	// In a real test, we'd use a nanofuse base image
+	// alpine has no kernel, so the fallback must have been used. Extract returns
+	// KernelPath as an absolute path, so compare against the resolved form.
+	wantKernel, err := filepath.Abs(fallbackKernel)
+	if err != nil {
+		t.Fatalf("resolve fallback kernel path: %v", err)
+	}
+	if result.KernelPath != wantKernel {
+		t.Errorf("expected fallback kernel %q to be used, got %q", wantKernel, result.KernelPath)
+	}
+}
+
+func TestValidateFallbackKernel(t *testing.T) {
+	dir := t.TempDir()
+
+	regular := dir + "/vmlinux"
+	if err := os.WriteFile(regular, []byte("kernel"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Run("regular readable file", func(t *testing.T) {
+		if err := validateFallbackKernel(regular); err != nil {
+			t.Errorf("expected nil for a readable regular file, got: %v", err)
+		}
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		if err := validateFallbackKernel(dir + "/does-not-exist"); err == nil {
+			t.Error("expected an error for a missing file, got nil")
+		}
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		if err := validateFallbackKernel(dir); err == nil {
+			t.Error("expected an error for a directory, got nil")
+		}
+	})
+}
+
+// TestExtractKernelExactPath locks in the fix for the shadowed-tarPath bug: an
+// exact (non-glob) search path must extract a kernel that exists in the image
+// tar. Regressing the shadowing would make this fail.
+func TestExtractKernelExactPath(t *testing.T) {
+	if _, err := exec.LookPath("tar"); err != nil {
+		t.Skip("tar binary not available")
+	}
+	dir := t.TempDir()
+
+	// Build a tar containing a member at boot/vmlinux.
+	tarPath := filepath.Join(dir, "image.tar")
+	f, err := os.Create(tarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	const content = "FAKE-KERNEL"
+	if err := tw.WriteHeader(&tar.Header{Name: "boot/vmlinux", Mode: 0o644, Size: int64(len(content))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	b := NewDockerBuilder(dir, false)
+	kernelPath, _, err := b.extractKernel(context.Background(), tarPath, dir, []string{"/boot/vmlinux"})
+	if err != nil {
+		t.Fatalf("extractKernel exact path failed (shadowing regression?): %v", err)
+	}
+	got, err := os.ReadFile(kernelPath)
+	if err != nil {
+		t.Fatalf("read extracted kernel: %v", err)
+	}
+	if string(got) != content {
+		t.Errorf("extracted kernel = %q, want %q", got, content)
+	}
 }

@@ -8,7 +8,7 @@ require (
 	github.com/getlantern/systray v1.2.2
 	github.com/google/go-containerregistry v0.21.7
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.19.0
 	github.com/magefile/mage v1.17.2
 	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/mdlayher/vsock v1.3.0

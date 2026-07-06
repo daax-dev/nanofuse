@@ -21,6 +21,14 @@ var ErrObjectNotFound = errors.New("snapshotstore: object not found")
 // Keys use forward slashes as separators regardless of backend.
 type Blob interface {
 	// Put stores r under key, overwriting any existing object atomically.
+	//
+	// Put MUST fully consume r: it reads r until io.EOF (or returns a non-nil
+	// error) before returning. Implementations must not return early after a
+	// partial read. Callers may stream r from a producer goroutine writing into
+	// an io.Pipe (see TieredStore.putFile), so a Put that stops reading early
+	// would deadlock or leak that producer and yield an incomplete object. On a
+	// storage error, Put should still drain or unblock r (e.g. via
+	// io.Pipe.CloseWithError by the caller) so the producer does not hang.
 	Put(ctx context.Context, key string, r io.Reader) error
 	// Get opens the object at key for reading. It returns ErrObjectNotFound if
 	// the key does not exist. The caller must Close the returned reader.
@@ -78,7 +86,8 @@ func (b *FSBlob) keyPath(key string) (string, error) {
 	return full, nil
 }
 
-// Put implements Blob.
+// Put implements Blob. It honors the "fully consume r" contract via io.Copy,
+// which reads r to EOF (or a read error) before the object is committed.
 func (b *FSBlob) Put(ctx context.Context, key string, r io.Reader) error {
 	if err := ctx.Err(); err != nil {
 		return err

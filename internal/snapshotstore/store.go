@@ -94,7 +94,7 @@ func (s *TieredStore) Put(ctx context.Context, id string, files []SourceFile, rt
 		// Names map 1:1 to backend object keys; duplicates would race and
 		// overwrite the same object and corrupt the manifest.
 		if _, dup := seenNames[f.Name]; dup {
-			return nil, fmt.Errorf("snapshotstore: duplicate file name %q in snapshot %q", f.Name, id)
+			return nil, fmt.Errorf("%w: %q in snapshot %q", ErrDuplicateFileName, f.Name, id)
 		}
 		seenNames[f.Name] = struct{}{}
 	}
@@ -270,24 +270,68 @@ func (s *TieredStore) Get(ctx context.Context, id, destDir string) (*Manifest, e
 	if err != nil {
 		return nil, err
 	}
+	// The manifest is untrusted input on restore. Reject a tampered file list
+	// (duplicate names, negative sizes, unsafe names) up front, before any
+	// concurrent download acts on it.
+	if err := validateManifestFiles(manifest.Files); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(destDir, 0o750); err != nil {
 		return nil, fmt.Errorf("snapshotstore: create restore dir: %w", err)
 	}
+
+	// Restore into a private staging dir and promote the fully-verified set into
+	// destDir only after every file succeeds. A mid-restore failure then leaves
+	// destDir untouched instead of partially populated. staging is a subdir of
+	// destDir, so the final promotion renames stay on one filesystem.
+	staging, err := os.MkdirTemp(destDir, ".restore-*")
+	if err != nil {
+		return nil, fmt.Errorf("snapshotstore: create restore staging dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(s.parallelism)
 	for _, fe := range manifest.Files {
 		fe := fe
-		g.Go(func() error { return s.getFile(gctx, id, destDir, fe) })
+		g.Go(func() error { return s.getFile(gctx, id, staging, fe) })
 	}
 	if err := g.Wait(); err != nil {
 		return nil, fmt.Errorf("snapshotstore: restore snapshot %q: %w", id, err)
 	}
+
+	if err := promoteRestored(staging, destDir, manifest.Files); err != nil {
+		return nil, fmt.Errorf("snapshotstore: commit restored snapshot %q: %w", id, err)
+	}
 	return manifest, nil
 }
 
-// getFile downloads, decompresses, verifies, and atomically writes one file.
-func (s *TieredStore) getFile(ctx context.Context, id, destDir string, fe FileEntry) error {
+// promoteRestored moves every verified file from the staging dir into destDir.
+// It runs only after all files have been downloaded and integrity-checked, so
+// destDir goes from empty to fully populated with a series of same-filesystem
+// renames. If a rename fails partway (an exceptional local FS fault), the files
+// already promoted are removed so destDir is not left holding a partial
+// snapshot. Names are already validated, keeping the joins within destDir.
+func promoteRestored(staging, destDir string, files []FileEntry) error {
+	for i, fe := range files {
+		from := filepath.Join(staging, fe.Name)
+		to := filepath.Join(destDir, fe.Name)
+		if err := os.Rename(from, to); err != nil {
+			// Roll back the already-promoted files so a partial promotion does not
+			// leave destDir holding an incomplete snapshot.
+			for _, done := range files[:i] {
+				_ = os.Remove(filepath.Join(destDir, done.Name))
+			}
+			return fmt.Errorf("commit restored file %q: %w", fe.Name, err)
+		}
+	}
+	return nil
+}
+
+// getFile downloads, decompresses, verifies, and atomically writes one file into
+// dir (the restore staging dir). The caller promotes dir's contents into the
+// real destination only after every file succeeds.
+func (s *TieredStore) getFile(ctx context.Context, id, dir string, fe FileEntry) error {
 	// Path-traversal guard: the manifest is untrusted input on restore.
 	if err := validateName(fe.Name); err != nil {
 		return err
@@ -314,7 +358,7 @@ func (s *TieredStore) getFile(ctx context.Context, id, destDir string, fe FileEn
 	limited := io.LimitReader(dec, fe.Size+1)
 	hasher := sha256.New()
 
-	tmp, err := os.CreateTemp(destDir, ".tmp-"+fe.Name+"-*")
+	tmp, err := os.CreateTemp(dir, ".tmp-"+fe.Name+"-*")
 	if err != nil {
 		return fmt.Errorf("create temp restore file: %w", err)
 	}
@@ -343,7 +387,7 @@ func (s *TieredStore) getFile(ctx context.Context, id, destDir string, fe FileEn
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close restore file %q: %w", fe.Name, err)
 	}
-	if err := os.Rename(tmpName, filepath.Join(destDir, fe.Name)); err != nil {
+	if err := os.Rename(tmpName, filepath.Join(dir, fe.Name)); err != nil {
 		return fmt.Errorf("commit restore file %q: %w", fe.Name, err)
 	}
 	committed = true

@@ -57,6 +57,16 @@ var (
 	// corrupted, swapped, or tampered manifest object before its contents are
 	// trusted.
 	ErrManifestIDMismatch = errors.New("snapshotstore: manifest snapshot id mismatch")
+
+	// ErrDuplicateFileName means two file entries share the same Name. Because a
+	// Name maps 1:1 to a restored base name (and to a backend object key),
+	// duplicates would race and overwrite each other during a concurrent restore.
+	ErrDuplicateFileName = errors.New("snapshotstore: duplicate file name")
+
+	// ErrNegativeFileSize means a manifest file entry declares a negative Size.
+	// A negative size is nonsensical and defeats the LimitReader bomb guard on
+	// restore, so it is rejected before any download begins.
+	ErrNegativeFileSize = errors.New("snapshotstore: negative file size in manifest")
 )
 
 // RuntimeVersions pins the runtime binaries a restore must reproduce. Recorded
@@ -127,6 +137,30 @@ func validateName(name string) error {
 	// commit marker.
 	if name == manifestObject {
 		return fmt.Errorf("%w: %q is reserved", ErrUnsafeName, name)
+	}
+	return nil
+}
+
+// validateManifestFiles sanity-checks a manifest's file list up front, before a
+// restore launches concurrent downloads over it. The manifest is untrusted input
+// on restore, so a tampered list must be rejected before any goroutine acts on
+// it: duplicate Names would race and overwrite the same restored file, and a
+// negative Size would defeat the per-file LimitReader bomb guard. Each Name is
+// also checked for the safe-base-name property here (getFile re-checks it as
+// defense in depth).
+func validateManifestFiles(files []FileEntry) error {
+	seen := make(map[string]struct{}, len(files))
+	for _, fe := range files {
+		if err := validateName(fe.Name); err != nil {
+			return err
+		}
+		if fe.Size < 0 {
+			return fmt.Errorf("%w: %q declares size %d", ErrNegativeFileSize, fe.Name, fe.Size)
+		}
+		if _, dup := seen[fe.Name]; dup {
+			return fmt.Errorf("%w: %q", ErrDuplicateFileName, fe.Name)
+		}
+		seen[fe.Name] = struct{}{}
 	}
 	return nil
 }

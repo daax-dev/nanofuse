@@ -74,6 +74,106 @@ func TestGetMissingDataObject(t *testing.T) {
 	}
 }
 
+// writeManifest writes m directly to the backend under id, bypassing Put so a
+// hostile/tampered manifest can be crafted for restore-side tests.
+func writeManifest(t *testing.T, root, id string, m Manifest) {
+	t.Helper()
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, id), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, id, manifestObject), data, 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+}
+
+func TestGetRejectsDuplicateManifestNames(t *testing.T) {
+	// An untrusted manifest naming the same file twice must be rejected up front:
+	// concurrent restores would otherwise race to write the same destination file.
+	store, root := newStore(t)
+	id := "snap-dupman"
+	writeManifest(t, root, id, Manifest{
+		SchemaVersion: ManifestSchemaVersion,
+		SnapshotID:    id,
+		Compression:   CompressionZstd,
+		Files: []FileEntry{
+			{Name: "vm.snap", Key: id + "/vm.snap.zst", Size: 4, Digest: "00"},
+			{Name: "vm.snap", Key: id + "/vm.snap.zst", Size: 4, Digest: "00"},
+		},
+	})
+	if _, err := store.Get(context.Background(), id, t.TempDir()); !errors.Is(err, ErrDuplicateFileName) {
+		t.Fatalf("Get duplicate-name manifest = %v, want ErrDuplicateFileName", err)
+	}
+}
+
+func TestGetRejectsNegativeSize(t *testing.T) {
+	// A negative declared Size is nonsensical and defeats the LimitReader bomb
+	// guard, so restore must refuse it before downloading anything.
+	store, root := newStore(t)
+	id := "snap-negsize"
+	writeManifest(t, root, id, Manifest{
+		SchemaVersion: ManifestSchemaVersion,
+		SnapshotID:    id,
+		Compression:   CompressionZstd,
+		Files:         []FileEntry{{Name: "vm.snap", Key: id + "/vm.snap.zst", Size: -1, Digest: "00"}},
+	})
+	if _, err := store.Get(context.Background(), id, t.TempDir()); !errors.Is(err, ErrNegativeFileSize) {
+		t.Fatalf("Get negative-size manifest = %v, want ErrNegativeFileSize", err)
+	}
+}
+
+func TestGetPartialRestoreLeavesDestClean(t *testing.T) {
+	// When one file of a multi-file snapshot fails mid-restore, destDir must be
+	// left empty: the already-verified sibling is staged, not committed, so a
+	// caller reusing destDir never observes a partial snapshot.
+	store, root := newStore(t)
+	ctx := context.Background()
+	src := t.TempDir()
+
+	id := "snap-partial-restore"
+	goodData := bytes.Repeat([]byte("good-content-"), 4096)
+	badData := bytes.Repeat([]byte("bad-content-"), 4096)
+	files := []SourceFile{
+		{Name: "good.snap", Role: "vmstate", Path: writeFile(t, src, "good.snap", goodData)},
+		{Name: "bad.snap", Role: "memory", Path: writeFile(t, src, "bad.snap", badData)},
+	}
+	if _, err := store.Put(ctx, id, files, RuntimeVersions{}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// Corrupt one stored object so its restore fails integrity verification.
+	badObj := filepath.Join(root, id, "bad.snap.zst")
+	raw, err := os.ReadFile(badObj)
+	if err != nil {
+		t.Fatalf("read object: %v", err)
+	}
+	raw[len(raw)/2] ^= 0xFF
+	if err := os.WriteFile(badObj, raw, 0o600); err != nil {
+		t.Fatalf("corrupt object: %v", err)
+	}
+
+	dest := t.TempDir()
+	if _, err := store.Get(ctx, id, dest); err == nil {
+		t.Fatal("expected Get to fail when a file fails restore")
+	}
+	// Neither the failed file nor its verified sibling may be left in destDir, and
+	// no staging dir may remain.
+	entries, err := os.ReadDir(dest)
+	if err != nil {
+		t.Fatalf("read dest: %v", err)
+	}
+	if len(entries) != 0 {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("destDir not clean after failed restore: %v", names)
+	}
+}
+
 func TestGetShortFileFailsSizeCheck(t *testing.T) {
 	store, root := newStore(t)
 	ctx := context.Background()

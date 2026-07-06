@@ -95,6 +95,7 @@ It provides simple commands for VM lifecycle management, snapshots, and image ha
 			"completion": true,
 			"version":    true,
 			"layer":      true,
+			"isolation":  true, // local-only credential-store checks; no API client needed
 		}
 		if skipCommands[cmd.Name()] {
 			return nil

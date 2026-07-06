@@ -2,11 +2,12 @@
 
 **Note**: Some scripts listed below have been archived to `scripts/archives/` as they were used during initial development. See the archives directory for historical scripts.
 
-## Current Active Scripts (5 total)
+## Current Active Scripts (6 total)
 
-### BUILD Scripts (2)
+### BUILD Scripts (3)
 1. **build.sh** - Main build script, creates rootfs + kernel
 2. **download-fc-kernel.sh** - Downloads pre-built Firecracker kernel
+3. **build-kernel-docker.sh** - Builds the kernel via Docker (used by CI and build.sh)
 
 ### TEST Scripts (2)
 1. **test-boot.sh** - Comprehensive boot test with all checks
@@ -21,8 +22,7 @@
 1. **BUILD_AND_TEST.sh** - Build kernel and immediately test (archived)
 2. **BUILD_CLEAN.sh** - Nuclear clean Docker build from scratch (archived)
 3. **BUILD_KERNEL_ONLY.sh** - Builds only kernel (archived)
-4. **build-kernel-docker.sh** - Builds only kernel using Docker (archived)
-5. **test-kernel-fix.sh** - Validates VIRTIO_MMIO_CMDLINE_DEVICES fix (archived)
+4. **test-kernel-fix.sh** - Validates VIRTIO_MMIO_CMDLINE_DEVICES fix (archived)
 
 ### CLEAN Scripts (4) ⚠️ DUPLICATION
 1. **clean.sh** - Complete clean (handles non-root cleanup)

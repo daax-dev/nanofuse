@@ -116,6 +116,13 @@ func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*stor
 	if fallbackKernelPath == "" {
 		fallbackKernelPath = filepath.Join(cfg.Storage.DataDir, "images", "vmlinux")
 	}
+	// Resolve to an absolute path: a relative firecracker.kernel_path would be
+	// persisted into Image.KernelPath and later handed to Firecracker as
+	// KernelImagePath, which would then depend on the daemon's working directory
+	// and break across restarts. Pin it to an absolute path up front.
+	if abs, err := filepath.Abs(fallbackKernelPath); err == nil {
+		fallbackKernelPath = abs
+	}
 	registryClient := registry.NewClient(cfg.Storage.DataDir, registryLogger, registry.ClientOptions{
 		PullTimeout:        time.Duration(cfg.Registry.PullTimeoutSecs) * time.Second,
 		LayerTimeout:       time.Duration(cfg.Registry.LayerTimeoutSecs) * time.Second,

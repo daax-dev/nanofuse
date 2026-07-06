@@ -138,6 +138,11 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		}
 	}
 
+	// Normalize allow_host: drop empty/whitespace-only entries so a list that is
+	// effectively empty is not treated as "present" (which would emit a spurious
+	// default-deny policy and blank entries in the report).
+	sb.AllowHost = trimmedNonEmpty(sb.AllowHost)
+
 	// --- egress: allow_host (L7) -> default-deny + warn (safe degrade) ---
 	network := client.NetworkConfig{Mode: "nat"}
 	if len(sb.AllowHost) > 0 || strings.TrimSpace(sb.DNS) != "" {
@@ -368,6 +373,18 @@ func hostCIDR(ip string) (string, bool) {
 		return v4.String() + "/32", true
 	}
 	return parsed.String() + "/128", true
+}
+
+// trimmedNonEmpty returns the input with each element trimmed and any
+// empty-after-trim element dropped.
+func trimmedNonEmpty(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, s := range items {
+		if t := strings.TrimSpace(s); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func isLiteralHost(host string) bool {

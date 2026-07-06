@@ -466,3 +466,19 @@ func TestConvert_RejectsControlCharsInImage(t *testing.T) {
 		}
 	}
 }
+
+func TestConvert_EmptyAllowHostEntriesNotPresent(t *testing.T) {
+	// A list of only empty/whitespace entries must not produce an egress policy.
+	sb := &Sandbox{Image: "img", Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)},
+		AllowHost: []string{"", "   ", "\t"}}
+	req, divs, err := Convert(sb, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.Config.Network.EgressPolicy != nil {
+		t.Errorf("empty allow_host must not create an egress policy; got %+v", req.Config.Network.EgressPolicy)
+	}
+	if findDiv(divs, "--allow-host") != nil {
+		t.Errorf("empty allow_host must not emit an --allow-host divergence")
+	}
+}

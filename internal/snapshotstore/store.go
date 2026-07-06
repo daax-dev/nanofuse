@@ -255,9 +255,10 @@ func (s *TieredStore) Manifest(ctx context.Context, id string) (*Manifest, error
 		return nil, fmt.Errorf("%w: requested %q but manifest reports %q",
 			ErrManifestIDMismatch, id, m.SnapshotID)
 	}
-	// Validate the file list here too (not only in Get): callers that use
-	// Manifest() directly must not receive an untrusted list with an empty set,
-	// duplicate names, unsafe names, or out-of-range sizes.
+	// Validate the file list once, here: this is the single validation point for
+	// the untrusted manifest, so every caller (Get and callers that use Manifest()
+	// directly) is guaranteed a list with no empty set, duplicate/unsafe names, or
+	// out-of-range sizes.
 	if err := validateManifestFiles(m.Files); err != nil {
 		return nil, err
 	}
@@ -294,14 +295,11 @@ func (s *TieredStore) Get(ctx context.Context, id, destDir string) (*Manifest, e
 	if destDir == "" {
 		return nil, fmt.Errorf("snapshotstore: destination directory is required")
 	}
+	// Manifest() already rejects an untrusted/tampered file list (empty set,
+	// duplicate/unsafe names, out-of-range sizes) before returning, so the list is
+	// safe to act on here without re-validating (single source of truth).
 	manifest, err := s.Manifest(ctx, id)
 	if err != nil {
-		return nil, err
-	}
-	// The manifest is untrusted input on restore. Reject a tampered file list
-	// (duplicate names, negative sizes, unsafe names) up front, before any
-	// concurrent download acts on it.
-	if err := validateManifestFiles(manifest.Files); err != nil {
 		return nil, err
 	}
 	if err := os.MkdirAll(destDir, 0o750); err != nil {

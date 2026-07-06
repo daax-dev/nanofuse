@@ -202,7 +202,7 @@ func (s *Server) tierSnapshot(vmID, snapshotID, snapPath, memPath string) {
 	}
 	manifest, err := s.snapshotStore.Put(ctx, storeID, files, s.snapshotRuntime)
 	if err != nil {
-		s.logger.Printf("WARN: Failed to tier snapshot %s to object storage: %v", snapshotID, err)
+		s.logger.Printf("WARN: Failed to tier snapshot %s to object storage (id=%s): %v", snapshotID, storeID, err)
 		return
 	}
 	s.logger.Printf("INFO: Tiered snapshot %s to object storage (id=%s, %d files)", snapshotID, storeID, len(manifest.Files))

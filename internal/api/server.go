@@ -119,13 +119,13 @@ func initializeInfrastructure(cfg *config.Config, logger *logging.Logger) (*stor
 	// Resolve to an absolute path: a relative firecracker.kernel_path would be
 	// persisted into Image.KernelPath and later handed to Firecracker as
 	// KernelImagePath, which would then depend on the daemon's working directory
-	// and break across restarts. Pin it to an absolute path up front.
-	if abs, err := filepath.Abs(fallbackKernelPath); err == nil {
-		fallbackKernelPath = abs
-	} else {
-		registryLogger.Warn("could not resolve fallback kernel path %q to absolute; using as-is: %v",
-			fallbackKernelPath, err)
+	// and break across restarts. Pin it to an absolute path up front; fail fast
+	// rather than proceed with a non-absolute path that contradicts that intent.
+	abs, err := filepath.Abs(fallbackKernelPath)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("resolve fallback kernel path %q to absolute: %w", fallbackKernelPath, err)
 	}
+	fallbackKernelPath = abs
 	registryClient := registry.NewClient(cfg.Storage.DataDir, registryLogger, registry.ClientOptions{
 		PullTimeout:        time.Duration(cfg.Registry.PullTimeoutSecs) * time.Second,
 		LayerTimeout:       time.Duration(cfg.Registry.LayerTimeoutSecs) * time.Second,

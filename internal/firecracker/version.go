@@ -27,11 +27,11 @@ func BinaryVersion(binaryPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("query firecracker version: %w", err)
 	}
-	line := out
-	if idx := strings.IndexByte(string(out), '\n'); idx >= 0 {
-		line = out[:idx]
+	s := string(out)
+	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+		s = s[:idx]
 	}
-	version := strings.TrimSpace(string(line))
+	version := strings.TrimSpace(s)
 	version = strings.TrimPrefix(version, "Firecracker ")
 	version = strings.TrimSpace(version)
 	if version == "" {

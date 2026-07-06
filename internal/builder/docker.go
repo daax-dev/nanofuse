@@ -301,9 +301,12 @@ func (b *DockerBuilder) extractKernel(ctx context.Context, tarPath, outputDir st
 				}
 			}
 		} else {
-			// Exact path
-			tarPath := strings.TrimPrefix(searchPath, "/")
-			if err := b.extractFileFromTar(ctx, tarPath, tarPath, kernelDest); err == nil {
+			// Exact path: the tar member is the search path without a leading
+			// slash. (Previously a local var shadowed the tarPath parameter, so
+			// the archive path was replaced by the member name and every exact
+			// path failed to extract even when the image contained the kernel.)
+			member := strings.TrimPrefix(searchPath, "/")
+			if err := b.extractFileFromTar(ctx, tarPath, member, kernelDest); err == nil {
 				version := extractVersionFromPath(searchPath)
 				b.log("Found kernel: %s", searchPath)
 				return kernelDest, version, nil

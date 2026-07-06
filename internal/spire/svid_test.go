@@ -115,6 +115,8 @@ func TestValidateSPIFFEID(t *testing.T) {
 	valid := []string{
 		"spiffe://poley.dev/g/eng/u/jp/w/microvm/vm-1",
 		"spiffe://example.org/workload",
+		"spiffe://my-domain.example.co/workload", // interior hyphen
+		"spiffe://a.b.c/workload",                // single-char labels
 	}
 	for _, id := range valid {
 		if err := validateSPIFFEID(id); err != nil {
@@ -136,6 +138,10 @@ func TestValidateSPIFFEID(t *testing.T) {
 		"spiffe://poley.dev/../x",   // dot-dot segment
 		"spiffe://poley.dev/%2e/x",  // percent-encoding
 		"spiffe://poley.dev/a b",    // space in segment
+		"spiffe://my_domain.org/x",  // underscore in trust domain (not a DNS name)
+		"spiffe://-poley.dev/x",     // label starts with a hyphen
+		"spiffe://poley-.dev/x",     // label ends with a hyphen
+		"spiffe://poley..dev/x",     // empty label (doubled dot)
 	}
 	for _, id := range invalid {
 		if err := validateSPIFFEID(id); err == nil {

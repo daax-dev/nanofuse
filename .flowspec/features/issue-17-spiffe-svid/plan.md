@@ -9,12 +9,18 @@ The operator selected **Topology B**. The alternatives were evaluated as follows
 | # | Topology | Where the SVID private key lives | Attestation | Blast radius of a host/control-plane compromise | Verdict |
 |---|----------|----------------------------------|-------------|--------------------------------------------------|---------|
 | A | Host mints the SVID and injects it into the guest filesystem | Key generated host-side, copied into guest | Host asserts guest identity | Host holds every guest's private key; one host compromise forges all identities | Rejected — contradicts per-VM isolation; host becomes a universal key custodian |
-| **B** | **SPIRE agent runs inside each guest, node-attested; SVID key generated and kept in-guest; SVID delivered to the guest at a fixed path** | **In-guest only; never leaves the VM** | **Node attestation of the guest** | **A compromised host cannot read a running guest's private key; identities are per-VM** | **Selected** |
+| **B** | **SPIRE agent runs inside each guest, node-attested; SVID key generated and kept in-guest; SVID delivered to the guest at a fixed path** | **In-guest only by design (target: key never leaves the VM)** | **Node attestation of the guest** | **By design, a compromised host cannot read a running guest's private key; identities are per-VM** | **Selected** |
 | C | Guest calls host-side Workload API for each handshake (no in-guest key) | No persistent key; per-call signing on host | Host asserts identity per call | Host sees all signing operations; strong coupling and a host-side oracle | Rejected — host-side signing oracle; heavier runtime coupling |
 
-**Topology B rationale**: the private key never leaves the VM boundary, so the
-hardware isolation the platform already provides extends to the identity's most
-sensitive asset. The SVID document is delivered to the guest at
+**Topology B rationale**: keeping the private key inside the VM boundary is the
+security *goal* of this topology — it would extend the hardware isolation the
+platform already provides to the identity's most sensitive asset. That
+key-stays-in-guest property is a design goal that depends on the **deferred**
+production in-guest Workload API Source; it is not something this increment's
+code guarantees. The current increment ships a development `LocalCASource` that
+mints SVIDs in-process (control-plane side), so the private key is not yet
+confined to the guest — the isolation guarantee lands only when the deferred
+in-guest source is built. The SVID document is delivered to the guest at
 `/var/run/secrets/spiffe/svid.json`. A trusted in-guest time source is a
 documented prerequisite (see spec Prerequisites).
 

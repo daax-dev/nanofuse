@@ -142,7 +142,7 @@ func TestLocalCASource_LongTTLLeafDoesNotOutliveCA(t *testing.T) {
 
 func TestLocalCASource_LeafNeverOutlivesCA(t *testing.T) {
 	// For a long-running Source, a leaf minted late in the CA's life must be
-	// clamped so it never outlives the CA (an unclampled leaf would fail Verify).
+	// clamped so it never outlives the CA (an unclamped leaf would fail Verify).
 	id := testSPIFFEID("engineering", "jpoley", "vm-latefetch")
 	clk := newFakeClock(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))
 	const ttl = time.Hour

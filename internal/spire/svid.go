@@ -362,9 +362,28 @@ func ParseDocument(data []byte) (*SVID, error) {
 	return svid, nil
 }
 
-// trustDomainPattern is the SPIFFE trust-domain grammar: lowercase letters,
-// digits, and the special chars dot, hyphen, underscore.
-var trustDomainPattern = regexp.MustCompile(`^[a-z0-9._-]+$`)
+// trustLabelPattern matches a single RFC 1123 DNS label: a run of lowercase
+// letters and digits that may contain interior hyphens but must not start or
+// end with one. SPIFFE trust domains are DNS names, so underscores are not
+// permitted.
+var trustLabelPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
+// isValidTrustDomain reports whether host is a valid RFC 1123 DNS name suitable
+// for use as a SPIFFE trust domain: one or more dot-separated labels, each a
+// non-empty (and non-oversized) run of lowercase letters and digits with only
+// interior hyphens. Empty labels, leading/trailing hyphens, and underscores are
+// rejected.
+func isValidTrustDomain(host string) bool {
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) > 63 || !trustLabelPattern.MatchString(label) {
+			return false
+		}
+	}
+	return true
+}
 
 // pathSegmentPattern is the SPIFFE path-segment grammar: letters, digits, and
 // the special chars dot, hyphen, underscore.
@@ -402,8 +421,8 @@ func validateSPIFFEID(id string) error {
 	if host == "" {
 		return fmt.Errorf("svid: SPIFFE ID is missing a trust domain")
 	}
-	if !trustDomainPattern.MatchString(host) {
-		return fmt.Errorf("svid: SPIFFE ID trust domain %q is invalid (lowercase letters, digits, .-_ only)", host)
+	if !isValidTrustDomain(host) {
+		return fmt.Errorf("svid: SPIFFE ID trust domain %q is invalid (must be an RFC 1123 DNS name: lowercase letters, digits, and hyphens; labels must be non-empty and must not start or end with a hyphen)", host)
 	}
 	path := strings.TrimPrefix(u.Path, "/")
 	if path == "" {

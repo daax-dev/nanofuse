@@ -81,13 +81,12 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 	if image == "" {
 		return nil, nil, fmt.Errorf("image is required (gondolin --image)")
 	}
-	// Reject embedded control/whitespace: such a value is not a valid image
-	// reference and would carry a control char into the rendered spec (which
-	// preserves newlines), enabling output injection.
-	for _, r := range image {
-		if unicode.IsControl(r) || unicode.IsSpace(r) {
-			return nil, nil, fmt.Errorf("image %q contains invalid whitespace or control characters", image)
-		}
+	// Reject embedded control/whitespace and unicode format chars (category Cf:
+	// bidi overrides / zero-width): such a value is not a valid image reference and
+	// would carry an invisible or spoofing char into the rendered spec (which
+	// preserves newlines), enabling output injection or visual spoofing.
+	if hasUnsafeRunes(image) {
+		return nil, nil, fmt.Errorf("image %q contains invalid whitespace, control, or format characters", image)
 	}
 
 	// --- dns mode: validate before use so a typo/unknown value fails closed
@@ -385,6 +384,19 @@ func trimmedNonEmpty(items []string) []string {
 	return out
 }
 
+// hasUnsafeRunes reports whether s contains a control character, whitespace, or
+// unicode format char (category Cf: bidi overrides / zero-width). These are
+// invalid in an image reference or hostname and, if carried into the rendered
+// spec output, enable output injection or invisible visual spoofing.
+func hasUnsafeRunes(s string) bool {
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) {
+			return true
+		}
+	}
+	return false
+}
+
 func isLiteralHost(host string) bool {
 	if host == "" {
 		return false
@@ -395,15 +407,11 @@ func isLiteralHost(host string) bool {
 	if strings.Contains(host, "://") {
 		return false
 	}
-	// Reject any control character or other whitespace (tab/newline/etc.): such a
-	// value is not a valid hostname and, if resolved, would carry the control
-	// char into a rule Description and enable terminal line-spoofing.
-	for _, r := range host {
-		if unicode.IsControl(r) || unicode.IsSpace(r) {
-			return false
-		}
-	}
-	return true
+	// Reject control chars, other whitespace (tab/newline/etc.), and unicode
+	// format chars (category Cf: bidi overrides / zero-width). Such a value is not
+	// a valid hostname and, if resolved, would carry an invisible or spoofing char
+	// into a rule Description and the rendered spec output.
+	return !hasUnsafeRunes(host)
 }
 
 func blockingFeatures(divs []Divergence) []string {

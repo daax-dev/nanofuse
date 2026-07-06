@@ -470,9 +470,12 @@ func TestConvert_LeavesKernelArgsToDaemon(t *testing.T) {
 }
 
 func TestIsLiteralHostRejectsControlChars(t *testing.T) {
-	for _, h := range []string{"api\tgithub.com", "api\ngithub.com", "api github.com", "a\x1bb.com"} {
+	// Includes unicode format chars (Cf): U+202E RTL override, U+200B zero-width
+	// space - invisible/spoofing, must not pass as a literal host.
+	for _, h := range []string{"api\tgithub.com", "api\ngithub.com", "api github.com",
+		"a\x1bb.com", "api\u202egithub.com", "api\u200bgithub.com"} {
 		if isLiteralHost(h) {
-			t.Errorf("isLiteralHost(%q) = true, want false (control/whitespace)", h)
+			t.Errorf("isLiteralHost(%q) = true, want false (control/whitespace/format)", h)
 		}
 	}
 	if !isLiteralHost("api.github.com") {
@@ -481,10 +484,13 @@ func TestIsLiteralHostRejectsControlChars(t *testing.T) {
 }
 
 func TestConvert_RejectsControlCharsInImage(t *testing.T) {
-	for _, img := range []string{"alpine\nlatest", "al pine", "a\tb", "a\x1bb"} {
+	// Includes unicode format chars (Cf): U+202E RTL override, U+200B zero-width
+	// space - invisible/spoofing must not pass image validation.
+	for _, img := range []string{"alpine\nlatest", "al pine", "a\tb", "a\x1bb",
+		"al\u202epine", "al\u200bpine"} {
 		sb := &Sandbox{Image: img, Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)}}
 		if _, _, err := Convert(sb, Options{}); err == nil {
-			t.Errorf("Convert with image %q should error on control/whitespace", img)
+			t.Errorf("Convert with image %q should error on control/whitespace/format", img)
 		}
 	}
 }

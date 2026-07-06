@@ -111,5 +111,11 @@ func removeCredential(dir, name string) error {
 	if err := unix.Unlinkat(dirFD, name, 0); err != nil && !errors.Is(err, unix.ENOENT) {
 		return fmt.Errorf("unlink SVID document %q: %w", name, err)
 	}
+	// Fsync the directory so the entry removal is durable: without it a
+	// crash/power-loss could resurrect the removed (expired) credential after
+	// reboot even though removal returned success.
+	if err := unix.Fsync(dirFD); err != nil {
+		return fmt.Errorf("fsync SVID directory %q after removal: %w", dir, err)
+	}
 	return nil
 }

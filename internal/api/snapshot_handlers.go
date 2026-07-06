@@ -13,6 +13,11 @@ import (
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
+// snapshotTierTimeout bounds a single background object-storage tiering upload.
+// Detached from the HTTP request, it guards against an upload hanging forever
+// while still allowing large transfers to complete.
+const snapshotTierTimeout = 30 * time.Minute
+
 // handleListSnapshots lists snapshots for a VM
 func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request, vmID string) {
 	// Verify VM exists
@@ -155,8 +160,21 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, vm
 
 	// Optionally tier the snapshot to durable object storage (issue #130). This
 	// is additive and best-effort: the local snapshot above is already valid and
-	// recorded, so a tiering failure is logged but does not fail the request.
-	s.tierSnapshot(r.Context(), vm.ID, snapshotID, snapPath, memPath)
+	// recorded, so tiering runs in the background and a tiering failure is only
+	// logged. Running it in a goroutine (rather than inline) means (a) the local
+	// snapshot response is never delayed or failed by a potentially large upload,
+	// (b) the VM lock — released by the deferred ReleaseLock when this handler
+	// returns — is not held for the duration of the transfer, and (c) tiering is
+	// detached from the HTTP request lifecycle: it uses its own background context
+	// (see tierSnapshot), so a client disconnect or request timeout does not
+	// cancel an in-progress upload.
+	if s.snapshotStore != nil {
+		s.tierWG.Add(1)
+		go func() {
+			defer s.tierWG.Done()
+			s.tierSnapshot(vm.ID, snapshotID, snapPath, memPath)
+		}()
+	}
 
 	writeJSON(w, http.StatusCreated, snapshot)
 }
@@ -165,10 +183,18 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, vm
 // object-storage tier with a version-pinned manifest. No-op when tiering is
 // disabled. The store id namespaces the snapshot by VM so ids are unique and
 // self-describing on any node.
-func (s *Server) tierSnapshot(ctx context.Context, vmID, snapshotID, snapPath, memPath string) {
+//
+// It is intended to run in a background goroutine (see handleCreateSnapshot) and
+// deliberately derives its own context from context.Background() rather than the
+// request context: the upload must not be cancelled if the originating HTTP
+// client disconnects or its request times out. A bounded timeout still guards
+// against an upload hanging indefinitely.
+func (s *Server) tierSnapshot(vmID, snapshotID, snapPath, memPath string) {
 	if s.snapshotStore == nil {
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), snapshotTierTimeout)
+	defer cancel()
 	storeID := vmID + "__" + snapshotID
 	files := []snapshotstore.SourceFile{
 		{Name: "vm.snap", Role: "vmstate", Path: snapPath},

@@ -216,6 +216,48 @@ func TestGetDetectsCorruption(t *testing.T) {
 	}
 }
 
+func TestManifestRejectsIDMismatch(t *testing.T) {
+	// A manifest whose recorded snapshot_id differs from the id it is fetched
+	// under (corrupted/swapped/tampered object) must be rejected, not returned.
+	store, root := newStore(t)
+	src := t.TempDir()
+	data := bytes.Repeat([]byte("payload"), 128)
+	files := []SourceFile{{Name: "vm.snap", Role: "vmstate", Path: writeFile(t, src, "vm.snap", data)}}
+
+	ctx := context.Background()
+	if _, err := store.Put(ctx, "snap-real", files, RuntimeVersions{}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// Tamper only the snapshot_id field inside the stored manifest, leaving the
+	// object at its original key.
+	manPath := filepath.Join(root, "snap-real", manifestObject)
+	raw, err := os.ReadFile(manPath)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	m.SnapshotID = "snap-imposter"
+	tampered, err := json.Marshal(&m)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	if err := os.WriteFile(manPath, tampered, 0o600); err != nil {
+		t.Fatalf("write tampered manifest: %v", err)
+	}
+
+	if _, err := store.Manifest(ctx, "snap-real"); !errors.Is(err, ErrManifestIDMismatch) {
+		t.Fatalf("Manifest err = %v, want ErrManifestIDMismatch", err)
+	}
+	// Get, which resolves the manifest first, must also reject it.
+	if _, err := store.Get(ctx, "snap-real", t.TempDir()); !errors.Is(err, ErrManifestIDMismatch) {
+		t.Fatalf("Get err = %v, want ErrManifestIDMismatch", err)
+	}
+}
+
 func TestCrossNodeRestore(t *testing.T) {
 	// SC-5: producer store on host A, restore via a separate store instance on
 	// host B, sharing only the object backend (a shared bucket/directory).

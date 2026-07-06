@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
+	"sync"
 	"syscall"
 	"time"
 
@@ -44,7 +45,17 @@ type Server struct {
 	// snapshotRuntime pins the runtime versions recorded in tiered snapshot
 	// manifests; probed once at startup.
 	snapshotRuntime snapshotstore.RuntimeVersions
+	// tierWG tracks in-flight background snapshot-tiering uploads so tests can
+	// wait for completion and the process can (best-effort) observe outstanding
+	// work. Uploads run detached from the HTTP request; see tierSnapshot.
+	tierWG sync.WaitGroup
 }
+
+// apiVersion is the single source of truth for the version this daemon reports
+// (health endpoint) and pins into tiered snapshot manifests as the nanofuse
+// runtime version. Kept as a literal until build-time injection is wired for
+// the daemon binary.
+const apiVersion = "0.1.0"
 
 // loadExistingAllocations loads IP allocations from existing VMs in the database
 // This prevents IP conflicts after daemon restart
@@ -157,6 +168,11 @@ func initSnapshotStore(cfg *config.Config, logger *logging.Logger) (snapshotstor
 	store := snapshotstore.NewTieredStore(blob, snapshotstore.Options{
 		Parallelism: cfg.SnapshotStore.Parallelism,
 	})
+
+	// Pin the nanofuse (daemon) version into every manifest so a restore knows
+	// which control-plane build produced the snapshot. Kernel and other fields
+	// stay empty unless trivially probed, rather than being fabricated.
+	rt.Nanofuse = apiVersion
 
 	// Probe the runtime versions to pin into manifests (best-effort).
 	if selectedRuntimeDriver(cfg) == "firecracker" && cfg.Firecracker.BinaryPath != "" {

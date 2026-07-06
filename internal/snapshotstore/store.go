@@ -218,6 +218,14 @@ func (s *TieredStore) Manifest(ctx context.Context, id string) (*Manifest, error
 		return nil, fmt.Errorf("%w: manifest %q is v%d, this build supports up to v%d",
 			ErrUnsupportedManifestVersion, id, m.SchemaVersion, ManifestSchemaVersion)
 	}
+	// The manifest self-identifies which snapshot it describes; reject it if that
+	// does not match the id it was fetched under. A mismatch means the object was
+	// corrupted, swapped, or tampered with, so its pinned digests/sizes cannot be
+	// trusted to describe the requested snapshot.
+	if m.SnapshotID != id {
+		return nil, fmt.Errorf("%w: requested %q but manifest reports %q",
+			ErrManifestIDMismatch, id, m.SnapshotID)
+	}
 	return &m, nil
 }
 

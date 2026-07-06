@@ -51,6 +51,12 @@ var (
 
 	// ErrInvalidSnapshotID means a snapshot id is empty or not a safe segment.
 	ErrInvalidSnapshotID = errors.New("snapshotstore: invalid snapshot id")
+
+	// ErrManifestIDMismatch means the snapshot_id recorded inside a fetched
+	// manifest does not match the id it was requested under. This detects a
+	// corrupted, swapped, or tampered manifest object before its contents are
+	// trusted.
+	ErrManifestIDMismatch = errors.New("snapshotstore: manifest snapshot id mismatch")
 )
 
 // RuntimeVersions pins the runtime binaries a restore must reproduce. Recorded

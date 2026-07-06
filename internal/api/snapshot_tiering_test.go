@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -69,6 +70,10 @@ func TestHandleCreateSnapshotTiersToObjectStore(t *testing.T) {
 		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
 	}
 
+	// Tiering runs in a detached background goroutine; wait for it before
+	// asserting the object store's contents.
+	server.tierWG.Wait()
+
 	ctx := context.Background()
 	ids, err := store.List(ctx)
 	if err != nil {
@@ -103,6 +108,60 @@ func TestHandleCreateSnapshotTiersToObjectStore(t *testing.T) {
 	}
 	if string(got) != "vm-state-bytes" {
 		t.Fatalf("restored vm.snap = %q, want %q", got, "vm-state-bytes")
+	}
+}
+
+// failingStore is a snapshotstore.Store whose Put always fails, used to prove a
+// background tiering error is only logged and never fails the snapshot response.
+type failingStore struct{}
+
+func (failingStore) Put(context.Context, string, []snapshotstore.SourceFile, snapshotstore.RuntimeVersions) (*snapshotstore.Manifest, error) {
+	return nil, errors.New("simulated object-store failure")
+}
+func (failingStore) Get(context.Context, string, string) (*snapshotstore.Manifest, error) {
+	return nil, errors.New("not implemented")
+}
+func (failingStore) List(context.Context) ([]string, error) { return nil, nil }
+func (failingStore) Manifest(context.Context, string) (*snapshotstore.Manifest, error) {
+	return nil, errors.New("not implemented")
+}
+
+func TestHandleCreateSnapshotTierFailureDoesNotFailResponse(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StatePaused, "")
+	logger, _ := logging.New(logging.Config{Level: "error"})
+	server := &Server{
+		db:             db,
+		config:         &config.Config{Storage: config.StorageConfig{DataDir: t.TempDir()}},
+		logger:         logger,
+		runtimeManager: &snapshotWritingStub{&runtimeImageProviderStub{}},
+		snapshotStore:  failingStore{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vm.ID+"/snapshots", nil)
+	w := httptest.NewRecorder()
+	server.handleCreateSnapshot(w, req, vm.ID)
+
+	// The local snapshot must succeed even though background tiering fails.
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
+	}
+
+	// Draining the background upload must not panic or affect the response.
+	server.tierWG.Wait()
+
+	// The local snapshot record persists regardless of the tiering failure.
+	snaps, err := db.ListSnapshots(vm.ID)
+	if err != nil {
+		t.Fatalf("ListSnapshots: %v", err)
+	}
+	if len(snaps) != 1 {
+		t.Fatalf("local snapshots = %d, want 1", len(snaps))
 	}
 }
 

@@ -190,6 +190,116 @@ func TestCleanupVMStorageRemovesVMDirectory(t *testing.T) {
 	}
 }
 
+func TestBuildVMConfigDefaultKernelArgsDoesNotForceSystemdInit(t *testing.T) {
+	image := &types.Image{RootfsPath: "/tmp/rootfs.ext4"}
+	config := buildVMConfig(image, &types.CreateVMRequest{Image: "alpine"})
+
+	if strings.Contains(config.KernelArgs, "init=") {
+		t.Fatalf("default kernel args must not force an init; got %q", config.KernelArgs)
+	}
+	for _, want := range []string{"console=ttyS0", "root=/dev/vda", "rw"} {
+		if !strings.Contains(config.KernelArgs, want) {
+			t.Fatalf("default kernel args missing %q; got %q", want, config.KernelArgs)
+		}
+	}
+}
+
+func TestBuildVMConfigEmptyKernelArgsOverrideKeepsDefault(t *testing.T) {
+	image := &types.Image{RootfsPath: "/tmp/rootfs.ext4"}
+	// The CLI always sends kernel_args; an empty string (flag unset) must not
+	// wipe the essential console=/root= boot parameters.
+	req := &types.CreateVMRequest{Image: "alpine", Config: &types.VMConfigRequest{KernelArgs: ptrStr("")}}
+	config := buildVMConfig(image, req)
+	for _, want := range []string{"console=ttyS0", "root=/dev/vda", "rw"} {
+		if !strings.Contains(config.KernelArgs, want) {
+			t.Fatalf("empty override dropped default arg %q; got %q", want, config.KernelArgs)
+		}
+	}
+}
+
+func TestBuildVMConfigNonEmptyKernelArgsOverrideApplies(t *testing.T) {
+	image := &types.Image{RootfsPath: "/tmp/rootfs.ext4"}
+	req := &types.CreateVMRequest{Image: "custom", Config: &types.VMConfigRequest{KernelArgs: ptrStr("console=ttyS0 root=/dev/vda rw quiet")}}
+	config := buildVMConfig(image, req)
+	if config.KernelArgs != "console=ttyS0 root=/dev/vda rw quiet" {
+		t.Fatalf("non-empty override not applied; got %q", config.KernelArgs)
+	}
+}
+
+func TestComposeNetworkKernelArgs(t *testing.T) {
+	const (
+		ip = "10.0.0.5"
+		gw = "10.0.0.1"
+	)
+	wantNet := []string{
+		"ip=10.0.0.5::10.0.0.1:255.255.255.0::eth0:off",
+		"net.ifnames=0",
+		"biosdevname=0",
+	}
+
+	t.Run("preserves existing non-network args without forcing init", func(t *testing.T) {
+		got := composeNetworkKernelArgs("console=ttyS0 root=/dev/vda rw", ip, gw)
+		for _, want := range []string{"console=ttyS0", "root=/dev/vda", "rw"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("expected %q preserved; got %q", want, got)
+			}
+		}
+		for _, want := range wantNet {
+			if !strings.Contains(got, want) {
+				t.Fatalf("expected network token %q; got %q", want, got)
+			}
+		}
+		if strings.Contains(got, "init=") {
+			t.Fatalf("composition must not inject init=; got %q", got)
+		}
+	})
+
+	t.Run("preserves a caller/image supplied init", func(t *testing.T) {
+		got := composeNetworkKernelArgs("console=ttyS0 root=/dev/vda rw init=/sbin/my-init", ip, gw)
+		if !strings.Contains(got, "init=/sbin/my-init") {
+			t.Fatalf("expected supplied init preserved; got %q", got)
+		}
+	})
+
+	t.Run("does not duplicate network tokens on re-composition", func(t *testing.T) {
+		once := composeNetworkKernelArgs("console=ttyS0 root=/dev/vda rw", ip, gw)
+		twice := composeNetworkKernelArgs(once, ip, gw)
+		if once != twice {
+			t.Fatalf("re-composition changed args: once=%q twice=%q", once, twice)
+		}
+		if n := strings.Count(twice, "net.ifnames=0"); n != 1 {
+			t.Fatalf("expected exactly one net.ifnames token, got %d in %q", n, twice)
+		}
+		if n := strings.Count(twice, "ip="); n != 1 {
+			t.Fatalf("expected exactly one ip token, got %d in %q", n, twice)
+		}
+	})
+
+	t.Run("preserves quoted args containing spaces", func(t *testing.T) {
+		got := composeNetworkKernelArgs(`console=ttyS0 rootflags="subvol=root foo" rw`, ip, gw)
+		if !strings.Contains(got, `rootflags="subvol=root foo"`) {
+			t.Fatalf("expected quoted arg preserved verbatim; got %q", got)
+		}
+		for _, want := range wantNet {
+			if !strings.Contains(got, want) {
+				t.Fatalf("expected network token %q; got %q", want, got)
+			}
+		}
+	})
+
+	t.Run("overrides conflicting caller network tokens", func(t *testing.T) {
+		got := composeNetworkKernelArgs("console=ttyS0 ip=1.2.3.4::5.6.7.8:255.0.0.0::eth9:on net.ifnames=1", ip, gw)
+		if strings.Contains(got, "1.2.3.4") || strings.Contains(got, "net.ifnames=1") {
+			t.Fatalf("expected conflicting network tokens replaced; got %q", got)
+		}
+		for _, want := range wantNet {
+			if !strings.Contains(got, want) {
+				t.Fatalf("expected canonical network token %q; got %q", want, got)
+			}
+		}
+	})
+}
+
 func TestSetupVMNetworkingAllowsNoneWhenNetworkSetupDisabled(t *testing.T) {
 	server := &Server{
 		config: &config.Config{

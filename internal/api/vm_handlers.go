@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -141,9 +142,15 @@ func (s *Server) validateAndResolveImage(imageRef string) (*types.Image, string,
 // buildVMConfig creates base config and applies user overrides
 func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfig {
 	config := types.VMConfig{
-		VCPUs:      2,
-		MemoryMiB:  512,
-		KernelArgs: "console=ttyS0 root=/dev/vda rw init=/lib/systemd/systemd",
+		VCPUs:     2,
+		MemoryMiB: 512,
+		// Do not force init=. The kernel's default init search (/sbin/init,
+		// /etc/init, /bin/init, /bin/sh) works for both systemd images (where
+		// /sbin/init -> /lib/systemd/systemd) and non-systemd containers such as
+		// Alpine/BusyBox that provide /sbin/init or /bin/sh. Hardcoding
+		// init=/lib/systemd/systemd panicked arbitrary containers before
+		// userspace (issue #193).
+		KernelArgs: "console=ttyS0 root=/dev/vda rw",
 		Network: types.NetworkConfig{
 			Mode: "nat",
 		},
@@ -167,7 +174,11 @@ func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfi
 		if req.Config.MemoryMiB != nil {
 			config.MemoryMiB = *req.Config.MemoryMiB
 		}
-		if req.Config.KernelArgs != nil {
+		// Only override the default kernel args when a non-empty value is
+		// supplied. The CLI always sends kernel_args (empty string when the
+		// --kernel-args flag is unset), and an empty override would drop the
+		// essential console=/root= boot parameters (issue #193).
+		if req.Config.KernelArgs != nil && *req.Config.KernelArgs != "" {
 			config.KernelArgs = *req.Config.KernelArgs
 		}
 		if req.Config.SSHPublicKey != nil {
@@ -444,6 +455,28 @@ func (s *Server) validateVMResourceLimits(config types.VMConfig) error {
 	return nil
 }
 
+// managedNetworkKernelArgRE matches the kernel cmdline tokens that this managed
+// static-IP networking owns (ip=, net.ifnames=, biosdevname=). Any pre-existing
+// occurrences are stripped before the canonical values are appended, so repeated
+// setup or conflicting caller input cannot produce duplicate/contradictory
+// tokens. Matching whole whitespace-delimited tokens (rather than splitting and
+// re-joining the whole string) preserves any other boot parameters verbatim,
+// including quoted values that legitimately contain spaces
+// (e.g. rootflags="subvol=root foo").
+var managedNetworkKernelArgRE = regexp.MustCompile(`(?:^|\s+)(?:ip|net\.ifnames|biosdevname)=\S*`)
+
+// composeNetworkKernelArgs merges the managed static-IP networking tokens onto
+// the existing kernel args, preserving all other boot parameters (console,
+// root, init, etc.). It is a pure function to keep the merge logic testable.
+func composeNetworkKernelArgs(existing, ip, gateway string) string {
+	base := strings.TrimSpace(managedNetworkKernelArgRE.ReplaceAllString(existing, ""))
+	netArgs := fmt.Sprintf("ip=%s::%s:255.255.255.0::eth0:off net.ifnames=0 biosdevname=0", ip, gateway)
+	if base == "" {
+		return netArgs
+	}
+	return base + " " + netArgs
+}
+
 // setupVMNetworking configures networking for a VM
 func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 	if selectedRuntimeDriver(s.config) != "firecracker" {
@@ -503,13 +536,12 @@ func (s *Server) setupVMNetworking(vmID string, config *types.VMConfig) error {
 	config.Network.Gateway = network.BridgeGateway
 	config.Network.Netmask = "255.255.255.0"
 
-	// Update kernel args to include IP configuration
-	// Force classic interface naming so the kernel 'ip=' setting targets eth0 as expected
-	// Otherwise Ubuntu's predictable names (en*) may prevent the static IP from applying
-	config.KernelArgs = fmt.Sprintf(
-		"console=ttyS0 root=/dev/vda rw init=/lib/systemd/systemd ip=%s::%s:255.255.255.0::eth0:off net.ifnames=0 biosdevname=0",
-		ip, network.BridgeGateway,
-	)
+	// Compose the static-IP kernel args onto the existing KernelArgs instead of
+	// replacing them, so we preserve the image/user-supplied root, init, and
+	// other boot parameters (issue #193). Force classic interface naming so the
+	// kernel 'ip=' setting targets eth0 as expected; otherwise Ubuntu's
+	// predictable names (en*) may prevent the static IP from applying.
+	config.KernelArgs = composeNetworkKernelArgs(config.KernelArgs, ip, network.BridgeGateway)
 
 	s.logger.Printf("INFO: Configured network for VM %s: IP=%s TAP=%s MAC=%s",
 		vmID[:8], ip, tapName, config.Network.MACAddress)

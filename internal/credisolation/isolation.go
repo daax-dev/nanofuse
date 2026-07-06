@@ -71,7 +71,7 @@ var (
 	// ErrInvalidMountTarget indicates a mount target the guard cannot reason
 	// about safely (a non-empty, non-absolute target). The guard fails closed on
 	// these rather than assume a caller validated them.
-	ErrInvalidMountTarget = errors.New("mount target must be an absolute path")
+	ErrInvalidMountTarget = errors.New("mount target must be an absolute path without embedded NUL bytes")
 
 	// ErrInvalidVMID indicates a VM identifier failed validation.
 	ErrInvalidVMID = errors.New("invalid VM identifier")
@@ -346,7 +346,7 @@ func VerifyDirPerms(p string, requireRoot bool) (VerifyResult, error) {
 	// false-positive PASS while the real store is attacker-controlled.
 	info, err := os.Lstat(p)
 	if err != nil {
-		return res, fmt.Errorf("stat credential store %s: %w", p, err)
+		return res, fmt.Errorf("lstat credential store %q: %w", p, err)
 	}
 	if info.Mode()&fs.ModeSymlink != 0 {
 		res.Detail = fmt.Sprintf("%s is a symlink; the credential store must be a real directory", p)

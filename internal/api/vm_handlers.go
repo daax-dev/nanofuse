@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -178,7 +177,7 @@ func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfi
 		// supplied. The CLI always sends kernel_args (empty string when the
 		// --kernel-args flag is unset), and an empty override would drop the
 		// essential console=/root= boot parameters (issue #193).
-		if req.Config.KernelArgs != nil && *req.Config.KernelArgs != "" {
+		if req.Config.KernelArgs != nil && strings.TrimSpace(*req.Config.KernelArgs) != "" {
 			config.KernelArgs = *req.Config.KernelArgs
 		}
 		if req.Config.SSHPublicKey != nil {
@@ -455,26 +454,71 @@ func (s *Server) validateVMResourceLimits(config types.VMConfig) error {
 	return nil
 }
 
-// managedNetworkKernelArgRE matches the kernel cmdline tokens that this managed
-// static-IP networking owns (ip=, net.ifnames=, biosdevname=). Any pre-existing
-// occurrences are stripped before the canonical values are appended, so repeated
-// setup or conflicting caller input cannot produce duplicate/contradictory
-// tokens. Matching whole whitespace-delimited tokens (rather than splitting and
-// re-joining the whole string) preserves any other boot parameters verbatim,
-// including quoted values that legitimately contain spaces
-// (e.g. rootflags="subvol=root foo").
-var managedNetworkKernelArgRE = regexp.MustCompile(`(?:^|\s+)(?:ip|net\.ifnames|biosdevname)=\S*`)
+// managedNetworkKernelArgKeys are the kernel cmdline parameter keys that this
+// managed static-IP networking owns. Pre-existing occurrences are stripped
+// before the canonical values are appended, so repeated setup or conflicting
+// caller input cannot produce duplicate/contradictory tokens.
+var managedNetworkKernelArgKeys = map[string]struct{}{
+	"ip":          {},
+	"net.ifnames": {},
+	"biosdevname": {},
+}
+
+// splitKernelArgs splits a kernel command line into whitespace-separated
+// parameters, honouring double-quoted values that legitimately contain spaces
+// (e.g. `rootflags="subvol=root foo"` is one parameter). This mirrors how the
+// kernel parses quotes, so a quoted value can never be mistaken for a separate
+// managed token.
+func splitKernelArgs(s string) []string {
+	var tokens []string
+	var cur strings.Builder
+	inQuote := false
+	started := false
+	for _, r := range s {
+		switch {
+		case r == '"':
+			inQuote = !inQuote
+			cur.WriteRune(r)
+			started = true
+		case !inQuote && (r == ' ' || r == '\t' || r == '\n' || r == '\r'):
+			if started {
+				tokens = append(tokens, cur.String())
+				cur.Reset()
+				started = false
+			}
+		default:
+			cur.WriteRune(r)
+			started = true
+		}
+	}
+	if started {
+		tokens = append(tokens, cur.String())
+	}
+	return tokens
+}
 
 // composeNetworkKernelArgs merges the managed static-IP networking tokens onto
 // the existing kernel args, preserving all other boot parameters (console,
-// root, init, etc.). It is a pure function to keep the merge logic testable.
+// root, init, etc.) verbatim — including quoted values that contain spaces. It
+// strips only top-level parameters whose key is managed, never a substring
+// inside a quoted value. Pure function to keep the merge logic testable.
 func composeNetworkKernelArgs(existing, ip, gateway string) string {
-	base := strings.TrimSpace(managedNetworkKernelArgRE.ReplaceAllString(existing, ""))
+	kept := make([]string, 0)
+	for _, tok := range splitKernelArgs(existing) {
+		key := tok
+		if i := strings.IndexByte(tok, '='); i >= 0 {
+			key = tok[:i]
+		}
+		if _, managed := managedNetworkKernelArgKeys[key]; managed {
+			continue
+		}
+		kept = append(kept, tok)
+	}
 	netArgs := fmt.Sprintf("ip=%s::%s:255.255.255.0::eth0:off net.ifnames=0 biosdevname=0", ip, gateway)
-	if base == "" {
+	if len(kept) == 0 {
 		return netArgs
 	}
-	return base + " " + netArgs
+	return strings.Join(kept, " ") + " " + netArgs
 }
 
 // setupVMNetworking configures networking for a VM

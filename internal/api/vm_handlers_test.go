@@ -217,6 +217,21 @@ func TestBuildVMConfigEmptyKernelArgsOverrideKeepsDefault(t *testing.T) {
 	}
 }
 
+func TestBuildVMConfigWhitespaceKernelArgsOverrideKeepsDefault(t *testing.T) {
+	image := &types.Image{RootfsPath: "/tmp/rootfs.ext4"}
+	// A whitespace-only override must be treated like empty: it must not wipe the
+	// essential console=/root= boot parameters.
+	for _, ws := range []string{" ", "\n", "\t  "} {
+		req := &types.CreateVMRequest{Image: "alpine", Config: &types.VMConfigRequest{KernelArgs: ptrStr(ws)}}
+		config := buildVMConfig(image, req)
+		for _, want := range []string{"console=ttyS0", "root=/dev/vda", "rw"} {
+			if !strings.Contains(config.KernelArgs, want) {
+				t.Fatalf("whitespace override %q dropped default arg %q; got %q", ws, want, config.KernelArgs)
+			}
+		}
+	}
+}
+
 func TestBuildVMConfigNonEmptyKernelArgsOverrideApplies(t *testing.T) {
 	image := &types.Image{RootfsPath: "/tmp/rootfs.ext4"}
 	req := &types.CreateVMRequest{Image: "custom", Config: &types.VMConfigRequest{KernelArgs: ptrStr("console=ttyS0 root=/dev/vda rw quiet")}}
@@ -272,6 +287,19 @@ func TestComposeNetworkKernelArgs(t *testing.T) {
 		}
 		if n := strings.Count(twice, "ip="); n != 1 {
 			t.Fatalf("expected exactly one ip token, got %d in %q", n, twice)
+		}
+	})
+
+	t.Run("does not strip a managed key that appears inside a quoted value", func(t *testing.T) {
+		// The substring " ip=1.2.3.4" occurs inside the quoted rootflags value; a
+		// naive regex/split would corrupt it. It must be preserved verbatim.
+		got := composeNetworkKernelArgs(`console=ttyS0 rootflags="subvol=root ip=1.2.3.4" rw`, ip, gw)
+		if !strings.Contains(got, `rootflags="subvol=root ip=1.2.3.4"`) {
+			t.Fatalf("expected quoted value with embedded ip= preserved verbatim; got %q", got)
+		}
+		// And the real managed ip= is still exactly the canonical one.
+		if n := strings.Count(got, "ip=10.0.0.5"); n != 1 {
+			t.Fatalf("expected exactly one canonical ip token, got %d in %q", n, got)
 		}
 	})
 

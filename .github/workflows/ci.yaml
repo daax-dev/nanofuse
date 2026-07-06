@@ -17,9 +17,7 @@ jobs:
   # Job 1: Build and test Go binaries using Mage
   build-go:
     name: Build and Test (Mage)
-    runs-on: self-hosted
-    # Skip fork PRs on self-hosted runners (untrusted code); run for pushes and same-repo PRs only
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -69,7 +67,7 @@ jobs:
     name: Auto-Release CLI/API on Success
     needs: [build-go, lint, security-scan]
     if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
@@ -268,7 +266,7 @@ jobs:
     name: Auto-Release Image on Success
     needs: [build-image, build-kernel]
     if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
@@ -328,9 +326,7 @@ jobs:
   # Job 1b: Lint separately for better visibility
   lint:
     name: Lint and Format Check
-    runs-on: self-hosted
-    # Skip fork PRs on self-hosted runners (untrusted code); run for pushes and same-repo PRs only
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -356,9 +352,7 @@ jobs:
   # Job 1c: Quick validation
   validate:
     name: Quick Validation
-    runs-on: self-hosted
-    # Skip fork PRs on self-hosted runners (untrusted code); run for pushes and same-repo PRs only
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -379,7 +373,7 @@ jobs:
   # Job 2: Build Firecracker kernel (for image builds)
   build-kernel:
     name: Build Firecracker Kernel
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     # Only run on main branch or image-v* tag pushes (not on PRs)
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/image-v'))
 
@@ -426,7 +420,7 @@ jobs:
   build-image:
     name: Build Docker Image and Firecracker microVM
     needs: [build-kernel]
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     # Only run on main branch pushes or image-v* tags
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/image-v'))
     permissions:
@@ -515,9 +509,7 @@ jobs:
   # Job 3: Security scanning
   security-scan:
     name: Security Scanning
-    runs-on: self-hosted
-    # Skip fork PRs on self-hosted runners (untrusted code); run for pushes and same-repo PRs only
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read

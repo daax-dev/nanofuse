@@ -278,3 +278,17 @@ func TestGetRejectsEmptyFileList(t *testing.T) {
 		t.Fatalf("Get empty-file manifest = %v, want ErrEmptyManifest", err)
 	}
 }
+
+func TestManifestValidatesFileList(t *testing.T) {
+	store, root := newStore(t)
+	id := "snap-manifest-empty"
+	writeManifest(t, root, id, Manifest{
+		SchemaVersion: ManifestSchemaVersion,
+		SnapshotID:    id,
+		Compression:   CompressionZstd,
+		Files:         nil,
+	})
+	if _, err := store.Manifest(context.Background(), id); !errors.Is(err, ErrEmptyManifest) {
+		t.Fatalf("Manifest() with empty file list = %v, want ErrEmptyManifest", err)
+	}
+}

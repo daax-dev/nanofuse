@@ -239,6 +239,12 @@ func (s *TieredStore) Manifest(ctx context.Context, id string) (*Manifest, error
 		return nil, fmt.Errorf("%w: requested %q but manifest reports %q",
 			ErrManifestIDMismatch, id, m.SnapshotID)
 	}
+	// Validate the file list here too (not only in Get): callers that use
+	// Manifest() directly must not receive an untrusted list with an empty set,
+	// duplicate names, unsafe names, or out-of-range sizes.
+	if err := validateManifestFiles(m.Files); err != nil {
+		return nil, err
+	}
 	return &m, nil
 }
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/snapshotstore"
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
@@ -150,7 +152,34 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, vm
 	}
 
 	s.logger.Printf("INFO: Created snapshot: %s for VM %s", snapshotID, vm.Name)
+
+	// Optionally tier the snapshot to durable object storage (issue #130). This
+	// is additive and best-effort: the local snapshot above is already valid and
+	// recorded, so a tiering failure is logged but does not fail the request.
+	s.tierSnapshot(r.Context(), vm.ID, snapshotID, snapPath, memPath)
+
 	writeJSON(w, http.StatusCreated, snapshot)
+}
+
+// tierSnapshot pushes a freshly created snapshot's files to the configured
+// object-storage tier with a version-pinned manifest. No-op when tiering is
+// disabled. The store id namespaces the snapshot by VM so ids are unique and
+// self-describing on any node.
+func (s *Server) tierSnapshot(ctx context.Context, vmID, snapshotID, snapPath, memPath string) {
+	if s.snapshotStore == nil {
+		return
+	}
+	storeID := vmID + "__" + snapshotID
+	files := []snapshotstore.SourceFile{
+		{Name: "vm.snap", Role: "vmstate", Path: snapPath},
+		{Name: "mem.snap", Role: "memory", Path: memPath},
+	}
+	manifest, err := s.snapshotStore.Put(ctx, storeID, files, s.snapshotRuntime)
+	if err != nil {
+		s.logger.Printf("WARN: Failed to tier snapshot %s to object storage: %v", snapshotID, err)
+		return
+	}
+	s.logger.Printf("INFO: Tiered snapshot %s to object storage (id=%s, %d files)", snapshotID, storeID, len(manifest.Files))
 }
 
 // handleGetSnapshot gets a specific snapshot

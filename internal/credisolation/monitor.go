@@ -50,10 +50,12 @@ func NewMonitor(logger *slog.Logger, terminate Terminator) *Monitor {
 func (mon *Monitor) HandleCrossVMAttempt(a AccessAttempt) error {
 	when := a.When
 	if when.IsZero() {
-		// UTC to match the repo's "UTC everywhere internally" convention so
-		// audit timestamps correlate across hosts.
-		when = time.Now().UTC()
+		when = time.Now()
 	}
+	// Normalize to UTC (whether defaulted or caller-provided) to match the
+	// repo's "UTC everywhere internally" convention so audit timestamps
+	// correlate across hosts regardless of the caller's clock zone.
+	when = when.UTC()
 	reqValid := ValidateVMID(a.RequestingVMID) == nil
 	targetValid := ValidateVMID(a.TargetVMID) == nil
 

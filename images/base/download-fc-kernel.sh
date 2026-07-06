@@ -45,7 +45,7 @@ echo "Failed to download pre-built kernel."
 echo "Pre-built 6.1.x kernels are not available from Firecracker."
 echo ""
 echo "Build the kernel instead:"
-echo "  cd $SCRIPT_DIR"
+echo "  cd \"$SCRIPT_DIR\""
 echo "  sudo ./scripts/build-kernel-docker.sh"
 echo ""
 exit 1

@@ -92,9 +92,10 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 				isolationSecretsDir)
 		}
 	default:
-		// Permission denied, I/O error, etc. — do not misreport as "absent";
-		// a verifier that cannot read the store has not verified it.
-		return fmt.Errorf("cannot lstat credential store %q: %w", isolationSecretsDir, err)
+		// Permission denied, I/O error, etc. — do not misreport as "absent". Run
+		// the store-perms check so it fails and a FAIL status line is printed; a
+		// verifier that cannot read the store has not verified it.
+		opts.CheckDir = true
 	}
 
 	report := credisolation.VerifyHost(opts)
@@ -110,8 +111,9 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	// Exit non-zero only on an actual failed check. "Nothing verified" (the store
 	// is legitimately absent and --strict was not set) is a lenient skip that
 	// exits 0 — a CI health check on a host where the store is not provisioned
-	// yet must not be treated as a failure. An absent store under --strict
-	// already returned an error above.
+	// yet must not be treated as a failure. An absent store under --strict, or an
+	// unreadable one, runs the perms check above (which fails), so HasFailure is
+	// true here and this returns a non-nil error.
 	if report.HasFailure() {
 		// Include the status line so stderr alone is actionable when stdout (the
 		// per-check detail) is not captured.

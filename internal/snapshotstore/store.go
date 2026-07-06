@@ -172,30 +172,46 @@ func (s *TieredStore) putFile(ctx context.Context, id string, sf SourceFile) (Fi
 		return FileEntry{}, fmt.Errorf("create zstd encoder: %w", err)
 	}
 
-	var uncompressed int64
+	// The producer goroutine writes uncompressed/hasher/counter and signals done.
+	// Reading those fields only after receiving on done establishes a
+	// happens-before edge, so the sizes/digest are safe to read without relying
+	// on the Blob.Put "fully consume the reader" contract for synchronization.
+	type produced struct {
+		uncompressed int64
+		digest       string
+		err          error
+	}
+	done := make(chan produced, 1)
 	go func() {
 		n, copyErr := io.Copy(io.MultiWriter(hasher, enc), src)
-		uncompressed = n
 		if closeErr := enc.Close(); copyErr == nil {
 			copyErr = closeErr
 		}
 		// Propagate any error to the blob reader so Put unblocks and fails.
 		_ = pw.CloseWithError(copyErr)
+		done <- produced{uncompressed: n, digest: hex.EncodeToString(hasher.Sum(nil)), err: copyErr}
 	}()
 
 	if err := s.blob.Put(ctx, key, pr); err != nil {
-		// Unblock the writer goroutine if it is still copying.
+		// Unblock the writer goroutine if it is still copying, then wait for it to
+		// exit so we never leak the goroutine/source fd on the error path.
 		_ = pr.CloseWithError(err)
+		<-done
 		return FileEntry{}, fmt.Errorf("upload %q: %w", key, err)
+	}
+
+	res := <-done
+	if res.err != nil {
+		return FileEntry{}, fmt.Errorf("compress %q: %w", sf.Name, res.err)
 	}
 
 	return FileEntry{
 		Name:           sf.Name,
 		Role:           sf.Role,
 		Key:            key,
-		Size:           uncompressed,
+		Size:           res.uncompressed,
 		CompressedSize: counter.n,
-		Digest:         hex.EncodeToString(hasher.Sum(nil)),
+		Digest:         res.digest,
 	}, nil
 }
 
@@ -319,11 +335,14 @@ func (s *TieredStore) Get(ctx context.Context, id, destDir string) (*Manifest, e
 }
 
 // promoteRestored moves every verified file from the staging dir into destDir.
-// It runs only after all files have been downloaded and integrity-checked, so
-// destDir goes from empty to fully populated with a series of same-filesystem
-// renames. If a rename fails partway (an exceptional local FS fault), the files
-// already promoted are removed so destDir is not left holding a partial
-// snapshot. Names are already validated, keeping the joins within destDir.
+// It runs only after all files have been downloaded and integrity-checked, then
+// adds the snapshot's files to destDir with a series of same-filesystem renames.
+// destDir is not assumed empty: Get only MkdirAll's it, so it may already hold
+// unrelated files. promoteRestored refuses to clobber a pre-existing name (see
+// the Lstat guard below) and never touches files it did not create. If a rename
+// fails partway (an exceptional local FS fault), the files already promoted are
+// removed so destDir is not left holding a partial snapshot. Names are already
+// validated, keeping the joins within destDir.
 func promoteRestored(staging, destDir string, files []FileEntry) error {
 	for i, fe := range files {
 		from := filepath.Join(staging, fe.Name)

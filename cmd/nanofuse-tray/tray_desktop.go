@@ -82,7 +82,7 @@ func withTimeout(ctx context.Context, timeout time.Duration) (context.Context, c
 }
 
 func (ui *trayUI) onReady() {
-	systray.SetTitle("NF")
+	setTrayIcon()
 	systray.SetTooltip("Nanofuse")
 
 	ui.endpointItem = systray.AddMenuItem("Endpoint: "+ui.cfg.Endpoint(), "Configured nanofused API endpoint")

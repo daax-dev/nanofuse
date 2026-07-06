@@ -176,6 +176,26 @@ func TestApplyClientEnvironmentRejectsInvalidTimeout(t *testing.T) {
 	}
 }
 
+func TestDefaultClientEndpointForWindowsUsesTCP(t *testing.T) {
+	apiURL, apiSocket := defaultClientEndpoint("windows")
+	if apiURL != DefaultAPIURL {
+		t.Fatalf("apiURL = %q, want %q", apiURL, DefaultAPIURL)
+	}
+	if apiSocket != "" {
+		t.Fatalf("apiSocket = %q, want empty", apiSocket)
+	}
+}
+
+func TestDefaultClientEndpointForLinuxUsesUnixSocket(t *testing.T) {
+	apiURL, apiSocket := defaultClientEndpoint("linux")
+	if apiURL != "" {
+		t.Fatalf("apiURL = %q, want empty", apiURL)
+	}
+	if apiSocket != DefaultAPISocketPath {
+		t.Fatalf("apiSocket = %q, want %q", apiSocket, DefaultAPISocketPath)
+	}
+}
+
 func TestHandleAPIErrorUsesAPIURLForTCPConnection(t *testing.T) {
 	resetCLIStateForTest(t)
 	apiURL = "http://127.0.0.1:18080"

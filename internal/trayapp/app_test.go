@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -351,12 +352,38 @@ func TestConfigFromEnv(t *testing.T) {
 	}
 }
 
-func TestConfigDefaultsToUnixSocket(t *testing.T) {
+func TestConfigDefaultEndpointIsPlatformDependent(t *testing.T) {
 	cfg := (Config{}).Normalize()
-	if cfg.Endpoint() != "unix://"+DefaultAPISocketPath {
-		t.Fatalf("Endpoint() = %q", cfg.Endpoint())
+	// The default endpoint is platform-dependent: Windows clients default to the
+	// TCP API, while Unix hosts default to the daemon Unix socket.
+	want := "unix://" + DefaultAPISocketPath
+	if runtime.GOOS == "windows" {
+		want = DefaultAPIURL
+	}
+	if cfg.Endpoint() != want {
+		t.Fatalf("Endpoint() = %q, want %q", cfg.Endpoint(), want)
 	}
 	if cfg.Timeout != DefaultTimeout {
 		t.Fatalf("Timeout = %v", cfg.Timeout)
+	}
+}
+
+func TestDefaultEndpointForWindowsUsesTCP(t *testing.T) {
+	apiURL, apiSocket := defaultEndpointForOS("windows")
+	if apiURL != DefaultAPIURL {
+		t.Fatalf("apiURL = %q, want %q", apiURL, DefaultAPIURL)
+	}
+	if apiSocket != "" {
+		t.Fatalf("apiSocket = %q, want empty", apiSocket)
+	}
+}
+
+func TestDefaultEndpointForLinuxUsesUnixSocket(t *testing.T) {
+	apiURL, apiSocket := defaultEndpointForOS("linux")
+	if apiURL != "" {
+		t.Fatalf("apiURL = %q, want empty", apiURL)
+	}
+	if apiSocket != DefaultAPISocketPath {
+		t.Fatalf("apiSocket = %q, want %q", apiSocket, DefaultAPISocketPath)
 	}
 }

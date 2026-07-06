@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -51,6 +52,8 @@ const (
 	DefaultBaseImage = "base"
 	// DefaultImageTag is the default image tag
 	DefaultImageTag = "latest"
+	// DefaultAPIURL is the default TCP API endpoint used for Windows clients.
+	DefaultAPIURL = "http://127.0.0.1:18080"
 	// DefaultAPISocketPath is the default nanofused Unix socket.
 	DefaultAPISocketPath = "/var/run/nanofused.sock"
 )
@@ -120,7 +123,7 @@ It provides simple commands for VM lifecycle management, snapshots, and image ha
 			apiClient = client.NewTCPClient(apiURL, timeout, debug)
 		} else {
 			if apiSocket == "" {
-				apiSocket = DefaultAPISocketPath
+				_, apiSocket = defaultClientEndpoint(runtime.GOOS)
 			}
 			apiClient = client.NewClient(apiSocket, timeout, debug)
 		}
@@ -157,8 +160,18 @@ func applyClientEnvironment() error {
 	if !noColor && envTruthy(os.Getenv("NANOFUSE_NO_COLOR")) {
 		noColor = true
 	}
+	if apiURL == "" && apiSocket == "" {
+		apiURL, apiSocket = defaultClientEndpoint(runtime.GOOS)
+	}
 
 	return nil
+}
+
+func defaultClientEndpoint(goos string) (apiURL string, socketPath string) {
+	if goos == "windows" {
+		return DefaultAPIURL, ""
+	}
+	return "", DefaultAPISocketPath
 }
 
 func envTruthy(value string) bool {
@@ -662,6 +675,8 @@ var (
 	vmPortForwards []string
 	vmSSHKey       string
 	vmExecTimeout  int
+	vmMounts       []string
+	vmSecrets      []string
 )
 
 var vmCreateCmd = &cobra.Command{
@@ -706,6 +721,15 @@ Examples:
 			}
 		}
 
+		mounts, err := parseMountSpecs(vmMounts)
+		if err != nil {
+			return err
+		}
+		secrets, err := parseSecretSpecs(vmSecrets)
+		if err != nil {
+			return err
+		}
+
 		req := &client.CreateVMRequest{
 			Name:  name,
 			Image: imageRef,
@@ -714,6 +738,8 @@ Examples:
 				MemoryMiB:    vmMemory,
 				KernelArgs:   vmKernelArgs,
 				SSHPublicKey: sshKeyEncoded,
+				Mounts:       mounts,
+				Secrets:      secrets,
 				Network: client.NetworkConfig{
 					Mode:         vmNetwork,
 					BridgeName:   nil,
@@ -796,6 +822,15 @@ Examples:
 			}
 		}
 
+		mounts, err := parseMountSpecs(vmMounts)
+		if err != nil {
+			return err
+		}
+		secrets, err := parseSecretSpecs(vmSecrets)
+		if err != nil {
+			return err
+		}
+
 		req := &client.CreateVMRequest{
 			Name:  name,
 			Image: imageRef,
@@ -804,6 +839,8 @@ Examples:
 				MemoryMiB:    vmMemory,
 				KernelArgs:   vmKernelArgs,
 				SSHPublicKey: sshKeyEncoded,
+				Mounts:       mounts,
+				Secrets:      secrets,
 				Network: client.NetworkConfig{
 					Mode:         vmNetwork,
 					PortForwards: portForwards,
@@ -1291,6 +1328,8 @@ func init() {
 	vmCreateCmd.Flags().StringVar(&vmKernelArgs, "kernel-args", "", "kernel arguments")
 	vmCreateCmd.Flags().StringArrayVarP(&vmPortForwards, "port-forward", "p", nil, "port forward (format: hostPort:vmPort[/protocol], e.g., 8080:80 or 53:53/udp)")
 	vmCreateCmd.Flags().StringVar(&vmSSHKey, "ssh-key", "", "path to SSH public key for VM access")
+	vmCreateCmd.Flags().StringArrayVar(&vmMounts, "mount", nil, "filesystem mount (src=/host,dst=/guest,type=bind,ro or src:dst[:ro]); repeatable")
+	vmCreateCmd.Flags().StringArrayVar(&vmSecrets, "secret", nil, "secret reference (name=NAME,source=ref,type=env|file,target=...); repeatable; values are never accepted")
 
 	// VM run flags (same as create)
 	vmRunCmd.Flags().StringVar(&vmName, "name", "", "VM name")
@@ -1301,6 +1340,8 @@ func init() {
 	vmRunCmd.Flags().StringVar(&vmKernelArgs, "kernel-args", "", "kernel arguments")
 	vmRunCmd.Flags().StringArrayVarP(&vmPortForwards, "port-forward", "p", nil, "port forward (format: hostPort:vmPort[/protocol], e.g., 8080:80 or 53:53/udp)")
 	vmRunCmd.Flags().StringVar(&vmSSHKey, "ssh-key", "", "path to SSH public key for VM access")
+	vmRunCmd.Flags().StringArrayVar(&vmMounts, "mount", nil, "filesystem mount (src=/host,dst=/guest,type=bind,ro or src:dst[:ro]); repeatable")
+	vmRunCmd.Flags().StringArrayVar(&vmSecrets, "secret", nil, "secret reference (name=NAME,source=ref,type=env|file,target=...); repeatable; values are never accepted")
 
 	// VM list flags
 	vmListCmd.Flags().String("filter", "", "filter by state")
@@ -1328,6 +1369,8 @@ func init() {
 	vmCmd.AddCommand(vmListCmd)
 	vmCmd.AddCommand(vmStatusCmd)
 	vmCmd.AddCommand(vmPortsCmd)
+	vmCmd.AddCommand(vmMountsCmd)
+	vmCmd.AddCommand(vmSecretsCmd)
 	vmCmd.AddCommand(vmStartCmd)
 	vmCmd.AddCommand(vmStopCmd)
 	vmCmd.AddCommand(vmKillCmd)

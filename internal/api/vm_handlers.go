@@ -190,6 +190,12 @@ func buildVMConfig(image *types.Image, req *types.CreateVMRequest) types.VMConfi
 				config.Network.EgressPolicy = req.Config.Network.EgressPolicy
 			}
 		}
+		if req.Config.Mounts != nil {
+			config.Mounts = *req.Config.Mounts
+		}
+		if req.Config.Secrets != nil {
+			config.Secrets = *req.Config.Secrets
+		}
 	}
 
 	return config
@@ -595,6 +601,20 @@ func (s *Server) prepareCreateVMConfig(w http.ResponseWriter, image *types.Image
 		writePortForwardPreparationError(w, s.logger, err)
 		return types.VMConfig{}, false
 	}
+
+	normalizedMounts, err := types.NormalizeAndValidateMounts(config.Mounts)
+	if err != nil {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, err.Error(), nil)
+		return types.VMConfig{}, false
+	}
+	config.Mounts = normalizedMounts
+
+	normalizedSecrets, err := types.NormalizeAndValidateSecrets(config.Secrets)
+	if err != nil {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidConfig, err.Error(), nil)
+		return types.VMConfig{}, false
+	}
+	config.Secrets = normalizedSecrets
 
 	if err := s.validateVMResourceLimits(config); err != nil {
 		if s.logger != nil {
@@ -1398,12 +1418,59 @@ func (s *Server) handleVMExecByPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Printf("ERROR: Failed to exec in VM: %v", err)
+		// Keep the top-level message stable and place the underlying error and any
+		// captured diagnostics (which may include untrusted guest ssh stderr) in
+		// the structured details rather than the primary message field.
+		details := map[string]interface{}{"vm_id": vm.ID, "error": err.Error()}
+		// Bound the captured output echoed into the error response: some backends
+		// (e.g. apple_container) do not cap exec output, so a hostile/buggy guest
+		// could otherwise produce an oversized JSON error and bloated logs.
+		if result != nil {
+			if result.Stderr != "" {
+				details["stderr"] = truncateForError(result.Stderr)
+			}
+			if result.Stdout != "" {
+				details["stdout"] = truncateForError(result.Stdout)
+			}
+		}
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
-			"Failed to exec in VM", map[string]interface{}{"vm_id": vm.ID})
+			"Failed to exec in VM", details)
 		return
 	}
 
+	// Bound success output too: some backends (e.g. apple_container) buffer exec
+	// output without a cap, so an untrusted guest could otherwise force a huge
+	// JSON response and high memory use even on success.
+	if result != nil {
+		result.Stdout = capExecOutput(result.Stdout)
+		result.Stderr = capExecOutput(result.Stderr)
+	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// truncateForError bounds captured exec output included in an error response so
+// large guest output cannot bloat the JSON response or logs.
+func truncateForError(s string) string {
+	return capString(s, 4096)
+}
+
+// capExecOutput bounds a single exec output stream returned in a success
+// response so an uncapped backend cannot produce an unbounded JSON body.
+func capExecOutput(s string) string {
+	return capString(s, 1<<20) // 1 MiB per stream
+}
+
+// capString returns s bounded to at most max bytes (including the truncation
+// suffix), reserving room for the suffix so the result never exceeds max.
+func capString(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	const suffix = "… (truncated)"
+	if max <= len(suffix) {
+		return s[:max]
+	}
+	return s[:max-len(suffix)] + suffix
 }
 
 // handleVMProcessExit handles VM process termination

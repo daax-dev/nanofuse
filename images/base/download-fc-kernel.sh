@@ -1,12 +1,15 @@
 #!/bin/bash
 set -e
 
+# Absolute path to this script's directory (images/base), for portable user hints.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 BUILD_DIR="./build"
 mkdir -p "$BUILD_DIR"
 
 echo "Downloading official Firecracker v1.7.0 kernel..."
 echo "NOTE: Pre-built 6.1.x kernels not available from Firecracker."
-echo "Use ./scripts/archives/build-kernel-docker.sh to build kernel 6.1.90 instead."
+echo "Use ./scripts/build-kernel-docker.sh to build kernel 6.1.90 instead."
 
 # This is the exact kernel Firecracker v1.7.0 uses in CI
 # URL pattern: https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v{VERSION}/x86_64/vmlinux-{KERNEL_VERSION}
@@ -42,7 +45,7 @@ echo "Failed to download pre-built kernel."
 echo "Pre-built 6.1.x kernels are not available from Firecracker."
 echo ""
 echo "Build the kernel instead:"
-echo "  cd /home/jpoley/ps/nanofuse/images/base"
-echo "  sudo ./scripts/archives/build-kernel-docker.sh"
+echo "  cd \"$SCRIPT_DIR\""
+echo "  sudo ./scripts/build-kernel-docker.sh"
 echo ""
 exit 1

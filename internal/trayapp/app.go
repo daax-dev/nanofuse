@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 )
 
 const (
+	DefaultAPIURL             = "http://127.0.0.1:18080"
 	DefaultAPISocketPath      = "/var/run/nanofused.sock"
 	DefaultStopTimeoutSeconds = 30
 	DefaultTimeout            = time.Duration(DefaultStopTimeoutSeconds+15) * time.Second
@@ -87,9 +89,16 @@ func (c Config) Normalize() Config {
 		c.Timeout = DefaultTimeout
 	}
 	if c.APIURL == "" && c.APISocket == "" {
-		c.APISocket = DefaultAPISocketPath
+		c.APIURL, c.APISocket = defaultEndpointForOS(runtime.GOOS)
 	}
 	return c
+}
+
+func defaultEndpointForOS(goos string) (apiURL string, socketPath string) {
+	if goos == "windows" {
+		return DefaultAPIURL, ""
+	}
+	return "", DefaultAPISocketPath
 }
 
 func (c Config) Endpoint() string {

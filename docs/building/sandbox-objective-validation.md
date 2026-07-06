@@ -102,6 +102,45 @@ Local macOS runtime result on 2026-05-31:
 - `POST /vms/{id}/stop` returned `stopped`.
 - `DELETE /vms/{id}` returned HTTP 204 and runtime cleanup left no matching `nf-*` container.
 
+Windows packaging result on 2026-06-02:
+
+- Build host toolchain: `go version go1.25.10 linux/amd64`.
+- Local compiler used for `mage ci`: Zig `0.16.0` via `CC='/tmp/zig-x86_64-linux-0.16.0/zig cc'`.
+- Windows CLI cross-build passed:
+  `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 /tmp/go1.25.10/go/bin/go build -o /tmp/nanofuse.exe ./cmd/nanofuse`.
+- Windows tray cross-build passed:
+  `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 /tmp/go1.25.10/go/bin/go build -ldflags='-H=windowsgui' -o /tmp/nanofuse-tray.exe ./cmd/nanofuse-tray`.
+- Cross-built artifacts are PE binaries for Windows:
+  `nanofuse.exe` console, `nanofuse-tray.exe` GUI.
+- The first Windows package slice was assembled with:
+  `GO_BIN=/tmp/go1.25.10/go/bin/go ./scripts/package-windows.sh`.
+- Resulting artifact: `dist/nanofuse-windows-amd64.zip`.
+- ZIP contents were verified with `python3 -m zipfile -l dist/nanofuse-windows-amd64.zip`.
+- Package contents:
+  `nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`, `QUICKSTART-WINDOWS.md`.
+- The full local repo gate passed with:
+  `PATH=/tmp/go1.25.10/go/bin:/tmp/nanofuse-go/path/bin:$PATH HOME=/tmp/nanofuse-go/home GOCACHE=/tmp/nanofuse-go/cache GOPATH=/tmp/nanofuse-go/path GOMODCACHE=/tmp/nanofuse-go/mod CC='/tmp/zig-x86_64-linux-0.16.0/zig cc' mage ci`.
+- `gosec` was not installed; the existing mage target reported that and continued.
+- At the time of this Linux packaging run, the workspace had no Windows interactive session, so `nanofuse.exe`/`nanofuse-tray.exe` smoke and PowerShell parsing were deferred (an attempted WSL-interop PowerShell invocation failed with `UtilBindVsockAnyPort:307: socket failed 1`). That gap was scoped to the Linux packaging workspace only and was closed on a real Windows 11 session — see "Windows closed-loop result on 2026-06-02" below.
+- (At packaging time, mount and secret-reference visibility were open blockers. They were subsequently resolved; see "Windows closed-loop result on 2026-06-02" below, which adds `vm mounts`, `vm secrets`, `--mount`/`--secret`, and `config.mounts`/`config.secrets` in the `/vms` JSON.)
+
+Windows closed-loop result on 2026-06-02:
+
+- Client host: Windows 11 Pro `10.0.26200`, architecture AMD64, `go version go1.25.0 windows/amd64`.
+- Daemon backend: real Linux Firecracker `nanofused` in WSL2 Ubuntu (`/dev/kvm` present, read/write), Firecracker `v1.15.1`, started via `scripts/wsl-firecracker-daemon.sh run` bound to `0.0.0.0:18080`.
+- Windows binaries were built natively:
+  `go build -o bin\nanofuse.exe .\cmd\nanofuse` and
+  `go build -ldflags "-H=windowsgui" -o bin\nanofuse-tray.exe .\cmd\nanofuse-tray` (CGO disabled).
+- Package produced natively: `pwsh scripts/package-windows.ps1` → `dist/nanofuse-windows-amd64.zip` containing `nanofuse.exe`, `nanofuse-tray.exe`, `install-windows.ps1`, `WINDOWS_RESUME.md`, `QUICKSTART-WINDOWS.md`.
+- The Windows client reached the WSL daemon via the WSL IP (`$env:NANOFUSE_API_URL = "http://<wsl-ip>:18080"`, the "direct management network" pattern).
+- `nanofuse.exe health` returned `healthy`; `/capabilities` reported `driver=firecracker`, `native_runtime=true`, `firecracker_available=true`.
+- `nanofuse.exe vm run nanofuse-base:latest winwm -p 8081:80 --mount src=/srv/data,dst=/data,type=bind,ro --mount type=tmpfs,dst=/scratch --secret name=API_TOKEN,source=vault://kv/token --secret name=tls,type=file,target=/etc/tls/key.pem,source=spire://` created and started a real microVM (state `running`, guest IP `172.16.0.10`).
+- `vm list`, `vm status`, `vm ports`, `vm mounts`, `vm secrets`, and `vm logs` all returned correct data from the Windows CLI. `vm status` rendered the new `Mounts:` and `Secret Refs:` sections; the guest booted Ubuntu to a root console.
+- `vm stop` returned `stopped`; `vm delete --force` removed the VM; the post-delete `vm list` was empty.
+- `nanofuse-tray.exe --smoke --api-url http://<wsl-ip>:18080` exited 0 and emitted health + capabilities + image inventory JSON.
+- `nanofuse.exe vm exec winwm -- uname -a` returned `Linux ubuntu-fc-uvm 5.10.245+ ... x86_64`; `vm exec ... grep PRETTY /etc/os-release` returned `Ubuntu 24.04.3 LTS`; `vm exec ... sh -lc 'exit 7'` propagated exit status 7. Firecracker exec runs over SSH using a daemon-managed key injected into the guest image (`firecracker.exec_ssh_key_path`).
+- Full local repo gate passed in WSL2: `mage ci` (clean → build → go vet + golangci-lint `v2.12.2` (built with go1.25) → `go test -race ./...` → security check). `gosec` not installed; the mage target reports and continues.
+
 The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-2026-05-30.log` and `.logs/validation/vagrant-closed-loop-2026-05-30-nested.log` in the local working tree. The committed validation record is `.logs/validation/sandbox-objective.jsonl`.
 
 ## Current Implementation Evidence
@@ -114,6 +153,9 @@ The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-20
 | Secrets/identity | SPIFFE/vsock path remains identity-only. Raw secret broker and Vault exchange are not implemented in this PR. |
 | Cross-platform support | Documentation now separates Linux/KVM Firecracker, macOS Apple-container runtime, and Windows API/tray client support. |
 | API-driven operation | `GET /capabilities` reports host/runtime readiness, CLI env vars support remote API configuration, and Vagrant forwards host `127.0.0.1:18080` to guest API port `8080`. |
+| Windows package | `dist/nanofuse-windows-amd64.zip` (built natively via `scripts/package-windows.ps1`, or cross-built via `scripts/package-windows.sh`) and `scripts/install-windows.ps1` provide the Windows client package; Windows defaults to `http://127.0.0.1:18080` when no endpoint is provided. |
+| Windows closed loop | Full VM lifecycle (run/list/status/ports/mounts/secrets/logs/stop/delete) driven from native `nanofuse.exe` on Windows 11 against a WSL2 Firecracker `nanofused`; tray `--smoke` passed. See "Windows closed-loop result on 2026-06-02". |
+| Mount & secret visibility | `vm mounts`, `vm secrets`, `--mount`/`--secret` flags, and `vm status`/`/vms` JSON expose first-class mount and secret-reference inventory on every backend. Unit tests in `internal/types`, `cmd/nanofuse`, `internal/api`. |
 
 ## Known Gaps
 
@@ -123,3 +165,5 @@ The full host run outputs are stored at `.logs/validation/vagrant-closed-loop-20
 - Guest-side SPIFFE SVID client is still required for end-to-end identity retrieval inside the VM.
 - macOS arm64 Parallels validation depends on whether the provider exposes Linux KVM to the guest; unsupported providers must be reported as KVM-unavailable, not treated as pass.
 - macOS Apple-container runtime does not yet support Nanofuse egress policy enforcement, pause/resume, or snapshots. Those remain Firecracker/Linux-path capabilities or future backend work.
+- Mount runtime enforcement (virtio-fs/block attachment) and scoped secret value delivery are not yet implemented on the Firecracker backend; the operator-visible mount and secret-reference inventory surfaces are implemented and validated from Windows.
+- Firecracker `vm exec` runs over SSH with a daemon-managed key whose public half must be present in the guest image's authorized_keys (provisioned by the bring-up script); it requires guest sshd and a configured `firecracker.exec_ssh_key_path`. apple_container (macOS) supports exec natively without a key.

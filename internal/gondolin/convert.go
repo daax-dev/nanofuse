@@ -229,15 +229,23 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 		if opts.ResolveEgress && opts.Resolver != nil && isLiteralHost(host) {
 			ips, err := opts.Resolver(host)
 			if err == nil && len(ips) > 0 {
+				added := false
 				for _, ip := range ips {
+					cidr, ok := hostCIDR(ip)
+					if !ok {
+						continue // resolver returned a non-IP string; skip it
+					}
 					policy.AllowRules = append(policy.AllowRules, client.EgressRule{
-						CIDR:        hostCIDR(ip),
+						CIDR:        cidr,
 						Protocol:    "tcp",
 						Port:        443,
 						Description: "resolved from gondolin allow-host " + host + " (point-in-time; HTTPS/443 only)",
 					})
+					added = true
 				}
-				continue
+				if added {
+					continue
+				}
 			}
 		}
 		dropped = append(dropped, host)
@@ -262,6 +270,16 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 				Detail:   "allow-host hostnames resolved to /32 rules restricted to TCP/443; L7 path/method filtering is not enforced.",
 			})
 		}
+	case opts.ResolveEgress && opts.Resolver == nil:
+		// Resolution was requested but no resolver is wired; do not tell the user
+		// to "use --resolve-egress" (they already did). Report the missing resolver.
+		divs = append(divs, Divergence{
+			Feature:  "--allow-host",
+			Severity: SeverityWarn,
+			Detail: fmt.Sprintf("--resolve-egress was requested but no resolver is configured; "+
+				"gondolin L7 HTTP allowlist (%s) left under default-deny (no outbound allowed).",
+				strings.Join(sb.AllowHost, ", ")),
+		})
 	default:
 		divs = append(divs, Divergence{
 			Feature:  "--allow-host",
@@ -281,11 +299,17 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 // hostCIDR returns a single-host CIDR for a resolved IP: /32 for IPv4, /128 for
 // IPv6. Falls back to /32 only if the string is not a parseable IP (defensive;
 // resolver output is expected to be valid).
-func hostCIDR(ip string) string {
-	if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() == nil {
-		return ip + "/128"
+func hostCIDR(ip string) (string, bool) {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return "", false // not a valid IP; caller drops it
 	}
-	return ip + "/32"
+	// Canonicalize so an IPv4-in-IPv6 form (e.g. ::ffff:1.2.3.4) becomes a plain
+	// IPv4 /32 rather than an overly broad IPv6 rule.
+	if v4 := parsed.To4(); v4 != nil {
+		return v4.String() + "/32", true
+	}
+	return parsed.String() + "/128", true
 }
 
 func isLiteralHost(host string) bool {
@@ -354,7 +378,7 @@ type renderNetwork struct {
 type renderEgress struct {
 	Enabled       bool         `yaml:"enabled"`
 	DefaultAction string       `yaml:"default_action,omitempty"`
-	AllowDNS      bool         `yaml:"allow_dns"`
+	AllowDNS      bool         `yaml:"allow_dns,omitempty"`
 	AllowRules    []renderRule `yaml:"allow_rules,omitempty"`
 }
 

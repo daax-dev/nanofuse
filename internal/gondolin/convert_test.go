@@ -146,6 +146,66 @@ func TestConvert_ResolveEgressWithResolver(t *testing.T) {
 	}
 }
 
+func TestConvert_ResolveEgressCanonicalizesAndSkipsInvalid(t *testing.T) {
+	resolver := func(host string) ([]string, error) {
+		switch host {
+		case "v6.example.com":
+			return []string{"2606:4700:4700::1111"}, nil
+		case "mapped.example.com":
+			return []string{"::ffff:1.2.3.4"}, nil // IPv4-in-IPv6 -> plain /32
+		case "bad.example.com":
+			return []string{"not-an-ip"}, nil // skipped, host dropped
+		default:
+			return nil, nil
+		}
+	}
+	sb := &Sandbox{
+		Image:     "img",
+		Resources: &Resources{VCPUs: 2, MemoryMiB: 512},
+		AllowHost: []string{"v6.example.com", "mapped.example.com", "bad.example.com"},
+	}
+	req, divs, err := Convert(sb, Options{ResolveEgress: true, Resolver: resolver})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cidrs := map[string]bool{}
+	for _, r := range req.Config.Network.EgressPolicy.AllowRules {
+		cidrs[r.CIDR] = true
+	}
+	if !cidrs["2606:4700:4700::1111/128"] {
+		t.Errorf("expected IPv6 /128 rule; got %v", cidrs)
+	}
+	if !cidrs["1.2.3.4/32"] {
+		t.Errorf("expected IPv4-in-IPv6 canonicalized to 1.2.3.4/32; got %v", cidrs)
+	}
+	if cidrs["::ffff:1.2.3.4/32"] {
+		t.Errorf("must not emit the IPv4-in-IPv6 literal form")
+	}
+	// The non-IP resolver result means bad.example.com produced no rule -> dropped.
+	if d := findDiv(divs, "--allow-host"); d == nil || !strings.Contains(d.Detail, "bad.example.com") {
+		t.Errorf("expected bad.example.com reported as dropped; got %+v", divs)
+	}
+}
+
+func TestConvert_ResolveEgressWithoutResolver(t *testing.T) {
+	sb := &Sandbox{
+		Image:     "img",
+		Resources: &Resources{VCPUs: 2, MemoryMiB: 512},
+		AllowHost: []string{"api.github.com"},
+	}
+	_, divs, err := Convert(sb, Options{ResolveEgress: true, Resolver: nil})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	d := findDiv(divs, "--allow-host")
+	if d == nil || !strings.Contains(d.Detail, "no resolver is configured") {
+		t.Fatalf("expected missing-resolver warning, not a use--resolve-egress hint; got %+v", divs)
+	}
+	if strings.Contains(d.Detail, "Use --resolve-egress") {
+		t.Errorf("must not tell the user to use --resolve-egress when they already did")
+	}
+}
+
 // unrepresentableCases drives the fail-closed / allow-lossy behaviour for every
 // gondolin feature that has no faithful nanofuse equivalent.
 func TestConvert_UnrepresentableFeatures(t *testing.T) {

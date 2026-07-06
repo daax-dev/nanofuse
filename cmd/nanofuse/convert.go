@@ -14,12 +14,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// sanitizeForTerminal strips control characters (including ANSI escape
-// sequences' ESC) from strings that may derive from untrusted input files,
-// preventing terminal escape/control-character injection when output is printed.
-// Newlines and tabs are preserved (they are benign and structural for YAML);
-// all other control runes are dropped.
-func sanitizeForTerminal(s string) string {
+// sanitizeInline strips ALL control characters (ANSI ESC, and also newlines and
+// tabs) from a value that will be printed on a single output line. Dropping
+// newlines/tabs prevents both escape-sequence injection and layout/line-spoofing
+// injection from untrusted input (host names, mount paths, file paths, etc.).
+func sanitizeInline(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// sanitizeBlock strips control characters but PRESERVES newlines (and tabs),
+// for multi-line output whose line structure is meaningful — e.g. the rendered
+// YAML spec (yaml.Marshal already escapes control chars inside values, so only
+// the structural line breaks remain). Defense in depth against escape injection.
+func sanitizeBlock(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\t' || r == '\n' {
 			return r
@@ -127,7 +139,7 @@ Examples:
 			if err := os.WriteFile(convertOutput, specYAML, 0o600); err != nil {
 				return fmt.Errorf("write nanofuse spec: %w", err)
 			}
-			fmt.Printf("Wrote nanofuse spec to %s\n", sanitizeForTerminal(convertOutput))
+			fmt.Printf("Wrote nanofuse spec to %s\n", sanitizeInline(convertOutput))
 			return nil
 		}
 
@@ -135,7 +147,7 @@ Examples:
 		// yaml.Marshal already escapes control characters in string values, but
 		// sanitize the terminal-bound output as defense in depth against escape
 		// injection from the untrusted input file (the -o file path writes raw).
-		fmt.Print(sanitizeForTerminal(string(specYAML)))
+		fmt.Print(sanitizeBlock(string(specYAML)))
 		return nil
 	},
 }
@@ -179,8 +191,8 @@ func printDivergences(divs []gondolin.Divergence) {
 		default:
 			c = cyan
 		}
-		c.Fprintf(os.Stdout, "  [%s] %s\n", d.Severity, sanitizeForTerminal(d.Feature))
-		fmt.Printf("      %s\n", sanitizeForTerminal(d.Detail))
+		c.Fprintf(os.Stdout, "  [%s] %s\n", d.Severity, sanitizeInline(d.Feature))
+		fmt.Printf("      %s\n", sanitizeInline(d.Detail))
 	}
 }
 

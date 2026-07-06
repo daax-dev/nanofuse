@@ -86,18 +86,27 @@ func TestConvertGondolin_MissingFile(t *testing.T) {
 	}
 }
 
-func TestSanitizeForTerminal(t *testing.T) {
-	// ANSI escape + bell + carriage return must be stripped; tab kept.
-	in := "host\x1b[31mRED\x07\r end\tkeep"
-	got := sanitizeForTerminal(in)
-	if strings.ContainsAny(got, "\x1b\x07\r") {
-		t.Errorf("control chars survived: %q", got)
+func TestSanitizeInline(t *testing.T) {
+	// Single-line sanitizer: ESC/BEL/CR AND newline/tab are all stripped, so a
+	// crafted value cannot inject escape sequences or spoof extra lines.
+	in := "host\x1b[31mRED\x07\r\n fake line\ttab"
+	got := sanitizeInline(in)
+	if strings.ContainsAny(got, "\x1b\x07\r\n\t") {
+		t.Errorf("inline sanitize must drop all control chars incl newline/tab: %q", got)
 	}
-	if !strings.Contains(got, "\t") {
-		t.Errorf("tab should be preserved: %q", got)
+	if got != "host[31mRED fake linetab" {
+		t.Errorf("unexpected inline output: %q", got)
 	}
-	// The ESC/BEL/CR bytes are removed; the printable "[31m" text remains.
-	if got != "host[31mRED end\tkeep" {
-		t.Errorf("unexpected sanitized output: %q", got)
+}
+
+func TestSanitizeBlock(t *testing.T) {
+	// Block sanitizer: newlines/tabs preserved (YAML structure), other controls dropped.
+	in := "image: a\x1b[31mb\nnetwork:\n  mode: nat\n"
+	got := sanitizeBlock(in)
+	if strings.ContainsRune(got, '\x1b') {
+		t.Errorf("ESC should be stripped: %q", got)
+	}
+	if strings.Count(got, "\n") != 3 {
+		t.Errorf("newlines must be preserved for YAML: %q", got)
 	}
 }

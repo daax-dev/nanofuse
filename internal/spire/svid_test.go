@@ -2,11 +2,42 @@ package spire
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/x509"
+	"encoding/pem"
 	"strings"
 	"testing"
 	"time"
 )
+
+// TestDecodeKeyPEM_BlockType verifies decodeKeyPEM requires the exact "PRIVATE
+// KEY" PKCS#8 block type used by MarshalDocument and rejects any other block
+// type instead of blindly parsing it as PKCS#8.
+func TestDecodeKeyPEM_BlockType(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatalf("MarshalPKCS8PrivateKey: %v", err)
+	}
+
+	// Correct block type is accepted and yields a usable signer.
+	good := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	if _, err := decodeKeyPEM(good); err != nil {
+		t.Fatalf("decodeKeyPEM(PRIVATE KEY) = %v, want nil", err)
+	}
+
+	// Same DER bytes under an unexpected block type must be rejected.
+	for _, badType := range []string{"CERTIFICATE", "RSA PRIVATE KEY", "PUBLIC KEY", "EC PRIVATE KEY"} {
+		bad := pem.EncodeToMemory(&pem.Block{Type: badType, Bytes: der})
+		if _, err := decodeKeyPEM(bad); err == nil {
+			t.Errorf("decodeKeyPEM(%q) = nil error, want rejection", badType)
+		}
+	}
+}
 
 func mintTestSVID(t *testing.T, id string, clk Clock) *SVID {
 	t.Helper()

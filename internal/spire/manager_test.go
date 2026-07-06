@@ -401,4 +401,28 @@ func TestNewManager_Validation(t *testing.T) {
 	if _, err := NewManager(ManagerConfig{Source: failingSource{}, Path: "relative/path.json"}); err == nil {
 		t.Fatal("expected error for non-absolute path")
 	}
+	// Absolute paths that name a directory rather than a file must be rejected:
+	// a bare root, a trailing separator, or a final "."/".." element.
+	badPaths := []string{
+		"/",
+		"/var/run/secrets/spiffe/", // trailing separator
+		"/var/run/.",               // final "." element
+		"/var/run/..",              // final ".." element
+	}
+	for _, p := range badPaths {
+		if _, err := NewManager(ManagerConfig{Source: failingSource{}, Path: p}); err == nil {
+			t.Errorf("NewManager(Path=%q) = nil error, want rejection (path names a directory)", p)
+		}
+	}
+	// A well-formed absolute file path (including a dotfile filename) is accepted.
+	goodPaths := []string{
+		"/var/run/secrets/spiffe/svid.json",
+		"/svid.json",
+		"/var/run/.svid", // leading-dot filename is a real file, not "." or ".."
+	}
+	for _, p := range goodPaths {
+		if _, err := NewManager(ManagerConfig{Source: failingSource{}, Path: p}); err != nil {
+			t.Errorf("NewManager(Path=%q) = %v, want nil (valid filename)", p, err)
+		}
+	}
 }

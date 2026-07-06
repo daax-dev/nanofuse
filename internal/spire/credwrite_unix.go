@@ -71,6 +71,15 @@ func writeCredentialAtomic(dir, name string, data []byte) error {
 		cleanup()
 		return fmt.Errorf("rename SVID file into place: %w", err)
 	}
+	// Durability: the rename created/replaced a directory entry. fsync the parent
+	// directory (via the fd already anchored above) so the entry survives a
+	// crash/power-loss — without it a successful return could still lose or roll
+	// back the credential on reboot. The file entry now points at persisted data
+	// (temp file was fsync'd before the rename), so no cleanup on failure: the
+	// credential is in place, only its durability could not be confirmed.
+	if err := unix.Fsync(dirFD); err != nil {
+		return fmt.Errorf("fsync SVID directory after rename: %w", err)
+	}
 	return nil
 }
 

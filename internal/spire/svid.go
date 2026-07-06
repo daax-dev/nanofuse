@@ -479,6 +479,13 @@ func decodeKeyPEM(data []byte) (crypto.Signer, error) {
 	if block == nil {
 		return nil, fmt.Errorf("no PEM block found")
 	}
+	// The persisted credential encodes the key as a PKCS#8 "PRIVATE KEY" block
+	// (see MarshalDocument). Require that exact type so an unexpected block (e.g.
+	// "CERTIFICATE", "RSA PRIVATE KEY", "PUBLIC KEY") is rejected rather than
+	// blindly parsed as PKCS#8.
+	if block.Type != "PRIVATE KEY" {
+		return nil, fmt.Errorf("unexpected PEM block type %q, want %q", block.Type, "PRIVATE KEY")
+	}
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("parse PKCS8 key: %w", err)

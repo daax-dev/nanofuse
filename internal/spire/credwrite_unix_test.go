@@ -8,6 +8,42 @@ import (
 	"testing"
 )
 
+// TestWriteCredentialAtomic_HappyPath verifies the fd-anchored write persists
+// the exact bytes at mode 0400 and, after the parent-directory fsync added for
+// crash durability, the credential is readable at the expected path.
+func TestWriteCredentialAtomic_HappyPath(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, svidDirMode); err != nil {
+		t.Fatalf("chmod dir: %v", err)
+	}
+	name := "svid.json"
+	data := []byte(`{"spiffe":"test"}`)
+
+	if err := writeCredentialAtomic(dir, name, data); err != nil {
+		t.Fatalf("writeCredentialAtomic: %v", err)
+	}
+
+	dest := filepath.Join(dir, name)
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read credential: %v", err)
+	}
+	if string(got) != string(data) {
+		t.Fatalf("credential contents = %q, want %q", got, data)
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatalf("stat credential: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != svidFileMode {
+		t.Fatalf("credential mode = %#o, want %#o", perm, svidFileMode)
+	}
+	// No temp file should linger after a successful atomic write.
+	if _, err := os.Stat(filepath.Join(dir, "."+name+".tmp")); !os.IsNotExist(err) {
+		t.Fatalf("temp file must not remain after rename: stat err = %v", err)
+	}
+}
+
 // TestRemoveCredential_RejectsSymlinkedParent verifies the fd-anchored,
 // no-follow removal refuses to unlink through a parent directory that has been
 // swapped to a symlink, so a path-swap during a rotation failure cannot redirect

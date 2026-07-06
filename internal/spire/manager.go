@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -91,6 +92,21 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 	}
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("svid manager: path must be absolute, got %q", path)
+	}
+	// The path must name a file, not a directory. A trailing separator (e.g.
+	// "/var/run/secrets/spiffe/") or a final element of "/", "." or ".." (e.g.
+	// "/", "/var/run/.") names a directory; filepath.Base/Dir would then split it
+	// into a surprising location, so reject it up front. filepath.Base cleans "."
+	// and ".." away, so the final element is checked on the raw path.
+	if os.IsPathSeparator(path[len(path)-1]) {
+		return nil, fmt.Errorf("svid manager: path must include a filename, got a trailing separator: %q", path)
+	}
+	last := path
+	if i := strings.LastIndexByte(path, byte(os.PathSeparator)); i >= 0 {
+		last = path[i+1:]
+	}
+	if last == "" || last == "." || last == ".." {
+		return nil, fmt.Errorf("svid manager: path must end in a filename, got %q", path)
 	}
 	refreshBefore := cfg.RefreshBefore
 	if refreshBefore <= 0 {

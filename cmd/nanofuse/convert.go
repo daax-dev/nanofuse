@@ -100,7 +100,9 @@ Examples:
 
 		sb, err := gondolin.Parse(data)
 		if err != nil {
-			return err
+			// Parse errors can quote untrusted YAML keys/values (incl. control
+			// chars); sanitize before returning so Cobra prints a safe message.
+			return fmt.Errorf("%s", sanitizeInline(err.Error()))
 		}
 
 		opts := gondolin.Options{
@@ -129,7 +131,9 @@ Examples:
 		}
 
 		if convErr != nil {
-			return convErr
+			// Conversion errors (e.g. an unknown dns mode) can echo untrusted
+			// input values; sanitize before returning.
+			return fmt.Errorf("%s", sanitizeInline(convErr.Error()))
 		}
 
 		specYAML, err := gondolin.RenderSpecYAML(req)

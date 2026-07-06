@@ -117,3 +117,19 @@ image: b
 		})
 	}
 }
+
+func TestParse_RejectsDuplicateKeys(t *testing.T) {
+	// A security-focused converter must not let a duplicate key silently
+	// override (last-wins). yaml.v3 rejects duplicate mapping keys at both the
+	// top level and inside nested maps; lock that in so a regression is caught.
+	for _, doc := range []string{
+		"image: a\nimage: b\n",             // top-level struct field
+		"image: a\nenv:\n  K: 1\n  K: 2\n", // nested map (env)
+	} {
+		if _, err := Parse([]byte(doc)); err == nil {
+			t.Errorf("expected duplicate-key rejection for %q, got nil", doc)
+		} else if !strings.Contains(err.Error(), "already defined") {
+			t.Errorf("error = %v, want duplicate-key rejection for %q", err, doc)
+		}
+	}
+}

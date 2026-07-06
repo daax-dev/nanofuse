@@ -65,8 +65,10 @@ func NewFSBlob(dir string) (*FSBlob, error) {
 	return &FSBlob{root: abs}, nil
 }
 
-// keyPath maps an object key to an on-disk path, rejecting any key that would
-// escape the root (defense in depth; Store already validates ids and names).
+// keyPath maps an object key to an on-disk path confined under the root:
+// traversal segments are normalized away (e.g. "../../x" resolves to "x" under
+// the root) rather than escaping, and it errors only if the result still lands
+// outside the root (defense in depth; Store already validates ids and names).
 func (b *FSBlob) keyPath(key string) (string, error) {
 	if key == "" {
 		return "", fmt.Errorf("snapshotstore: empty object key")

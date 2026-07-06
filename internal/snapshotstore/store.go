@@ -316,6 +316,20 @@ func promoteRestored(staging, destDir string, files []FileEntry) error {
 	for i, fe := range files {
 		from := filepath.Join(staging, fe.Name)
 		to := filepath.Join(destDir, fe.Name)
+		// Refuse to clobber a pre-existing file: os.Rename would overwrite it, and
+		// the rollback below would then delete a file we did not create. A restore
+		// target must not already hold that name.
+		if _, statErr := os.Lstat(to); statErr == nil {
+			for _, done := range files[:i] {
+				_ = os.Remove(filepath.Join(destDir, done.Name))
+			}
+			return fmt.Errorf("commit restored file %q: destination already exists", fe.Name)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			for _, done := range files[:i] {
+				_ = os.Remove(filepath.Join(destDir, done.Name))
+			}
+			return fmt.Errorf("commit restored file %q: %w", fe.Name, statErr)
+		}
 		if err := os.Rename(from, to); err != nil {
 			// Roll back the already-promoted files so a partial promotion does not
 			// leave destDir holding an incomplete snapshot.

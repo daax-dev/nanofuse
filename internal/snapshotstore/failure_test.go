@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -194,5 +196,43 @@ func TestGetShortFileFailsSizeCheck(t *testing.T) {
 	}
 	if _, err := store.Get(ctx, id, t.TempDir()); !errors.Is(err, ErrSizeMismatch) {
 		t.Fatalf("Get short = %v, want ErrSizeMismatch", err)
+	}
+}
+
+func TestGetRejectsTooLargeSize(t *testing.T) {
+	// An absurd Size (near math.MaxInt64) is rejected up front so downstream
+	// Size+1 arithmetic cannot overflow on a tampered manifest.
+	store, root := newStore(t)
+	id := "snap-huge"
+	writeManifest(t, root, id, Manifest{
+		SchemaVersion: ManifestSchemaVersion,
+		SnapshotID:    id,
+		Compression:   CompressionZstd,
+		Files:         []FileEntry{{Name: "vm.snap", Key: id + "/vm.snap.zst", Size: math.MaxInt64, Digest: "00"}},
+	})
+	if _, err := store.Get(context.Background(), id, t.TempDir()); !errors.Is(err, ErrFileSizeTooLarge) {
+		t.Fatalf("Get huge-size manifest = %v, want ErrFileSizeTooLarge", err)
+	}
+}
+
+func TestPromoteRestoredRefusesToClobber(t *testing.T) {
+	// A restore must not overwrite a pre-existing file in destDir (rollback could
+	// then delete a file we did not create).
+	staging := t.TempDir()
+	dest := t.TempDir()
+	if err := os.WriteFile(filepath.Join(staging, "vm.snap"), []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "vm.snap"), []byte("preexisting"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := promoteRestored(staging, dest, []FileEntry{{Name: "vm.snap"}})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("promoteRestored over existing file = %v, want already-exists error", err)
+	}
+	// The pre-existing file must be untouched.
+	got, _ := os.ReadFile(filepath.Join(dest, "vm.snap"))
+	if string(got) != "preexisting" {
+		t.Errorf("pre-existing file was modified: %q", got)
 	}
 }

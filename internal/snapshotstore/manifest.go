@@ -25,6 +25,11 @@ const manifestObject = "manifest.json"
 // CompressionZstd is the only compression codec currently emitted.
 const CompressionZstd = "zstd"
 
+// maxFileSize is the largest per-file decompressed size accepted from a manifest
+// (1 TiB). Generous for VM memory/state snapshots, but far below math.MaxInt64,
+// so size arithmetic such as LimitReader(dec, Size+1) cannot overflow.
+const maxFileSize = 1 << 40
+
 // Errors surfaced by a Store. They are sentinels so callers can branch on the
 // failure class (missing vs. corrupt vs. version) rather than string-matching.
 var (
@@ -62,6 +67,10 @@ var (
 	// Name maps 1:1 to a restored base name (and to a backend object key),
 	// duplicates would race and overwrite each other during a concurrent restore.
 	ErrDuplicateFileName = errors.New("snapshotstore: duplicate file name")
+
+	// ErrFileSizeTooLarge means a manifest file entry declares an implausibly
+	// large Size (guards downstream size arithmetic against overflow).
+	ErrFileSizeTooLarge = errors.New("snapshotstore: file size in manifest exceeds the maximum")
 
 	// ErrNegativeFileSize means a manifest file entry declares a negative Size.
 	// A negative size is nonsensical and defeats the LimitReader bomb guard on
@@ -156,6 +165,11 @@ func validateManifestFiles(files []FileEntry) error {
 		}
 		if fe.Size < 0 {
 			return fmt.Errorf("%w: %q declares size %d", ErrNegativeFileSize, fe.Name, fe.Size)
+		}
+		if fe.Size > maxFileSize {
+			// Cap absurd sizes so downstream size arithmetic (e.g. LimitReader
+			// with Size+1) cannot overflow on a tampered manifest.
+			return fmt.Errorf("%w: %q declares size %d (> %d)", ErrFileSizeTooLarge, fe.Name, fe.Size, maxFileSize)
 		}
 		if _, dup := seen[fe.Name]; dup {
 			return fmt.Errorf("%w: %q", ErrDuplicateFileName, fe.Name)

@@ -20,6 +20,7 @@ type Manager interface {
 	Pause(vm *types.VM) error
 	Resume(vm *types.VM) error
 	CreateSnapshot(vm *types.VM, snapshotPath, memPath string) error
+	LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error
 	GetConsoleLogs(vm *types.VM, tailLines int) ([]byte, error)
 	CleanupNetwork(vm *types.VM) error
 }

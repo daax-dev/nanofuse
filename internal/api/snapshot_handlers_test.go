@@ -345,6 +345,322 @@ func TestHandleVMResumeCallsFirecrackerAndUpdatesState(t *testing.T) {
 	}
 }
 
+// snapshotDirFor returns the managed snapshot directory for a VM/snapshot pair,
+// mirroring the layout the create handler uses ({DataDir}/snapshots/{vm}/{id}).
+func snapshotDirFor(s *Server, vmID, id string) string {
+	return filepath.Join(s.config.Storage.DataDir, "snapshots", vmID, id)
+}
+
+// writeSnapshotRecord creates a snapshot DB record with real backing files under
+// the server's managed snapshots root.
+func writeSnapshotRecord(t *testing.T, s *Server, id, vmID string) *types.Snapshot {
+	t.Helper()
+	dir := snapshotDirFor(s, vmID, id)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir snapshot dir: %v", err)
+	}
+	snapPath := filepath.Join(dir, "vm.snap")
+	memPath := filepath.Join(dir, "mem.snap")
+	if err := os.WriteFile(snapPath, []byte("state"), 0o600); err != nil {
+		t.Fatalf("write snap file: %v", err)
+	}
+	if err := os.WriteFile(memPath, []byte("memory"), 0o600); err != nil {
+		t.Fatalf("write mem file: %v", err)
+	}
+	snap := &types.Snapshot{
+		ID:               id,
+		VMID:             vmID,
+		Name:             id,
+		SnapshotFilePath: snapPath,
+		MemoryFilePath:   memPath,
+		CreatedAt:        time.Now(),
+	}
+	if err := s.db.CreateSnapshot(snap); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+	return snap
+}
+
+func newSnapshotResumeServer(t *testing.T, db *storage.DB, stub *runtimeImageProviderStub) *Server {
+	t.Helper()
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+	return &Server{
+		db:             db,
+		logger:         logger,
+		runtimeManager: stub,
+		startTime:      time.Now(),
+		config:         &config.Config{Storage: config.StorageConfig{DataDir: t.TempDir()}},
+	}
+}
+
+func resumeFromSnapshotRequest(t *testing.T, vmID, snapshotID string) *http.Request {
+	t.Helper()
+	body, err := json.Marshal(types.ResumeVMRequest{SnapshotID: &snapshotID})
+	if err != nil {
+		t.Fatalf("marshal resume request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vmID+"/resume", strings.NewReader(string(body)))
+	req.SetPathValue("id", vmID)
+	return req
+}
+
+func TestHandleVMResumeFromSnapshotLoadsAndUpdatesState(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+	snap := writeSnapshotRecord(t, server, "snapshot-load-1", vm.ID)
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 1 {
+		t.Fatalf("LoadSnapshot calls = %d, want 1", stub.loadSnapshotCalls)
+	}
+	if stub.loadSnapshotSnapPath != snap.SnapshotFilePath {
+		t.Fatalf("snapshot path = %q, want %q", stub.loadSnapshotSnapPath, snap.SnapshotFilePath)
+	}
+	if stub.loadSnapshotMemPath != snap.MemoryFilePath {
+		t.Fatalf("mem path = %q, want %q", stub.loadSnapshotMemPath, snap.MemoryFilePath)
+	}
+
+	updated, err := db.GetVM(vm.ID)
+	if err != nil {
+		t.Fatalf("GetVM: %v", err)
+	}
+	if updated.State != types.StateRunning {
+		t.Fatalf("VM state = %s, want %s", updated.State, types.StateRunning)
+	}
+}
+
+func TestHandleVMResumeFromSnapshotRejectsRunningVM(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateRunning, "")
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+	snap := writeSnapshotRecord(t, server, "snapshot-load-2", vm.ID)
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 0 {
+		t.Fatalf("LoadSnapshot must not be called for a running VM")
+	}
+	var response types.APIError
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Code != types.ErrInvalidStateTransition {
+		t.Fatalf("error code = %s, want %s", response.Error.Code, types.ErrInvalidStateTransition)
+	}
+}
+
+func TestHandleVMResumeFromSnapshotNotFound(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, "does-not-exist"))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 0 {
+		t.Fatalf("LoadSnapshot must not be called when snapshot is missing")
+	}
+	updated, _ := db.GetVM(vm.ID)
+	if updated.State != types.StateStopped {
+		t.Fatalf("VM state = %s, want unchanged %s", updated.State, types.StateStopped)
+	}
+}
+
+func TestHandleVMResumeFromSnapshotWrongOwner(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	// The snapshot belongs to a different, existing VM.
+	otherVM := &types.VM{
+		ID:           "vm-other-owner",
+		Name:         "other-owner",
+		State:        types.StateStopped,
+		Image:        "docker.io/library/alpine:latest",
+		ImageDigest:  "sha256:test",
+		Architecture: "x86_64",
+		Config:       types.VMConfig{VCPUs: 1, MemoryMiB: 128},
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := db.CreateVM(otherVM); err != nil {
+		t.Fatalf("CreateVM(other): %v", err)
+	}
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+	snap := writeSnapshotRecord(t, server, "snapshot-load-3", otherVM.ID)
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 0 {
+		t.Fatalf("LoadSnapshot must not be called for a mismatched owner")
+	}
+	var response types.APIError
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Code != types.ErrInvalidRequest {
+		t.Fatalf("error code = %s, want %s", response.Error.Code, types.ErrInvalidRequest)
+	}
+}
+
+func TestHandleVMResumeFromSnapshotMissingFiles(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+	// Record points at non-existent files WITHIN the managed snapshots root so
+	// the missing-file check (not the path-traversal guard) is exercised.
+	dir := snapshotDirFor(server, vm.ID, "snapshot-load-4")
+	snap := &types.Snapshot{
+		ID:               "snapshot-load-4",
+		VMID:             vm.ID,
+		SnapshotFilePath: filepath.Join(dir, "missing-vm.snap"),
+		MemoryFilePath:   filepath.Join(dir, "missing-mem.snap"),
+		CreatedAt:        time.Now(),
+	}
+	if err := db.CreateSnapshot(snap); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 0 {
+		t.Fatalf("LoadSnapshot must not be called when backing files are missing")
+	}
+}
+
+func TestHandleVMResumeFromSnapshotRejectsPathOutsideRoot(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+
+	// Craft real files OUTSIDE the managed snapshots root; the guard must refuse
+	// them even though they exist.
+	outside := t.TempDir()
+	snapPath := filepath.Join(outside, "vm.snap")
+	memPath := filepath.Join(outside, "mem.snap")
+	if err := os.WriteFile(snapPath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.WriteFile(memPath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	snap := &types.Snapshot{
+		ID:               "snapshot-outside",
+		VMID:             vm.ID,
+		SnapshotFilePath: snapPath,
+		MemoryFilePath:   memPath,
+		CreatedAt:        time.Now(),
+	}
+	if err := db.CreateSnapshot(snap); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 0 {
+		t.Fatalf("LoadSnapshot must not be called for an out-of-root snapshot path")
+	}
+}
+
+func TestHandleVMResumeFromSnapshotUnsupportedRuntime(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	stub := &runtimeImageProviderStub{
+		loadSnapshotErr: fmt.Errorf("%w: snapshot resume is not supported", vmm.ErrUnsupportedOperation),
+	}
+	server := newSnapshotResumeServer(t, db, stub)
+	snap := writeSnapshotRecord(t, server, "snapshot-load-5", vm.ID)
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotImplemented, w.Body.String())
+	}
+	var response types.APIError
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if response.Error.Code != types.ErrUnsupportedOperation {
+		t.Fatalf("error code = %s, want %s", response.Error.Code, types.ErrUnsupportedOperation)
+	}
+	if response.Error.Details["operation"] != "VM snapshot resume" {
+		t.Fatalf("operation detail = %v, want VM snapshot resume", response.Error.Details["operation"])
+	}
+	// State must be restored to the pre-resume value on failure.
+	updated, _ := db.GetVM(vm.ID)
+	if updated.State != types.StateStopped {
+		t.Fatalf("VM state = %s, want restored %s", updated.State, types.StateStopped)
+	}
+}
+
 func TestHandleVMResumeMapsUnsupportedRuntimeTo501(t *testing.T) {
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
 	if err != nil {

@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/daax-dev/nanofuse/internal/types"
 )
@@ -199,5 +201,121 @@ func TestResumeSendsFirecrackerVMStateRequest(t *testing.T) {
 	}
 	if got.State != "Resumed" {
 		t.Fatalf("state = %q, want Resumed", got.State)
+	}
+}
+
+func TestSendSnapshotLoadSendsFirecrackerRequest(t *testing.T) {
+	socketPath, calls := startUnixSnapshotAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	snapshotPath := "/data/snapshots/vm-1/snap/vm.snap"
+	memPath := "/data/snapshots/vm-1/snap/mem.snap"
+
+	if err := sendSnapshotLoad(socketPath, snapshotPath, memPath); err != nil {
+		t.Fatalf("sendSnapshotLoad: %v", err)
+	}
+
+	call := <-calls
+	if call.method != http.MethodPut {
+		t.Fatalf("method = %s, want %s", call.method, http.MethodPut)
+	}
+	if call.path != "/snapshot/load" {
+		t.Fatalf("path = %s, want /snapshot/load", call.path)
+	}
+
+	var got snapshotLoadRequest
+	if err := json.Unmarshal(call.body, &got); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if got.SnapshotPath != snapshotPath {
+		t.Fatalf("snapshot_path = %q, want %q", got.SnapshotPath, snapshotPath)
+	}
+	if got.MemBackend.BackendType != "File" {
+		t.Fatalf("mem_backend.backend_type = %q, want File", got.MemBackend.BackendType)
+	}
+	if got.MemBackend.BackendPath != memPath {
+		t.Fatalf("mem_backend.backend_path = %q, want %q", got.MemBackend.BackendPath, memPath)
+	}
+	if !got.ResumeVM {
+		t.Fatalf("resume_vm = false, want true")
+	}
+
+	// The deprecated mem_file_path field must not be present alongside mem_backend.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(call.body, &raw); err != nil {
+		t.Fatalf("decode raw request: %v", err)
+	}
+	if _, ok := raw["mem_file_path"]; ok {
+		t.Fatalf("request must not include deprecated mem_file_path when mem_backend is set")
+	}
+}
+
+func TestSendSnapshotLoadAPIError(t *testing.T) {
+	socketPath, _ := startUnixSnapshotAPIServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "load failed", http.StatusBadRequest)
+	}))
+
+	if err := sendSnapshotLoad(socketPath, "/x/vm.snap", "/x/mem.snap"); err == nil {
+		t.Fatal("expected error from Firecracker API")
+	}
+}
+
+func TestLoadSnapshotValidatesInputs(t *testing.T) {
+	manager := NewManager("/usr/bin/firecracker", t.TempDir())
+	vm := &types.VM{ID: "test-vm", State: types.StateStopped}
+
+	if err := manager.LoadSnapshot(nil, "/x/vm.snap", "/x/mem.snap"); err == nil {
+		t.Fatal("expected error for nil VM")
+	}
+	if err := manager.LoadSnapshot(vm, "", "/x/mem.snap"); err == nil {
+		t.Fatal("expected error for empty snapshot path")
+	}
+	if err := manager.LoadSnapshot(vm, "/x/vm.snap", ""); err == nil {
+		t.Fatal("expected error for empty memory path")
+	}
+}
+
+func TestLoadSnapshotMissingBackingFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	manager := NewManager("/usr/bin/firecracker", tmpDir)
+	vm := &types.VM{ID: "test-vm", State: types.StateStopped}
+
+	// Neither file exists; the load must fail before any process is spawned.
+	err := manager.LoadSnapshot(vm, filepath.Join(tmpDir, "vm.snap"), filepath.Join(tmpDir, "mem.snap"))
+	if err == nil {
+		t.Fatal("expected error for missing snapshot files")
+	}
+	if !strings.Contains(err.Error(), "not accessible") {
+		t.Fatalf("error = %v, want mention of inaccessible file", err)
+	}
+	if vm.Runtime != nil {
+		t.Fatalf("VM runtime must remain unset when load fails early")
+	}
+}
+
+func TestWaitForSocketReady(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("/tmp", "nf-fc-wait-*")
+	if err != nil {
+		t.Fatalf("temp dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+
+	socketPath := filepath.Join(tmpDir, "ready.sock")
+
+	// Missing socket: must time out quickly.
+	if err := waitForSocketReady(socketPath, 150*time.Millisecond); err == nil {
+		t.Fatal("expected timeout for missing socket")
+	}
+
+	// Listening socket: must return promptly with no error.
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	if err := waitForSocketReady(socketPath, 2*time.Second); err != nil {
+		t.Fatalf("waitForSocketReady on live socket: %v", err)
 	}
 }

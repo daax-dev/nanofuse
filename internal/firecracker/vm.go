@@ -132,6 +132,23 @@ type snapshotCreateRequest struct {
 	MemFilePath  string `json:"mem_file_path"`
 }
 
+// memoryBackend mirrors Firecracker's MemoryBackend schema. backend_type is one
+// of "File" | "Uffd"; "File" lets the kernel handle guest-memory page faults
+// from backend_path.
+type memoryBackend struct {
+	BackendType string `json:"backend_type"`
+	BackendPath string `json:"backend_path"`
+}
+
+// snapshotLoadRequest mirrors Firecracker's SnapshotLoadParams (v1.15).
+// mem_backend is preferred over the deprecated mem_file_path. resume_vm:true
+// resumes the vCPUs after a successful load, avoiding a second PATCH /vm.
+type snapshotLoadRequest struct {
+	SnapshotPath string        `json:"snapshot_path"`
+	MemBackend   memoryBackend `json:"mem_backend"`
+	ResumeVM     bool          `json:"resume_vm"`
+}
+
 type vmStateRequest struct {
 	State string `json:"state"`
 }
@@ -206,11 +223,16 @@ func (m *Manager) startFirecrackerProcess(socketPath, configPath, consolePath st
 	}
 	defer consoleFile.Close()
 
+	// A snapshot load starts Firecracker with no boot config; the snapshot
+	// supplies the machine state, so --config-file is omitted when configPath
+	// is empty.
+	args := []string{"--api-sock", socketPath}
+	if configPath != "" {
+		args = append(args, "--config-file", configPath)
+	}
+
 	// #nosec G204 - binaryPath is from trusted config file, not user input
-	cmd := exec.Command(m.binaryPath,
-		"--api-sock", socketPath,
-		"--config-file", configPath,
-	)
+	cmd := exec.Command(m.binaryPath, args...)
 
 	cmd.Stdout = consoleFile
 	cmd.Stderr = consoleFile
@@ -583,6 +605,115 @@ func (m *Manager) CreateSnapshot(vm *types.VM, snapshotPath, memPath string) err
 		return fmt.Errorf("failed to create Firecracker snapshot for VM %s: %w", vm.ID, err)
 	}
 	return nil
+}
+
+// LoadSnapshot boots a fresh Firecracker process from a previously created
+// snapshot and resumes it. Unlike Resume (which unpauses an already-running
+// process), a snapshot load requires a brand-new Firecracker process with no
+// boot source: the snapshot supplies the full machine state. Any host tap
+// devices referenced by the snapshot must already exist and be reachable by the
+// new process (re-established by the caller before invoking this method).
+func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error {
+	if vm == nil {
+		return fmt.Errorf("VM is required")
+	}
+	if snapshotPath == "" {
+		return fmt.Errorf("snapshot path is required")
+	}
+	if memPath == "" {
+		return fmt.Errorf("snapshot memory path is required")
+	}
+	if _, err := os.Stat(snapshotPath); err != nil {
+		return fmt.Errorf("snapshot state file not accessible at %s: %w", snapshotPath, err)
+	}
+	if _, err := os.Stat(memPath); err != nil {
+		return fmt.Errorf("snapshot memory file not accessible at %s: %w", memPath, err)
+	}
+
+	vmDir := filepath.Join(m.dataDir, "vms", vm.ID)
+	// 0750 keeps the API socket (which controls the microVM) reachable only by
+	// the daemon's user/group, not world-accessible.
+	if err := os.MkdirAll(vmDir, 0750); err != nil {
+		return fmt.Errorf("failed to create VM directory: %w", err)
+	}
+	socketPath := filepath.Join(vmDir, "firecracker.sock")
+	consolePath := filepath.Join(vmDir, "console.log")
+
+	// Remove any stale API socket so the fresh Firecracker process can bind.
+	if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove stale API socket %s: %w", socketPath, err)
+	}
+
+	// Start Firecracker with no boot config; the snapshot supplies machine state.
+	cmd, err := m.startFirecrackerProcess(socketPath, "", consolePath)
+	if err != nil {
+		return err
+	}
+
+	// The API socket is not ready the instant the process starts; wait for it
+	// before issuing the load request.
+	if err := waitForSocketReady(socketPath, 10*time.Second); err != nil {
+		killAndReap(cmd)
+		return fmt.Errorf("firecracker API socket not ready for VM %s: %w", vm.ID, err)
+	}
+
+	if err := sendSnapshotLoad(socketPath, snapshotPath, memPath); err != nil {
+		killAndReap(cmd)
+		return fmt.Errorf("failed to load snapshot for VM %s: %w", vm.ID, err)
+	}
+
+	// Record runtime info and reap the process on exit (prevents zombies).
+	setupVMRuntime(vm, cmd, socketPath, consolePath)
+	go m.waitForProcessExit(vm.ID, cmd)
+
+	return nil
+}
+
+// sendSnapshotLoad issues the Firecracker PUT /snapshot/load request against an
+// already-listening API socket. Split out from LoadSnapshot so the request
+// schema can be unit-tested without spawning a Firecracker process.
+func sendSnapshotLoad(socketPath, snapshotPath, memPath string) error {
+	req := snapshotLoadRequest{
+		SnapshotPath: snapshotPath,
+		MemBackend: memoryBackend{
+			BackendType: "File",
+			BackendPath: memPath,
+		},
+		ResumeVM: true,
+	}
+	if err := firecrackerPUT(socketPath, "/snapshot/load", req); err != nil {
+		return fmt.Errorf("firecracker /snapshot/load failed: %w", err)
+	}
+	return nil
+}
+
+// waitForSocketReady blocks until the Firecracker API unix socket accepts
+// connections or the timeout elapses.
+func waitForSocketReady(socketPath string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		conn, err := net.DialTimeout("unix", socketPath, 200*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out after %s waiting for API socket %s: %w", timeout, socketPath, lastErr)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// killAndReap terminates a Firecracker process and reaps it synchronously to
+// avoid leaving a zombie when a load fails before the reaper goroutine starts.
+func killAndReap(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
 }
 
 // GetConsoleLogs reads console logs

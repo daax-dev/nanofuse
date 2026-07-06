@@ -114,3 +114,11 @@ func TestSanitizeBlock(t *testing.T) {
 		t.Errorf("newlines must be preserved for YAML: %q", got)
 	}
 }
+
+func TestCliUseColorHonorsNanofuseNoColor(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("NANOFUSE_NO_COLOR", "1")
+	if cliUseColor() {
+		t.Error("cliUseColor() must be false when NANOFUSE_NO_COLOR is set")
+	}
+}

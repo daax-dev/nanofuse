@@ -159,7 +159,7 @@ Examples:
 }
 
 func printDivergences(divs []gondolin.Divergence) {
-	useColor := !noColor && isTerminal()
+	useColor := cliUseColor()
 	red := color.New(color.FgRed)
 	yellow := color.New(color.FgYellow)
 	cyan := color.New(color.FgCyan)

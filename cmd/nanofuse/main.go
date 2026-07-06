@@ -186,7 +186,10 @@ func envTruthy(value string) bool {
 }
 
 func cliUseColor() bool {
-	if os.Getenv("NO_COLOR") != "" {
+	// Honor both the standard NO_COLOR and NANOFUSE_NO_COLOR here (not only in
+	// applyClientEnvironment) so local-only commands that skip client setup —
+	// e.g. `nanofuse convert` — still respect a user's color preference.
+	if os.Getenv("NO_COLOR") != "" || envTruthy(os.Getenv("NANOFUSE_NO_COLOR")) {
 		return false
 	}
 	return !noColor && isTerminal()

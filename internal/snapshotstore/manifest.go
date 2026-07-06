@@ -72,6 +72,14 @@ var (
 	// large Size (guards downstream size arithmetic against overflow).
 	ErrFileSizeTooLarge = errors.New("snapshotstore: file size in manifest exceeds the maximum")
 
+	// ErrEmptyManifest means a manifest lists zero files (a restore would then
+	// succeed while restoring nothing).
+	ErrEmptyManifest = errors.New("snapshotstore: manifest lists no files")
+
+	// ErrUnsupportedCompression means a manifest declares a compression codec
+	// this build does not support.
+	ErrUnsupportedCompression = errors.New("snapshotstore: unsupported compression codec")
+
 	// ErrNegativeFileSize means a manifest file entry declares a negative Size.
 	// A negative size is nonsensical and defeats the LimitReader bomb guard on
 	// restore, so it is rejected before any download begins.
@@ -158,6 +166,11 @@ func validateName(name string) error {
 // also checked for the safe-base-name property here (getFile re-checks it as
 // defense in depth).
 func validateManifestFiles(files []FileEntry) error {
+	if len(files) == 0 {
+		// A zero-file manifest would make Get "succeed" restoring nothing, which a
+		// caller cannot distinguish from a real restore.
+		return ErrEmptyManifest
+	}
 	seen := make(map[string]struct{}, len(files))
 	for _, fe := range files {
 		if err := validateName(fe.Name); err != nil {

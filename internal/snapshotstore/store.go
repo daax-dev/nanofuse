@@ -221,9 +221,15 @@ func (s *TieredStore) Manifest(ctx context.Context, id string) (*Manifest, error
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("snapshotstore: parse manifest for %q: %w", id, err)
 	}
-	if m.SchemaVersion > ManifestSchemaVersion {
-		return nil, fmt.Errorf("%w: manifest %q is v%d, this build supports up to v%d",
+	if m.SchemaVersion < 1 || m.SchemaVersion > ManifestSchemaVersion {
+		return nil, fmt.Errorf("%w: manifest %q is v%d, this build supports v1..v%d",
 			ErrUnsupportedManifestVersion, id, m.SchemaVersion, ManifestSchemaVersion)
+	}
+	// Reject an unexpected/tampered compression codec so the manifest stays
+	// self-describing and the restore path only decodes what it declares.
+	if m.Compression != CompressionZstd {
+		return nil, fmt.Errorf("%w: manifest %q declares compression %q",
+			ErrUnsupportedCompression, id, m.Compression)
 	}
 	// The manifest self-identifies which snapshot it describes; reject it if that
 	// does not match the id it was fetched under. A mismatch means the object was

@@ -236,3 +236,45 @@ func TestPromoteRestoredRefusesToClobber(t *testing.T) {
 		t.Errorf("pre-existing file was modified: %q", got)
 	}
 }
+
+func TestGetRejectsInvalidSchemaVersion(t *testing.T) {
+	store, root := newStore(t)
+	id := "snap-v0"
+	writeManifest(t, root, id, Manifest{
+		SchemaVersion: 0, // no v0 parser exists
+		SnapshotID:    id,
+		Compression:   CompressionZstd,
+		Files:         []FileEntry{{Name: "vm.snap", Key: id + "/vm.snap.zst", Size: 1, Digest: "00"}},
+	})
+	if _, err := store.Get(context.Background(), id, t.TempDir()); !errors.Is(err, ErrUnsupportedManifestVersion) {
+		t.Fatalf("Get schema v0 = %v, want ErrUnsupportedManifestVersion", err)
+	}
+}
+
+func TestGetRejectsUnknownCompression(t *testing.T) {
+	store, root := newStore(t)
+	id := "snap-codec"
+	writeManifest(t, root, id, Manifest{
+		SchemaVersion: ManifestSchemaVersion,
+		SnapshotID:    id,
+		Compression:   "lz4-evil",
+		Files:         []FileEntry{{Name: "vm.snap", Key: id + "/vm.snap.zst", Size: 1, Digest: "00"}},
+	})
+	if _, err := store.Get(context.Background(), id, t.TempDir()); !errors.Is(err, ErrUnsupportedCompression) {
+		t.Fatalf("Get unknown codec = %v, want ErrUnsupportedCompression", err)
+	}
+}
+
+func TestGetRejectsEmptyFileList(t *testing.T) {
+	store, root := newStore(t)
+	id := "snap-empty"
+	writeManifest(t, root, id, Manifest{
+		SchemaVersion: ManifestSchemaVersion,
+		SnapshotID:    id,
+		Compression:   CompressionZstd,
+		Files:         nil,
+	})
+	if _, err := store.Get(context.Background(), id, t.TempDir()); !errors.Is(err, ErrEmptyManifest) {
+		t.Fatalf("Get empty-file manifest = %v, want ErrEmptyManifest", err)
+	}
+}

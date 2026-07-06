@@ -134,6 +134,13 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 // atomically at entry, so any subsequent call is rejected with an error even if
 // the first call failed. Callers must construct a new Manager to retry.
 func (m *Manager) Start(ctx context.Context) error {
+	// Reject a nil context before consuming the single-call guard. issueAndPersist
+	// dereferences ctx (ctx.Err()), so a nil ctx would panic; rejecting it here —
+	// ahead of the CompareAndSwap — means invalid input does not burn the one-shot
+	// guard, so a caller can still retry Start with a valid context.
+	if ctx == nil {
+		return fmt.Errorf("svid manager: Start requires a non-nil context")
+	}
 	if !m.started.CompareAndSwap(false, true) {
 		return fmt.Errorf("svid manager: already started")
 	}
@@ -328,7 +335,12 @@ func (m *Manager) currentExpired() bool {
 // not report a credential as gone while an expired private-key document is still
 // on disk for consumers to read.
 func (m *Manager) invalidate() error {
-	if err := os.Remove(m.path); err != nil && !os.IsNotExist(err) {
+	// Anchor the removal the same way the write path anchors the write: on unix
+	// the parent directory is opened O_NOFOLLOW and the credential is removed via
+	// unlinkat relative to that fd, so a parent swapped to a symlink/mount between
+	// write and removal cannot redirect the unlink. See removeCredential in
+	// credwrite_{unix,other}.go.
+	if err := removeCredential(filepath.Dir(m.path), filepath.Base(m.path)); err != nil {
 		return fmt.Errorf("remove expired SVID document %q: %w", m.path, err)
 	}
 	m.mu.Lock()

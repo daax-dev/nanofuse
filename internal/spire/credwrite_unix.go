@@ -3,6 +3,7 @@
 package spire
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -69,6 +70,37 @@ func writeCredentialAtomic(dir, name string, data []byte) error {
 	if err := unix.Renameat(dirFD, tmp, dirFD, name); err != nil {
 		cleanup()
 		return fmt.Errorf("rename SVID file into place: %w", err)
+	}
+	return nil
+}
+
+// removeCredential deletes dir/name using the same directory-fd-anchored,
+// no-follow posture as writeCredentialAtomic. The directory is opened
+// O_NOFOLLOW (a directory swapped to a symlink is rejected with ELOOP, not
+// followed) and the entry is removed via unlinkat relative to that fd, so a
+// parent redirected between write and removal cannot cause the wrong path to be
+// unlinked. A missing directory or entry is treated as success — the goal state
+// (no credential on disk) is already met. This closes the same TOCTOU window the
+// write path closes; no residual path-swap limitation on unix.
+func removeCredential(dir, name string) error {
+	dirFD, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		if errors.Is(err, unix.ENOENT) {
+			return nil // directory (and therefore the credential) is already gone
+		}
+		return fmt.Errorf("open SVID directory %q (no-follow): %w", dir, err)
+	}
+	defer func() { _ = unix.Close(dirFD) }()
+
+	var st unix.Stat_t
+	if err := unix.Fstat(dirFD, &st); err != nil {
+		return fmt.Errorf("fstat SVID directory %q: %w", dir, err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return fmt.Errorf("SVID directory path %q is not a directory", dir)
+	}
+	if err := unix.Unlinkat(dirFD, name, 0); err != nil && !errors.Is(err, unix.ENOENT) {
+		return fmt.Errorf("unlink SVID document %q: %w", name, err)
 	}
 	return nil
 }

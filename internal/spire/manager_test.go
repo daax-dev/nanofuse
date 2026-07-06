@@ -303,6 +303,97 @@ func TestManager_IssueAndPersist_NoWriteOnCanceledContext(t *testing.T) {
 	}
 }
 
+func TestManager_Start_NilContext_RejectedWithoutConsumingGuard(t *testing.T) {
+	// A nil context must be rejected before the single-call guard is consumed:
+	// issueAndPersist dereferences ctx, so a nil ctx would panic, and invalid
+	// input must not burn the one-shot guard. A subsequent Start with a valid
+	// context must still succeed.
+	id := testSPIFFEID("engineering", "jpoley", "vm-nilctx")
+	clk := newFakeClock(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))
+	src, err := NewLocalCASource(id, DefaultSVIDTTL, clk)
+	if err != nil {
+		t.Fatalf("NewLocalCASource: %v", err)
+	}
+	mgr, _ := newTestManager(t, src, clk)
+
+	//nolint:staticcheck // SA1012: passing nil is the behavior under test.
+	if err := mgr.Start(nil); err == nil {
+		t.Fatal("Start(nil) must return an error, not panic")
+	} else if !strings.Contains(err.Error(), "non-nil context") {
+		t.Fatalf("Start(nil) error must name the non-nil context requirement, got %q", err.Error())
+	}
+	if mgr.started.Load() {
+		t.Fatal("single-call guard must not be consumed by a rejected nil context")
+	}
+
+	// A valid retry on the same Manager must still work.
+	if err := mgr.Start(context.Background()); err != nil {
+		t.Fatalf("Start with a valid context after a rejected nil ctx must succeed: %v", err)
+	}
+	defer mgr.Stop()
+	if mgr.Current() == nil {
+		t.Fatal("Current must be set after the valid Start")
+	}
+}
+
+func TestRemoveCredential_RemovesAndIsIdempotent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "spiffe")
+	if err := os.MkdirAll(dir, svidDirMode); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	name := "svid.json"
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte("cred"), svidFileMode); err != nil {
+		t.Fatalf("write cred: %v", err)
+	}
+
+	if err := removeCredential(dir, name); err != nil {
+		t.Fatalf("removeCredential: %v", err)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("credential must be removed")
+	}
+	// The directory itself must survive the removal.
+	if _, statErr := os.Stat(dir); statErr != nil {
+		t.Fatalf("directory must survive credential removal: %v", statErr)
+	}
+	// Removing an already-gone credential is a no-op success (goal state met).
+	if err := removeCredential(dir, name); err != nil {
+		t.Fatalf("removeCredential must be idempotent, got %v", err)
+	}
+	// A missing directory is also success.
+	if err := removeCredential(filepath.Join(dir, "nope"), name); err != nil {
+		t.Fatalf("removeCredential on missing dir must be a no-op, got %v", err)
+	}
+}
+
+func TestManager_Invalidate_RemovesCredentialAndClearsState(t *testing.T) {
+	id := testSPIFFEID("engineering", "jpoley", "vm-invalidate")
+	clk := newFakeClock(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))
+	src, err := NewLocalCASource(id, DefaultSVIDTTL, clk)
+	if err != nil {
+		t.Fatalf("NewLocalCASource: %v", err)
+	}
+	mgr, path := newTestManager(t, src, clk)
+	if err := mgr.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	mgr.Stop()
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("credential must exist before invalidate: %v", statErr)
+	}
+
+	if err := mgr.invalidate(); err != nil {
+		t.Fatalf("invalidate: %v", err)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("invalidate must remove the credential from disk")
+	}
+	if mgr.Current() != nil {
+		t.Fatal("invalidate must clear in-memory state on success")
+	}
+}
+
 func TestNewManager_Validation(t *testing.T) {
 	if _, err := NewManager(ManagerConfig{}); err == nil {
 		t.Fatal("expected error when source is nil")

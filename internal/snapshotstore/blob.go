@@ -159,19 +159,6 @@ func (b *FSBlob) Put(ctx context.Context, key string, r io.Reader) error {
 	return nil
 }
 
-// fsyncDir flushes a directory's metadata so a rename into it is durable.
-func fsyncDir(dir string) error {
-	d, err := os.Open(dir) // #nosec G304 -- dir is derived from a keyPath confined to the blob root.
-	if err != nil {
-		return err
-	}
-	if err := d.Sync(); err != nil {
-		_ = d.Close()
-		return err
-	}
-	return d.Close()
-}
-
 // Get implements Blob.
 func (b *FSBlob) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	if err := ctx.Err(); err != nil {

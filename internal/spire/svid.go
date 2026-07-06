@@ -1,6 +1,7 @@
 package spire
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/x509"
 	"encoding/asn1"
@@ -475,9 +476,19 @@ func decodeCertsPEM(data []byte) ([]*x509.Certificate, error) {
 }
 
 func decodeKeyPEM(data []byte) (crypto.Signer, error) {
-	block, _ := pem.Decode(data)
+	block, rest := pem.Decode(data)
 	if block == nil {
 		return nil, fmt.Errorf("no PEM block found")
+	}
+	// A persisted key is exactly one PKCS#8 block. MarshalDocument writes it via
+	// pem.EncodeToMemory (a single block terminated by one trailing '\n', which
+	// pem.Decode consumes — leaving rest empty). Reject any non-whitespace bytes
+	// after the block: trailing junk or a second concatenated PRIVATE KEY block
+	// makes the credential ambiguous (which key is authoritative?), so it is not
+	// silently accepted. Only trailing whitespace (a stray final newline) is
+	// tolerated.
+	if len(bytes.TrimSpace(rest)) != 0 {
+		return nil, fmt.Errorf("unexpected trailing data after PEM block (%d bytes); a persisted key must contain exactly one block", len(bytes.TrimSpace(rest)))
 	}
 	// The persisted credential encodes the key as a PKCS#8 "PRIVATE KEY" block
 	// (see MarshalDocument). Require that exact type so an unexpected block (e.g.

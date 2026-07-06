@@ -83,3 +83,52 @@ func TestRemoveCredential_RejectsSymlinkedParent(t *testing.T) {
 		t.Fatal("credential must be removed via the real directory")
 	}
 }
+
+// TestRemoveCredential_RejectsInsecureDirPerms verifies removeCredential applies
+// the same directory permission validation as writeCredentialAtomic: if the
+// parent directory became group/other-accessible between write and removal, the
+// removal is refused (rather than proceeding on an insecure directory) and the
+// credential is left in place — matching the write path's posture.
+func TestRemoveCredential_RejectsInsecureDirPerms(t *testing.T) {
+	dir := t.TempDir()
+	name := "svid.json"
+	credPath := filepath.Join(dir, name)
+	if err := os.WriteFile(credPath, []byte("cred"), svidFileMode); err != nil {
+		t.Fatalf("write cred: %v", err)
+	}
+
+	// The write path requires the directory be group/other-inaccessible; a write
+	// into a secure dir succeeds.
+	if err := os.Chmod(dir, svidDirMode); err != nil {
+		t.Fatalf("chmod secure dir: %v", err)
+	}
+	if err := writeCredentialAtomic(dir, "probe.json", []byte("x")); err != nil {
+		t.Fatalf("writeCredentialAtomic into secure dir: %v", err)
+	}
+
+	// Simulate the directory being loosened to group/other-accessible after the
+	// credential was written.
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatalf("chmod insecure dir: %v", err)
+	}
+
+	// Removal must now be rejected with the same insecure-permissions check the
+	// write path enforces, and the credential must remain on disk.
+	if err := removeCredential(dir, name); err == nil {
+		t.Fatal("removeCredential must reject a group/other-accessible directory")
+	}
+	if _, statErr := os.Stat(credPath); statErr != nil {
+		t.Fatalf("credential must not be removed from an insecure directory: %v", statErr)
+	}
+
+	// Restoring secure permissions allows removal to proceed.
+	if err := os.Chmod(dir, svidDirMode); err != nil {
+		t.Fatalf("restore secure dir: %v", err)
+	}
+	if err := removeCredential(dir, name); err != nil {
+		t.Fatalf("removeCredential on a secure directory: %v", err)
+	}
+	if _, statErr := os.Stat(credPath); !os.IsNotExist(statErr) {
+		t.Fatal("credential must be removed once the directory is secure again")
+	}
+}

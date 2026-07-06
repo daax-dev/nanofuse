@@ -10,6 +10,31 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// validateSVIDDirFD enforces the directory-security invariants shared by the
+// credential write and remove paths against a directory already opened
+// O_NOFOLLOW. Anchoring the checks on the fd (rather than re-stat'ing the path)
+// keeps them TOCTOU-free: the entry cannot be swapped between validation and
+// use. The directory must be a real directory, be inaccessible to group and
+// other, and be owned by the current user or root. Both writeCredentialAtomic
+// and removeCredential call this so a parent that became group/other-accessible
+// or changed owner between write and removal is rejected identically.
+func validateSVIDDirFD(dirFD int, dir string) error {
+	var st unix.Stat_t
+	if err := unix.Fstat(dirFD, &st); err != nil {
+		return fmt.Errorf("fstat SVID directory %q: %w", dir, err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return fmt.Errorf("SVID directory path %q is not a directory", dir)
+	}
+	if st.Mode&0o077 != 0 {
+		return fmt.Errorf("SVID directory %q has insecure permissions %#o (must be group/other-inaccessible)", dir, st.Mode&0o777)
+	}
+	if euid := os.Geteuid(); euid >= 0 && st.Uid != uint32(euid) && st.Uid != 0 { //nolint:gosec // euid >= 0 guarded
+		return fmt.Errorf("SVID directory %q is owned by uid %d, not the current user (%d) or root", dir, st.Uid, euid)
+	}
+	return nil
+}
+
 // writeCredentialAtomic writes data to dir/name with mode 0400 using
 // directory-fd-anchored operations. The directory is opened O_NOFOLLOW (so a
 // symlinked directory is rejected, not followed), its mode/owner are checked via
@@ -23,18 +48,8 @@ func writeCredentialAtomic(dir, name string, data []byte) error {
 	}
 	defer func() { _ = unix.Close(dirFD) }()
 
-	var st unix.Stat_t
-	if err := unix.Fstat(dirFD, &st); err != nil {
-		return fmt.Errorf("fstat SVID directory %q: %w", dir, err)
-	}
-	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
-		return fmt.Errorf("SVID directory path %q is not a directory", dir)
-	}
-	if st.Mode&0o077 != 0 {
-		return fmt.Errorf("SVID directory %q has insecure permissions %#o (must be group/other-inaccessible)", dir, st.Mode&0o777)
-	}
-	if euid := os.Geteuid(); euid >= 0 && st.Uid != uint32(euid) && st.Uid != 0 { //nolint:gosec // euid >= 0 guarded
-		return fmt.Errorf("SVID directory %q is owned by uid %d, not the current user (%d) or root", dir, st.Uid, euid)
+	if err := validateSVIDDirFD(dirFD, dir); err != nil {
+		return err
 	}
 
 	tmp := "." + name + ".tmp"
@@ -86,7 +101,11 @@ func writeCredentialAtomic(dir, name string, data []byte) error {
 // removeCredential deletes dir/name using the same directory-fd-anchored,
 // no-follow posture as writeCredentialAtomic. The directory is opened
 // O_NOFOLLOW (a directory swapped to a symlink is rejected with ELOOP, not
-// followed) and the entry is removed via unlinkat relative to that fd, so a
+// followed) and, via the shared validateSVIDDirFD helper, is subjected to the
+// identical fd-anchored type, permission (group/other-inaccessible), and owner
+// checks the write path enforces — so a parent that became group/other-writable
+// or changed owner between write and removal is rejected here too, not silently
+// removed. The entry is then removed via unlinkat relative to that fd, so a
 // parent redirected between write and removal cannot cause the wrong path to be
 // unlinked. A missing directory or entry is treated as success — the goal state
 // (no credential on disk) is already met. This closes the same TOCTOU window the
@@ -101,12 +120,8 @@ func removeCredential(dir, name string) error {
 	}
 	defer func() { _ = unix.Close(dirFD) }()
 
-	var st unix.Stat_t
-	if err := unix.Fstat(dirFD, &st); err != nil {
-		return fmt.Errorf("fstat SVID directory %q: %w", dir, err)
-	}
-	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
-		return fmt.Errorf("SVID directory path %q is not a directory", dir)
+	if err := validateSVIDDirFD(dirFD, dir); err != nil {
+		return err
 	}
 	if err := unix.Unlinkat(dirFD, name, 0); err != nil && !errors.Is(err, unix.ENOENT) {
 		return fmt.Errorf("unlink SVID document %q: %w", name, err)

@@ -39,6 +39,55 @@ func TestDecodeKeyPEM_BlockType(t *testing.T) {
 	}
 }
 
+// TestDecodeKeyPEM_TrailingData verifies decodeKeyPEM accepts the exact
+// single-block output MarshalDocument persists (one PKCS#8 block ended by a
+// single trailing newline) but rejects any non-whitespace bytes after the
+// block: trailing junk or a second concatenated PRIVATE KEY block makes the
+// credential ambiguous and must not be silently accepted.
+func TestDecodeKeyPEM_TrailingData(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatalf("MarshalPKCS8PrivateKey: %v", err)
+	}
+	// block is exactly what MarshalDocument writes for X509SVIDKey: a single
+	// pem.EncodeToMemory PRIVATE KEY block terminated by one trailing '\n'.
+	block := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+
+	// The exact persisted single-block form is accepted.
+	if _, err := decodeKeyPEM(block); err != nil {
+		t.Fatalf("decodeKeyPEM(single block) = %v, want nil", err)
+	}
+
+	// Confirm this really is the byte-for-byte form ParseDocument feeds in: mint
+	// an SVID, marshal it, and decode the X509SVIDKey field.
+	id := testSPIFFEID("engineering", "jpoley", "vm-key")
+	clk := newFakeClock(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))
+	minted := mintTestSVID(t, id, clk)
+	doc, err := minted.Document()
+	if err != nil {
+		t.Fatalf("Document: %v", err)
+	}
+	if _, err := decodeKeyPEM([]byte(doc.X509SVIDKey)); err != nil {
+		t.Fatalf("decodeKeyPEM(MarshalDocument key field) = %v, want nil", err)
+	}
+
+	// Rejections: arbitrary trailing junk, and a second concatenated block.
+	rejects := map[string][]byte{
+		"trailing junk":        append(append([]byte{}, block...), []byte("garbage after block")...),
+		"second private key":   append(append([]byte{}, block...), block...),
+		"trailing certificate": append(append([]byte{}, block...), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...),
+	}
+	for name, data := range rejects {
+		if _, err := decodeKeyPEM(data); err == nil {
+			t.Errorf("decodeKeyPEM(%s) = nil error, want rejection of trailing data", name)
+		}
+	}
+}
+
 func mintTestSVID(t *testing.T, id string, clk Clock) *SVID {
 	t.Helper()
 	src, err := NewLocalCASource(id, DefaultSVIDTTL, clk)

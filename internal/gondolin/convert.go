@@ -81,6 +81,14 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 	if image == "" {
 		return nil, nil, fmt.Errorf("image is required (gondolin --image)")
 	}
+	// Reject embedded control/whitespace: such a value is not a valid image
+	// reference and would carry a control char into the rendered spec (which
+	// preserves newlines), enabling output injection.
+	for _, r := range image {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return nil, nil, fmt.Errorf("image %q contains invalid whitespace or control characters", image)
+		}
+	}
 
 	// --- dns mode: validate before use so a typo/unknown value fails closed
 	// rather than silently enabling DNS (especially under --allow-lossy) ---

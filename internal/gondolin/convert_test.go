@@ -457,3 +457,12 @@ func TestIsLiteralHostRejectsControlChars(t *testing.T) {
 		t.Error("a normal hostname should be literal")
 	}
 }
+
+func TestConvert_RejectsControlCharsInImage(t *testing.T) {
+	for _, img := range []string{"alpine\nlatest", "al pine", "a\tb", "a\x1bb"} {
+		sb := &Sandbox{Image: img, Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)}}
+		if _, _, err := Convert(sb, Options{}); err == nil {
+			t.Errorf("Convert with image %q should error on control/whitespace", img)
+		}
+	}
+}

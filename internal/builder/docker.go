@@ -130,17 +130,19 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 		if opts.FallbackKernelPath == "" {
 			return nil, fmt.Errorf("failed to extract kernel (no fallback configured): %w", err)
 		}
-		if fbErr := validateFallbackKernel(opts.FallbackKernelPath); fbErr != nil {
-			// Keep fbErr as the wrapped error (the actionable cause) but preserve
-			// the original in-image search context to aid diagnosis.
-			return nil, fmt.Errorf("kernel not found in image (%v) and configured fallback kernel %q is unusable: %w", err, opts.FallbackKernelPath, fbErr)
-		}
-		// Return an absolute path: ExtractResult.KernelPath is contracted to be
-		// absolute (it is persisted and later handed to Firecracker), so a
-		// relative fallback must be resolved regardless of the caller.
+		// Resolve to an absolute path first, then validate that exact path — so
+		// the file we validate is the same one persisted and later handed to
+		// Firecracker (ExtractResult.KernelPath is contracted to be absolute), and
+		// a working-directory change cannot make us validate a different file than
+		// we use.
 		absFallback, absErr := filepath.Abs(opts.FallbackKernelPath)
 		if absErr != nil {
 			return nil, fmt.Errorf("resolve fallback kernel %q to an absolute path: %w", opts.FallbackKernelPath, absErr)
+		}
+		if fbErr := validateFallbackKernel(absFallback); fbErr != nil {
+			// Keep fbErr as the wrapped error (the actionable cause) but preserve
+			// the original in-image search context to aid diagnosis.
+			return nil, fmt.Errorf("kernel not found in image (%v) and configured fallback kernel %q is unusable: %w", err, absFallback, fbErr)
 		}
 		kernelPath = absFallback
 		kernelVersion = extractVersionFromPath(absFallback)

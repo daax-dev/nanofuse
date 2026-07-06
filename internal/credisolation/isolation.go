@@ -328,8 +328,9 @@ func VerifyDistinctIdentities(ids []VMIdentity) (VerifyResult, error) {
 // group or world bits. When requireRoot is true it additionally asserts the
 // directory is owned by root:root. That ownership assertion is independent of
 // who runs the check — any caller can confirm root:root ownership on platforms
-// that expose POSIX stat ownership; it is a no-op only on platforms that do not
-// (see statOwner). requireRoot is named for the production invariant it
+// that expose POSIX stat ownership; on platforms that do not (see statOwner) a
+// requireRoot check fails closed, since the assertion cannot be verified.
+// requireRoot is named for the production invariant it
 // enforces (the daemon runs as root, so the store must be root-owned), not for a
 // requirement that the caller be root.
 func VerifyDirPerms(p string, requireRoot bool) (VerifyResult, error) {
@@ -402,8 +403,9 @@ type HostCheckOptions struct {
 	SecretsDir string
 
 	// CheckDir enables the on-disk permission check. When false (e.g. the host
-	// has no guest store to inspect), the permission check is skipped and
-	// reported, not failed.
+	// has no guest store to inspect), the check is skipped: VerifyHost adds no
+	// store-perms result (the caller surfaces the skip) and never treats the
+	// absent check as a failure.
 	CheckDir bool
 
 	// RequireRoot enforces root:root ownership of the store (set when running as

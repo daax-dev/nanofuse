@@ -138,15 +138,15 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		}
 	}
 
-	// Normalize allow_host: drop empty/whitespace-only entries so a list that is
-	// effectively empty is not treated as "present" (which would emit a spurious
-	// default-deny policy and blank entries in the report).
-	sb.AllowHost = trimmedNonEmpty(sb.AllowHost)
+	// Normalize allow_host into a local (do NOT mutate the caller's Sandbox):
+	// drop empty/whitespace-only entries so a list that is effectively empty is
+	// not treated as "present" (which would emit a spurious default-deny policy).
+	allowHosts := trimmedNonEmpty(sb.AllowHost)
 
 	// --- egress: allow_host (L7) -> default-deny + warn (safe degrade) ---
 	network := client.NetworkConfig{Mode: "nat"}
-	if len(sb.AllowHost) > 0 || strings.TrimSpace(sb.DNS) != "" {
-		egressDivs, policy := buildEgressPolicy(sb, opts)
+	if len(allowHosts) > 0 || strings.TrimSpace(sb.DNS) != "" {
+		egressDivs, policy := buildEgressPolicy(sb, allowHosts, opts)
 		divs = append(divs, egressDivs...)
 		network.EgressPolicy = policy
 	}
@@ -235,7 +235,9 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 // default-deny policy plus a warning (safe degrade). With ResolveEgress and a
 // Resolver, literal hostnames (no wildcards/paths) become /32 allow rules, and
 // wildcard/path rules are still dropped and reported.
-func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressPolicy) {
+// hosts is the pre-normalized allow_host list (empty/whitespace entries already
+// stripped by the caller); sb is read-only here and never mutated.
+func buildEgressPolicy(sb *Sandbox, hosts []string, opts Options) ([]Divergence, *client.EgressPolicy) {
 	var divs []Divergence
 
 	policy := &client.EgressPolicy{
@@ -255,17 +257,13 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 		})
 	}
 
-	if len(sb.AllowHost) == 0 {
+	if len(hosts) == 0 {
 		return divs, policy
 	}
 
-	dropped := make([]string, 0, len(sb.AllowHost))
+	dropped := make([]string, 0, len(hosts))
 	seenCIDR := make(map[string]struct{}) // dedupe rules across resolved IPs
-	for _, host := range sb.AllowHost {
-		host = strings.TrimSpace(host)
-		if host == "" {
-			continue
-		}
+	for _, host := range hosts {
 		if resolveHostToRules(host, opts, policy, seenCIDR) {
 			continue
 		}
@@ -279,7 +277,7 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 				Feature:  "--allow-host",
 				Severity: SeverityWarn,
 				Detail: fmt.Sprintf("L7 HTTP allowlist resolved to point-in-time /32 CIDR rules where possible; "+
-					"%d entr(y/ies) not resolvable to a literal host (wildcards/paths/errors) dropped under default-deny: %s. "+
+					"%d entr(y/ies) dropped under default-deny (wildcards/paths, or literal hosts that failed DNS resolution): %s. "+
 					"Resolved rules are a snapshot and do not track DNS changes.",
 					len(dropped), strings.Join(dropped, ", ")),
 			})
@@ -299,7 +297,7 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 			Severity: SeverityWarn,
 			Detail: fmt.Sprintf("--resolve-egress was requested but no resolver is configured; "+
 				"gondolin L7 HTTP allowlist (%s) left under default-deny (no outbound allowed).",
-				strings.Join(sb.AllowHost, ", ")),
+				strings.Join(hosts, ", ")),
 		})
 	default:
 		divs = append(divs, Divergence{
@@ -308,7 +306,7 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 			Detail: fmt.Sprintf("gondolin L7 HTTP allowlist (%s) cannot be expressed as nanofuse L3/L4 CIDR rules; "+
 				"egress locked to default-deny (safe degrade, no outbound allowed). "+
 				"Use --resolve-egress to opt in to point-in-time hostname->CIDR resolution.",
-				strings.Join(sb.AllowHost, ", ")),
+				strings.Join(hosts, ", ")),
 		})
 	}
 

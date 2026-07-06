@@ -142,7 +142,7 @@ func TestSanitizersDropUnicodeWhitespace(t *testing.T) {
 
 func TestSanitizersDropFormatChars(t *testing.T) {
 	// U+202E RIGHT-TO-LEFT OVERRIDE (category Cf) must be removed by both.
-	in := "a‮b"
+	in := "a\u202eb"
 	if got := sanitizeInline(in); got != "ab" {
 		t.Errorf("sanitizeInline(%q) = %q, want ab", in, got)
 	}

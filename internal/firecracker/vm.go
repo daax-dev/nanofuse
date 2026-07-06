@@ -600,6 +600,21 @@ func (m *Manager) startVsockProxyIfConfigured(vmID, vsockPath string) {
 	if m.spireConfig == nil || !m.spireConfig.Enabled || m.spireConfig.VsockCID < 3 {
 		return
 	}
+	// Stop any stale proxy for this vmID before replacing its map entry. If the
+	// Firecracker process died without Stop being called, the old proxy is still
+	// running but orphaned from the map; overwriting the entry without stopping it
+	// would leak the goroutine/socket. Stop outside the lock, matching Stop.
+	m.vsockMu.Lock()
+	stale, hadStale := m.vsockProxies[vmID]
+	if hadStale {
+		delete(m.vsockProxies, vmID)
+	}
+	m.vsockMu.Unlock()
+	if hadStale {
+		stale.Stop()
+		log.Printf("INFO: Stopped stale vsock proxy for VM %s before restart", vmID)
+	}
+
 	proxy, err := NewVsockProxy(vsockPath, m.spireConfig.AgentSocket, m.spireConfig.VsockPort)
 	if err != nil {
 		log.Printf("WARN: Failed to create vsock proxy for VM %s: %v", vmID, err)

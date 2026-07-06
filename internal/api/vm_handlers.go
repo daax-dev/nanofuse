@@ -1317,7 +1317,10 @@ func (s *Server) handleVMResumeByPath(w http.ResponseWriter, r *http.Request) {
 	// an absent snapshot_id keeps the in-place unpause behavior below.
 	var resumeReq types.ResumeVMRequest
 	if r.ContentLength != 0 {
-		if err := readJSON(r, &resumeReq); err != nil {
+		// The body is optional. An empty body decodes to io.EOF (e.g. a chunked
+		// request with no payload, where ContentLength is unknown/-1); treat that
+		// as "no body" rather than a bad request so the normal unpause path works.
+		if err := readJSON(r, &resumeReq); err != nil && !errors.Is(err, io.EOF) {
 			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest, "Invalid request body", nil)
 			return
 		}

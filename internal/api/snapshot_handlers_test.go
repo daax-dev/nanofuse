@@ -407,6 +407,42 @@ func resumeFromSnapshotRequest(t *testing.T, vmID, snapshotID string) *http.Requ
 	return req
 }
 
+func TestHandleVMResumeEmptyChunkedBodyTakesUnpausePath(t *testing.T) {
+	// A chunked request with no payload has ContentLength -1, so the body is
+	// read and decodes to io.EOF. That must be treated as "no body" (in-place
+	// unpause), not a 400 bad request.
+	socketPath, calls := startUnixVMAPIServer(t)
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StatePaused, socketPath)
+	server := newSnapshotHandlerTestServer(t, db)
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vm.ID+"/resume", io.NopCloser(strings.NewReader("")))
+	req.ContentLength = -1 // unknown length, as with chunked transfer-encoding
+	req.SetPathValue("id", vm.ID)
+	w := httptest.NewRecorder()
+
+	server.handleVMResumeByPath(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	call := <-calls
+	if call.method != http.MethodPatch || call.path != "/vm" {
+		t.Fatalf("expected PATCH /vm unpause, got %s %s", call.method, call.path)
+	}
+	updated, err := db.GetVM(vm.ID)
+	if err != nil {
+		t.Fatalf("GetVM: %v", err)
+	}
+	if updated.State != types.StateRunning {
+		t.Fatalf("VM state = %s, want %s", updated.State, types.StateRunning)
+	}
+}
+
 func TestHandleVMResumeFromSnapshotLoadsAndUpdatesState(t *testing.T) {
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
 	if err != nil {

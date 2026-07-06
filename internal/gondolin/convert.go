@@ -2,6 +2,7 @@ package gondolin
 
 import (
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 
@@ -24,7 +25,7 @@ const (
 	SeverityInfo Severity = "info"
 	// SeverityWarn: a safe degrade that always proceeds. The nanofuse result is
 	// at least as restrictive as gondolin (e.g. an unrepresentable allow-list
-	// becomes a locked-down default-drop egress policy).
+	// becomes a locked-down default-deny egress policy).
 	SeverityWarn Severity = "warn"
 	// SeverityBlocking: a gondolin feature with no faithful nanofuse equivalent
 	// whose omission could change behaviour in an unsafe or surprising way.
@@ -110,7 +111,7 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		return nil, divs, fmt.Errorf("invalid resources: vcpus=%d memory_mib=%d must be > 0", vcpus, memory)
 	}
 
-	// --- egress: allow_host (L7) -> default-drop + warn (safe degrade) ---
+	// --- egress: allow_host (L7) -> default-deny + warn (safe degrade) ---
 	network := client.NetworkConfig{Mode: "nat"}
 	if len(sb.AllowHost) > 0 || strings.TrimSpace(sb.DNS) != "" {
 		egressDivs, policy := buildEgressPolicy(sb, opts)
@@ -167,11 +168,13 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 	sortDivergences(divs)
 
 	if opts.AllowLossy {
-		// Downgrade blocking -> warn and proceed, dropping the feature loudly.
+		// Downgrade blocking -> warn and proceed. The feature is not faithfully
+		// translated; some are dropped, some kept only best-effort — so use a
+		// neutral marker rather than claiming every one was "dropped".
 		for i := range divs {
 			if divs[i].Severity == SeverityBlocking {
 				divs[i].Severity = SeverityWarn
-				divs[i].Detail = "DROPPED (--allow-lossy): " + divs[i].Detail
+				divs[i].Detail = "LOSSY (--allow-lossy): " + divs[i].Detail
 			}
 		}
 		return req, divs, nil
@@ -190,7 +193,7 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 // buildEgressPolicy maps gondolin's L7 allow_host list and dns mode onto a
 // nanofuse L3/L4 EgressPolicy. Because an HTTP host allowlist cannot be
 // faithfully expressed as CIDR rules, the default is a locked-down
-// default-drop policy plus a warning (safe degrade). With ResolveEgress and a
+// default-deny policy plus a warning (safe degrade). With ResolveEgress and a
 // Resolver, literal hostnames (no wildcards/paths) become /32 allow rules, and
 // wildcard/path rules are still dropped and reported.
 func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressPolicy) {
@@ -198,7 +201,7 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 
 	policy := &client.EgressPolicy{
 		Enabled:       true,
-		DefaultAction: "drop",
+		DefaultAction: "deny", // nanofuse egress vocabulary is "deny"/"allow"
 	}
 
 	if mode := strings.TrimSpace(sb.DNS); mode != "" {
@@ -228,7 +231,7 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 			if err == nil && len(ips) > 0 {
 				for _, ip := range ips {
 					policy.AllowRules = append(policy.AllowRules, client.EgressRule{
-						CIDR:        ip + "/32",
+						CIDR:        hostCIDR(ip),
 						Protocol:    "tcp",
 						Port:        443,
 						Description: "resolved from gondolin allow-host " + host + " (point-in-time; HTTPS/443 only)",
@@ -247,7 +250,7 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 				Feature:  "--allow-host",
 				Severity: SeverityWarn,
 				Detail: fmt.Sprintf("L7 HTTP allowlist resolved to point-in-time /32 CIDR rules where possible; "+
-					"%d entr(y/ies) not resolvable to a literal host (wildcards/paths/errors) dropped under default-drop: %s. "+
+					"%d entr(y/ies) not resolvable to a literal host (wildcards/paths/errors) dropped under default-deny: %s. "+
 					"Resolved rules are a snapshot and do not track DNS changes.",
 					len(dropped), strings.Join(dropped, ", ")),
 			})
@@ -264,7 +267,7 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 			Feature:  "--allow-host",
 			Severity: SeverityWarn,
 			Detail: fmt.Sprintf("gondolin L7 HTTP allowlist (%s) cannot be expressed as nanofuse L3/L4 CIDR rules; "+
-				"egress locked to default-drop (safe degrade, no outbound allowed). "+
+				"egress locked to default-deny (safe degrade, no outbound allowed). "+
 				"Use --resolve-egress to opt in to point-in-time hostname->CIDR resolution.",
 				strings.Join(sb.AllowHost, ", ")),
 		})
@@ -275,6 +278,16 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 
 // isLiteralHost reports whether host is a plain hostname (no wildcard, no path,
 // no scheme) that can be resolved to an IP.
+// hostCIDR returns a single-host CIDR for a resolved IP: /32 for IPv4, /128 for
+// IPv6. Falls back to /32 only if the string is not a parseable IP (defensive;
+// resolver output is expected to be valid).
+func hostCIDR(ip string) string {
+	if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() == nil {
+		return ip + "/128"
+	}
+	return ip + "/32"
+}
+
 func isLiteralHost(host string) bool {
 	if host == "" {
 		return false

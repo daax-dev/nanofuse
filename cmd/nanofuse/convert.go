@@ -45,7 +45,7 @@ than silently dropping it. Pass --allow-lossy to drop those features (loudly)
 and proceed.
 
 An L7 HTTP allowlist (allow-host) is always degraded safely to a locked-down
-default-drop egress policy with a warning; pass --resolve-egress to opt in to
+default-deny egress policy with a warning; pass --resolve-egress to opt in to
 point-in-time hostname->CIDR resolution for literal hostnames.
 
 Examples:

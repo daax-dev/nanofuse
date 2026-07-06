@@ -6,5 +6,5 @@ config:
         mode: nat
         egress_policy:
             enabled: true
-            default_action: drop
+            default_action: deny
             allow_dns: true

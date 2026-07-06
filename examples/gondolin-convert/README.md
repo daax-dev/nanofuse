@@ -37,7 +37,7 @@ nanofuse convert gondolin sandbox.yaml --allow-lossy -o nanofuse-spec.yaml
 |----------------------|--------------------------------------------------------------------------|
 | `--image`            | Clean: `image`.                                                          |
 | `resources` (hint)   | `vcpus` / `memory_mib`. Gondolin has no CPU/memory model; if absent, nanofuse defaults are assumed and disclosed. |
-| `--allow-host` (L7)  | Safe degrade: locked-down default-drop egress + warning. An HTTP host allowlist cannot be an L3/L4 CIDR policy. Opt in to `--resolve-egress` for point-in-time hostname->/32 resolution of literal hosts. |
+| `--allow-host` (L7)  | Safe degrade: locked-down default-deny egress + warning. An HTTP host allowlist cannot be an L3/L4 CIDR policy. Opt in to `--resolve-egress` for point-in-time hostname->/32 resolution of literal hosts. |
 | `--vmm`              | No equivalent: gondolin runs qemu/krun; nanofuse runs only firecracker.  |
 | `--cwd`              | No equivalent: no guest working-directory field.                         |
 | `--env`              | No equivalent: no guest environment injection.                           |

@@ -99,8 +99,8 @@ func TestConvert_AllowHostDropAndWarn(t *testing.T) {
 	if ep == nil {
 		t.Fatalf("expected egress policy")
 	}
-	if !ep.Enabled || ep.DefaultAction != "drop" {
-		t.Fatalf("expected default-drop egress, got %+v", ep)
+	if !ep.Enabled || ep.DefaultAction != "deny" {
+		t.Fatalf("expected default-deny egress, got %+v", ep)
 	}
 	if len(ep.AllowRules) != 0 {
 		t.Fatalf("expected no allow rules (safe degrade), got %+v", ep.AllowRules)
@@ -109,7 +109,7 @@ func TestConvert_AllowHostDropAndWarn(t *testing.T) {
 	if d == nil || d.Severity != SeverityWarn {
 		t.Fatalf("expected --allow-host warn divergence, got %+v", divs)
 	}
-	if !strings.Contains(d.Detail, "default-drop") {
+	if !strings.Contains(d.Detail, "default-deny") {
 		t.Fatalf("allow-host detail = %q", d.Detail)
 	}
 }
@@ -197,7 +197,7 @@ func TestConvert_UnrepresentableFeatures(t *testing.T) {
 			if d == nil || d.Severity != SeverityWarn {
 				t.Fatalf("expected downgraded warn for %s, got %+v", tc.feature, divs)
 			}
-			if !strings.Contains(d.Detail, "DROPPED (--allow-lossy)") {
+			if !strings.Contains(d.Detail, "LOSSY (--allow-lossy)") {
 				t.Fatalf("expected loud drop marker, got %q", d.Detail)
 			}
 		})
@@ -282,7 +282,7 @@ config:
         mode: nat
         egress_policy:
             enabled: true
-            default_action: drop
+            default_action: deny
             allow_dns: true
 `
 	if string(out) != want {

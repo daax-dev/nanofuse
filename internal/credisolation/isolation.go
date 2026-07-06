@@ -256,8 +256,12 @@ func guardOne(m MountSpec) error {
 // store resolves to.
 func pathOverlapsSecrets(p string) bool {
 	secrets := GuestSecretsDir
+	alt := "/run/secrets/daax" //nolint:gosec // G101: a filesystem path, not a credential
 	// p is the store, p is an ancestor of the store, or p is a descendant.
-	return isAncestorOrSame(p, secrets) || isAncestorOrSame(secrets, p)
+	return isAncestorOrSame(p, secrets) ||
+		isAncestorOrSame(secrets, p) ||
+		isAncestorOrSame(p, alt) ||
+		isAncestorOrSame(alt, p)
 }
 
 // isAncestorOrSame reports whether ancestor equals or contains descendant,

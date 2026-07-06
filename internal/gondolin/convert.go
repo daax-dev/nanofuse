@@ -46,8 +46,10 @@ type Divergence struct {
 
 // Options controls conversion policy.
 type Options struct {
-	// AllowLossy downgrades blocking divergences to warnings and proceeds,
-	// dropping the unrepresentable feature loudly instead of failing closed.
+	// AllowLossy downgrades blocking divergences to warnings and proceeds instead
+	// of failing closed. The unrepresentable features are not faithfully
+	// translated — most are dropped, and a few are mapped best-effort (e.g. --dns
+	// sets the coarse AllowDNS toggle) — each reported loudly with a LOSSY marker.
 	AllowLossy bool
 	// ResolveEgress opts in to resolving literal allow_host hostnames (no
 	// wildcards, no paths) to /32 egress rules. Off by default: an L7 HTTP

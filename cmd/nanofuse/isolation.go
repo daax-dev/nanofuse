@@ -20,19 +20,24 @@ var (
 var isolationCmd = &cobra.Command{
 	Use:   "isolation",
 	Short: "Inspect and verify per-microVM credential isolation",
-	Long: "Verify the invariants that keep each microVM's credentials isolated:\n" +
-		"the credential store is root-only (0700), no host/shared mount targets it,\n" +
-		"and each VM has a distinct SPIFFE identity.",
+	Long: "Verify the host-side invariants that keep each microVM's credentials\n" +
+		"isolated: the credential store is root-only (0700, and root:root with\n" +
+		"--require-root), and a policy self-check proves the mount guard denies\n" +
+		"host/shared mounts over the store and admits a private tmpfs.",
 }
 
 var isolationVerifyCmd = &cobra.Command{
 	Use:   "verify",
 	Short: "Verify credential isolation and report status",
 	Long: "Run the host-side credential-isolation checks and print a status line.\n\n" +
-		"On success the final line is exactly:\n\n  credential isolation: PASS\n\n" +
+		"The final line is one of (process exit code in parentheses):\n" +
+		"  credential isolation: PASS          all checks passed (exit 0)\n" +
+		"  credential isolation: NOT VERIFIED  nothing was checked, e.g. the store\n" +
+		"                                      is absent without --strict (exit 0)\n" +
+		"  credential isolation: FAIL          a check failed (non-zero exit)\n\n" +
 		"Run with --secrets-dir pointing at " + credisolation.GuestSecretsDir +
 		" inside a guest (and --require-root as root) to verify the live store's\n" +
-		"ownership and permissions.",
+		"ownership and permissions. Use --strict to fail when the store is absent.",
 	// A failed verification is a runtime result, not a usage mistake; do not
 	// dump the command usage on error.
 	SilenceUsage: true,

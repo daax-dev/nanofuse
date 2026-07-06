@@ -63,8 +63,10 @@ type Sandbox struct {
 // so any values here are a nanofuse-side authoring convenience and any defaults
 // applied on their absence are disclosed as an assumption in the report.
 type Resources struct {
-	VCPUs     int `yaml:"vcpus"`
-	MemoryMiB int `yaml:"memory_mib"`
+	// Pointers so an explicitly written value (including 0 or negative, which is
+	// invalid) is distinguishable from an unset field (nil).
+	VCPUs     *int `yaml:"vcpus"`
+	MemoryMiB *int `yaml:"memory_mib"`
 }
 
 // Parse decodes a gondolin mirror YAML document. Unknown keys are rejected

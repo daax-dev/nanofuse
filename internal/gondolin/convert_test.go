@@ -18,7 +18,7 @@ func findDiv(divs []Divergence, feature string) *Divergence {
 func TestConvert_CleanFields(t *testing.T) {
 	sb := &Sandbox{
 		Image:     "ghcr.io/acme/agent:latest",
-		Resources: &Resources{VCPUs: 4, MemoryMiB: 2048},
+		Resources: &Resources{VCPUs: iptr(4), MemoryMiB: iptr(2048)},
 	}
 	req, divs, err := Convert(sb, Options{})
 	if err != nil {
@@ -70,7 +70,7 @@ func TestConvert_DefaultedResourcesDisclosed(t *testing.T) {
 
 func TestConvert_PartialResourcesDisclosed(t *testing.T) {
 	// vcpus set, memory unset -> memory defaulted + disclosed.
-	req, divs, err := Convert(&Sandbox{Image: "img", Resources: &Resources{VCPUs: 8}}, Options{})
+	req, divs, err := Convert(&Sandbox{Image: "img", Resources: &Resources{VCPUs: iptr(8)}}, Options{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestConvert_PartialResourcesDisclosed(t *testing.T) {
 func TestConvert_AllowHostDropAndWarn(t *testing.T) {
 	sb := &Sandbox{
 		Image:     "img",
-		Resources: &Resources{VCPUs: 2, MemoryMiB: 512},
+		Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)},
 		AllowHost: []string{"api.github.com", "*.example.com"},
 	}
 	req, divs, err := Convert(sb, Options{})
@@ -125,7 +125,7 @@ func TestConvert_ResolveEgressWithResolver(t *testing.T) {
 	}
 	sb := &Sandbox{
 		Image:     "img",
-		Resources: &Resources{VCPUs: 2, MemoryMiB: 512},
+		Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)},
 		AllowHost: []string{"api.github.com", "*.example.com", "https://x/y"},
 	}
 	req, divs, err := Convert(sb, Options{ResolveEgress: true, Resolver: resolver})
@@ -161,7 +161,7 @@ func TestConvert_ResolveEgressCanonicalizesAndSkipsInvalid(t *testing.T) {
 	}
 	sb := &Sandbox{
 		Image:     "img",
-		Resources: &Resources{VCPUs: 2, MemoryMiB: 512},
+		Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)},
 		AllowHost: []string{"v6.example.com", "mapped.example.com", "bad.example.com"},
 	}
 	req, divs, err := Convert(sb, Options{ResolveEgress: true, Resolver: resolver})
@@ -190,7 +190,7 @@ func TestConvert_ResolveEgressCanonicalizesAndSkipsInvalid(t *testing.T) {
 func TestConvert_ResolveEgressWithoutResolver(t *testing.T) {
 	sb := &Sandbox{
 		Image:     "img",
-		Resources: &Resources{VCPUs: 2, MemoryMiB: 512},
+		Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)},
 		AllowHost: []string{"api.github.com"},
 	}
 	_, divs, err := Convert(sb, Options{ResolveEgress: true, Resolver: nil})
@@ -210,7 +210,7 @@ func TestConvert_ResolveEgressWithoutResolver(t *testing.T) {
 // gondolin feature that has no faithful nanofuse equivalent.
 func TestConvert_UnrepresentableFeatures(t *testing.T) {
 	base := func() *Sandbox {
-		return &Sandbox{Image: "img", Resources: &Resources{VCPUs: 2, MemoryMiB: 512}}
+		return &Sandbox{Image: "img", Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)}}
 	}
 	cases := []struct {
 		name    string
@@ -320,7 +320,7 @@ func TestConvert_Deterministic(t *testing.T) {
 func TestRenderSpecYAML_Golden(t *testing.T) {
 	sb := &Sandbox{
 		Image:     "ghcr.io/acme/agent:latest",
-		Resources: &Resources{VCPUs: 4, MemoryMiB: 2048},
+		Resources: &Resources{VCPUs: iptr(4), MemoryMiB: iptr(2048)},
 		AllowHost: []string{"api.github.com"},
 		DNS:       "synthetic",
 	}
@@ -366,5 +366,43 @@ func TestRenderSpecYAML_ResolvedRules(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "cidr: 1.2.3.4/32") {
 		t.Fatalf("expected resolved cidr in output:\n%s", out)
+	}
+}
+
+func iptr(i int) *int { return &i }
+
+func TestConvert_ExplicitNonPositiveResourcesRejected(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		res  *Resources
+	}{
+		{"zero vcpus", &Resources{VCPUs: iptr(0), MemoryMiB: iptr(512)}},
+		{"negative vcpus", &Resources{VCPUs: iptr(-1), MemoryMiB: iptr(512)}},
+		{"zero memory", &Resources{VCPUs: iptr(2), MemoryMiB: iptr(0)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := Convert(&Sandbox{Image: "img", Resources: tc.res}, Options{})
+			if err == nil {
+				t.Fatal("expected an error for an explicit non-positive resource value, got nil")
+			}
+			if !strings.Contains(err.Error(), "must be > 0") {
+				t.Errorf("error = %v, want must-be-positive rejection", err)
+			}
+		})
+	}
+}
+
+func TestConvert_ResolveEgressDedupesDuplicateIPs(t *testing.T) {
+	resolver := func(host string) ([]string, error) {
+		// Same IP twice + a second distinct IP.
+		return []string{"1.2.3.4", "1.2.3.4", "5.6.7.8"}, nil
+	}
+	sb := &Sandbox{Image: "img", Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)}, AllowHost: []string{"h"}}
+	req, _, err := Convert(sb, Options{ResolveEgress: true, Resolver: resolver})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n := len(req.Config.Network.EgressPolicy.AllowRules); n != 2 {
+		t.Fatalf("expected 2 deduped rules, got %d: %+v", n, req.Config.Network.EgressPolicy.AllowRules)
 	}
 }

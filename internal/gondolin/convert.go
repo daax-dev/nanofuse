@@ -88,27 +88,30 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 				DefaultVCPUs, DefaultMemoryMiB),
 		})
 	default:
-		if sb.Resources.VCPUs > 0 {
-			vcpus = sb.Resources.VCPUs
-		} else {
+		switch {
+		case sb.Resources.VCPUs == nil:
 			divs = append(divs, Divergence{
 				Feature:  "resources.vcpus",
 				Severity: SeverityInfo,
 				Detail:   fmt.Sprintf("vcpus unset; nanofuse default assumed: %d", DefaultVCPUs),
 			})
+		case *sb.Resources.VCPUs <= 0:
+			return nil, divs, fmt.Errorf("invalid resources: vcpus=%d must be > 0", *sb.Resources.VCPUs)
+		default:
+			vcpus = *sb.Resources.VCPUs
 		}
-		if sb.Resources.MemoryMiB > 0 {
-			memory = sb.Resources.MemoryMiB
-		} else {
+		switch {
+		case sb.Resources.MemoryMiB == nil:
 			divs = append(divs, Divergence{
 				Feature:  "resources.memory_mib",
 				Severity: SeverityInfo,
 				Detail:   fmt.Sprintf("memory_mib unset; nanofuse default assumed: %d", DefaultMemoryMiB),
 			})
+		case *sb.Resources.MemoryMiB <= 0:
+			return nil, divs, fmt.Errorf("invalid resources: memory_mib=%d must be > 0", *sb.Resources.MemoryMiB)
+		default:
+			memory = *sb.Resources.MemoryMiB
 		}
-	}
-	if vcpus <= 0 || memory <= 0 {
-		return nil, divs, fmt.Errorf("invalid resources: vcpus=%d memory_mib=%d must be > 0", vcpus, memory)
 	}
 
 	// --- egress: allow_host (L7) -> default-deny + warn (safe degrade) ---
@@ -221,6 +224,7 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 	}
 
 	dropped := make([]string, 0, len(sb.AllowHost))
+	seenCIDR := make(map[string]struct{}) // dedupe rules across resolved IPs
 	for _, host := range sb.AllowHost {
 		host = strings.TrimSpace(host)
 		if host == "" {
@@ -235,6 +239,11 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 					if !ok {
 						continue // resolver returned a non-IP string; skip it
 					}
+					if _, dup := seenCIDR[cidr]; dup {
+						added = true // already covered; not a dropped host
+						continue
+					}
+					seenCIDR[cidr] = struct{}{}
 					policy.AllowRules = append(policy.AllowRules, client.EgressRule{
 						CIDR:        cidr,
 						Protocol:    "tcp",

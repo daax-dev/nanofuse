@@ -52,7 +52,8 @@ resources:
 				if len(sb.Env) != 2 || sb.Env["API_KEY"] != "secret" {
 					t.Fatalf("env = %v", sb.Env)
 				}
-				if sb.Resources == nil || sb.Resources.VCPUs != 4 || sb.Resources.MemoryMiB != 2048 {
+				if sb.Resources == nil || sb.Resources.VCPUs == nil || *sb.Resources.VCPUs != 4 ||
+					sb.Resources.MemoryMiB == nil || *sb.Resources.MemoryMiB != 2048 {
 					t.Fatalf("resources = %+v", sb.Resources)
 				}
 				if sb.DNS != "synthetic" || sb.VMM != "krun" {

@@ -1432,12 +1432,18 @@ func (s *Server) resolveResumableSnapshot(w http.ResponseWriter, vm *types.VM, s
 // in-place unpause path, this requires the VM to not already have a live
 // runtime, since a new Firecracker process is created for the load.
 func (s *Server) resumeVMFromSnapshot(w http.ResponseWriter, vm *types.VM, snapshotID string) {
-	// A running/resuming VM already owns a runtime and its tap device; loading a
-	// snapshot into a second process would conflict. Require the VM to be stopped
-	// first.
-	if vm.State == types.StateRunning || vm.State == types.StateResuming || vm.State == types.StateStarting {
+	// Snapshot resume starts a *fresh* Firecracker process and reuses the VM's
+	// API socket path, so it is only safe from states that guarantee no live
+	// runtime. Any other state (running/starting/resuming, stopping mid-teardown,
+	// or paused — which still holds a live paused process) could orphan the old
+	// process and create conflicting runtimes/tap devices, so require an explicit
+	// allowlist rather than denying a few known-bad states.
+	switch vm.State {
+	case types.StateStopped, types.StateCreated, types.StateFailed:
+		// No live runtime — safe to load a snapshot into a new process.
+	default:
 		types.WriteError(w, http.StatusConflict, types.ErrInvalidStateTransition,
-			fmt.Sprintf("Cannot resume VM from snapshot while in state '%s'; stop the VM first", vm.State),
+			fmt.Sprintf("Cannot resume VM from snapshot while in state '%s'; stop the VM first (resume-from-snapshot requires no live runtime)", vm.State),
 			map[string]interface{}{"current_state": vm.State})
 		return
 	}

@@ -474,6 +474,36 @@ func TestHandleVMResumeFromSnapshotRejectsRunningVM(t *testing.T) {
 	}
 }
 
+func TestHandleVMResumeFromSnapshotRejectsLiveRuntimeStates(t *testing.T) {
+	// Snapshot resume must be limited to states with no live runtime. Paused and
+	// Stopping both still hold (or may still hold) a live Firecracker process, so
+	// loading a snapshot into a fresh process would orphan it.
+	for _, state := range []types.VMState{types.StatePaused, types.StateStopping} {
+		t.Run(string(state), func(t *testing.T) {
+			db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+			if err != nil {
+				t.Fatalf("storage.New: %v", err)
+			}
+			defer db.Close()
+
+			vm := createSnapshotHandlerTestVM(t, db, state, "")
+			stub := &runtimeImageProviderStub{}
+			server := newSnapshotResumeServer(t, db, stub)
+			snap := writeSnapshotRecord(t, server, "snapshot-load-"+string(state), vm.ID)
+
+			w := httptest.NewRecorder()
+			server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+			if w.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+			}
+			if stub.loadSnapshotCalls != 0 {
+				t.Fatalf("LoadSnapshot must not be called from state %s", state)
+			}
+		})
+	}
+}
+
 func TestHandleVMResumeFromSnapshotNotFound(t *testing.T) {
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
 	if err != nil {

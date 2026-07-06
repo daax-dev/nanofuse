@@ -307,25 +307,8 @@ func (m *Manager) Start(vm *types.VM, image *types.Image) error {
 	setupVMRuntime(vm, cmd, socketPath, consolePath)
 
 	// Start vsock proxy for SPIRE agent access if configured
-	if fcConfig.Vsock != nil && m.spireConfig != nil {
-		proxy, err := NewVsockProxy(
-			fcConfig.Vsock.UDSPath,
-			m.spireConfig.AgentSocket,
-			m.spireConfig.VsockPort,
-		)
-		if err != nil {
-			log.Printf("WARN: Failed to create vsock proxy for VM %s: %v", vm.ID, err)
-		} else {
-			if err := proxy.Start(); err != nil {
-				log.Printf("WARN: Failed to start vsock proxy for VM %s: %v", vm.ID, err)
-			} else {
-				m.vsockMu.Lock()
-				m.vsockProxies[vm.ID] = proxy
-				m.vsockMu.Unlock()
-				log.Printf("INFO: Started vsock proxy for VM %s (port %d -> %s)",
-					vm.ID, m.spireConfig.VsockPort, m.spireConfig.AgentSocket)
-			}
-		}
+	if fcConfig.Vsock != nil {
+		m.startVsockProxyIfConfigured(vm.ID, fcConfig.Vsock.UDSPath)
 	}
 
 	// Start goroutine to wait on process and reap zombie
@@ -607,6 +590,32 @@ func (m *Manager) CreateSnapshot(vm *types.VM, snapshotPath, memPath string) err
 	return nil
 }
 
+// startVsockProxyIfConfigured starts the host-side SPIRE vsock proxy for a VM
+// and tracks it in m.vsockProxies for later Stop cleanup. It is best-effort: a
+// failure is logged and not fatal (matching Start's behaviour). It is a no-op
+// when SPIRE/vsock is not configured, so the same gate that decides whether the
+// Firecracker vsock device exists also decides whether the proxy runs. Shared by
+// Start and LoadSnapshot so a snapshot-resumed VM gets the same wiring.
+func (m *Manager) startVsockProxyIfConfigured(vmID, vsockPath string) {
+	if m.spireConfig == nil || !m.spireConfig.Enabled || m.spireConfig.VsockCID < 3 {
+		return
+	}
+	proxy, err := NewVsockProxy(vsockPath, m.spireConfig.AgentSocket, m.spireConfig.VsockPort)
+	if err != nil {
+		log.Printf("WARN: Failed to create vsock proxy for VM %s: %v", vmID, err)
+		return
+	}
+	if err := proxy.Start(); err != nil {
+		log.Printf("WARN: Failed to start vsock proxy for VM %s: %v", vmID, err)
+		return
+	}
+	m.vsockMu.Lock()
+	m.vsockProxies[vmID] = proxy
+	m.vsockMu.Unlock()
+	log.Printf("INFO: Started vsock proxy for VM %s (port %d -> %s)",
+		vmID, m.spireConfig.VsockPort, m.spireConfig.AgentSocket)
+}
+
 // LoadSnapshot boots a fresh Firecracker process from a previously created
 // snapshot and resumes it. Unlike Resume (which unpauses an already-running
 // process), a snapshot load requires a brand-new Firecracker process with no
@@ -632,9 +641,14 @@ func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error
 
 	vmDir := filepath.Join(m.dataDir, "vms", vm.ID)
 	// 0750 keeps the API socket (which controls the microVM) reachable only by
-	// the daemon's user/group, not world-accessible.
+	// the daemon's user/group, not world-accessible. MkdirAll does not tighten an
+	// existing directory (an earlier Start created it 0755), so Chmod enforces the
+	// mode for resumed VMs too.
 	if err := os.MkdirAll(vmDir, 0750); err != nil {
 		return fmt.Errorf("failed to create VM directory: %w", err)
+	}
+	if err := os.Chmod(vmDir, 0750); err != nil {
+		return fmt.Errorf("failed to set VM directory permissions: %w", err)
 	}
 	socketPath := filepath.Join(vmDir, "firecracker.sock")
 	consolePath := filepath.Join(vmDir, "console.log")
@@ -664,6 +678,12 @@ func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error
 
 	// Record runtime info and reap the process on exit (prevents zombies).
 	setupVMRuntime(vm, cmd, socketPath, consolePath)
+
+	// Restart the host-side SPIRE vsock proxy the same way Start does, so a
+	// resumed VM keeps access to host services over vsock and the proxy is
+	// tracked in m.vsockProxies for Stop cleanup (otherwise it would leak).
+	m.startVsockProxyIfConfigured(vm.ID, filepath.Join(vmDir, "vsock.sock"))
+
 	go m.waitForProcessExit(vm.ID, cmd)
 
 	return nil

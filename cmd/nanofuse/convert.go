@@ -14,31 +14,34 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// sanitizeInline strips ALL control characters (ANSI ESC, and also newlines and
-// tabs) from a value that will be printed on a single output line. Dropping
-// newlines/tabs prevents both escape-sequence injection and layout/line-spoofing
-// injection from untrusted input (host names, mount paths, file paths, etc.).
+// sanitizeInline removes anything that could inject terminal escapes or spoof
+// layout from a value printed on a single line: all control characters AND all
+// whitespace other than the plain ASCII space. That covers non-control unicode
+// whitespace such as U+2028/U+2029 (line/paragraph separators) and U+00A0 (NBSP)
+// which a control-only filter would miss. Used for host names, paths, etc.
 func sanitizeInline(s string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if r == ' ' {
+			return r
+		}
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
 			return -1
 		}
 		return r
 	}, s)
 }
 
-// sanitizeBlock strips control characters but PRESERVES newlines, for multi-line
-// output whose line structure is meaningful — e.g. the rendered YAML spec
-// (yaml.Marshal indents with spaces and already escapes control chars inside
-// values, so only the structural newlines remain). Tabs are dropped: they are
-// control characters that can be used for terminal layout/line-spoofing and are
-// not needed for YAML formatting. Defense in depth against escape injection.
+// sanitizeBlock is like sanitizeInline but PRESERVES the plain newline, for
+// multi-line output whose line structure is meaningful — e.g. the rendered YAML
+// spec (yaml.Marshal indents with spaces and escapes control chars in values).
+// It still drops tabs and non-newline unicode whitespace (incl. U+2028/U+2029)
+// so only genuine "\n" line breaks remain. Defense in depth against injection.
 func sanitizeBlock(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r == '\n' {
+		if r == '\n' || r == ' ' {
 			return r
 		}
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
 			return -1
 		}
 		return r

@@ -122,3 +122,20 @@ func TestCliUseColorHonorsNanofuseNoColor(t *testing.T) {
 		t.Error("cliUseColor() must be false when NANOFUSE_NO_COLOR is set")
 	}
 }
+
+func TestSanitizersDropUnicodeWhitespace(t *testing.T) {
+	// U+2028 line sep, U+2029 para sep, U+00A0 NBSP must be removed by both.
+	in := "a b c d"
+	if got := sanitizeInline(in); got != "abcd" {
+		t.Errorf("sanitizeInline(%q) = %q, want abcd", in, got)
+	}
+	if got := sanitizeBlock(in); got != "abcd" {
+		t.Errorf("sanitizeBlock(%q) = %q, want abcd", in, got)
+	}
+	if sanitizeInline("a b") != "a b" {
+		t.Error("sanitizeInline should keep plain space")
+	}
+	if sanitizeBlock("a\nb c") != "a\nb c" {
+		t.Error("sanitizeBlock should keep newline and space")
+	}
+}

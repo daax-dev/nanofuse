@@ -27,13 +27,15 @@ func sanitizeInline(s string) string {
 	}, s)
 }
 
-// sanitizeBlock strips control characters but PRESERVES newlines (and tabs),
-// for multi-line output whose line structure is meaningful — e.g. the rendered
-// YAML spec (yaml.Marshal already escapes control chars inside values, so only
-// the structural line breaks remain). Defense in depth against escape injection.
+// sanitizeBlock strips control characters but PRESERVES newlines, for multi-line
+// output whose line structure is meaningful — e.g. the rendered YAML spec
+// (yaml.Marshal indents with spaces and already escapes control chars inside
+// values, so only the structural newlines remain). Tabs are dropped: they are
+// control characters that can be used for terminal layout/line-spoofing and are
+// not needed for YAML formatting. Defense in depth against escape injection.
 func sanitizeBlock(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r == '\t' || r == '\n' {
+		if r == '\n' {
 			return r
 		}
 		if unicode.IsControl(r) {

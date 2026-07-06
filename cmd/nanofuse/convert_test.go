@@ -100,11 +100,15 @@ func TestSanitizeInline(t *testing.T) {
 }
 
 func TestSanitizeBlock(t *testing.T) {
-	// Block sanitizer: newlines/tabs preserved (YAML structure), other controls dropped.
-	in := "image: a\x1b[31mb\nnetwork:\n  mode: nat\n"
+	// Block sanitizer: newlines preserved (YAML structure); ESC and tabs dropped
+	// (tabs enable layout-spoofing and YAML indents with spaces).
+	in := "image: a\x1b[31mb\ttab\nnetwork:\n  mode: nat\n"
 	got := sanitizeBlock(in)
 	if strings.ContainsRune(got, '\x1b') {
 		t.Errorf("ESC should be stripped: %q", got)
+	}
+	if strings.ContainsRune(got, '\t') {
+		t.Errorf("tab should be stripped: %q", got)
 	}
 	if strings.Count(got, "\n") != 3 {
 		t.Errorf("newlines must be preserved for YAML: %q", got)

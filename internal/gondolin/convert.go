@@ -137,13 +137,12 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		network.EgressPolicy = policy
 	}
 
-	// This request is a conversion RESULT for RenderSpecYAML (a human-readable
-	// preview that shows only the fields gondolin maps: image, resources,
-	// network), not a ready-to-POST API payload. Fields with no gondolin
-	// equivalent (KernelArgs, Disks, Mounts, Secrets, …) are left at their zero
-	// value; the daemon owns their defaults. Deliberately not hardcoding a
-	// KernelArgs default here: it would couple this converter to and drift from
-	// the daemon's boot args.
+	// Fields with no gondolin equivalent (KernelArgs, Disks, Mounts, Secrets, …)
+	// are left at their zero value; the daemon owns their defaults. KernelArgs is
+	// omitempty on client.VMConfig, so an unset value is omitted from a request
+	// and the daemon applies its default (rather than this converter hardcoding —
+	// and drifting from — the daemon's boot args). RenderSpecYAML shows only the
+	// conversion-relevant subset.
 	req := &client.CreateVMRequest{
 		Image: image,
 		Config: client.VMConfig{

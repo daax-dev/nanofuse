@@ -148,7 +148,28 @@ func (b *FSBlob) Put(ctx context.Context, key string, r io.Reader) error {
 		return fmt.Errorf("snapshotstore: commit object %q: %w", key, err)
 	}
 	cleanup = false
+	// fsync the parent directory so the rename (the directory entry) is durable
+	// across a crash/power loss. Without this, on filesystems that require a
+	// directory fsync for rename durability the entry can roll back even though
+	// Put returned success, which would break the manifest-last commit ordering
+	// (a data object could be lost while the manifest that references it persists).
+	if err := fsyncDir(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("snapshotstore: sync object dir for %q: %w", key, err)
+	}
 	return nil
+}
+
+// fsyncDir flushes a directory's metadata so a rename into it is durable.
+func fsyncDir(dir string) error {
+	d, err := os.Open(dir) // #nosec G304 -- dir is derived from a keyPath confined to the blob root.
+	if err != nil {
+		return err
+	}
+	if err := d.Sync(); err != nil {
+		_ = d.Close()
+		return err
+	}
+	return d.Close()
 }
 
 // Get implements Blob.

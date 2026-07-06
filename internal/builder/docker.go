@@ -131,7 +131,9 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 			return nil, fmt.Errorf("failed to extract kernel (no fallback configured): %w", err)
 		}
 		if fbErr := validateFallbackKernel(opts.FallbackKernelPath); fbErr != nil {
-			return nil, fmt.Errorf("kernel not found in image and configured fallback kernel %q is unusable: %w", opts.FallbackKernelPath, fbErr)
+			// Keep fbErr as the wrapped error (the actionable cause) but preserve
+			// the original in-image search context to aid diagnosis.
+			return nil, fmt.Errorf("kernel not found in image (%v) and configured fallback kernel %q is unusable: %w", err, opts.FallbackKernelPath, fbErr)
 		}
 		kernelPath = opts.FallbackKernelPath
 		kernelVersion = extractVersionFromPath(opts.FallbackKernelPath)

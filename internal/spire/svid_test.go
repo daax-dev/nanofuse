@@ -2,6 +2,7 @@ package spire
 
 import (
 	"context"
+	"crypto/x509"
 	"strings"
 	"testing"
 	"time"
@@ -72,6 +73,19 @@ func TestSVID_Validate_Failures(t *testing.T) {
 		s.Certificates = nil
 		if err := s.Validate(); err == nil {
 			t.Fatal("expected error for empty chain")
+		}
+	})
+	t.Run("nil leaf entry in non-empty chain", func(t *testing.T) {
+		s := *base
+		// A non-empty chain whose first entry is nil must be reported as a nil
+		// entry, not a misleading "empty chain".
+		s.Certificates = []*x509.Certificate{nil}
+		err := s.Validate()
+		if err == nil {
+			t.Fatal("expected error for nil certificate entry")
+		}
+		if !strings.Contains(err.Error(), "entry 0 is nil") {
+			t.Fatalf("expected nil-entry error, got %v", err)
 		}
 	})
 	t.Run("missing bundle", func(t *testing.T) {

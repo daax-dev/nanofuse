@@ -147,11 +147,14 @@ func (m *Manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Current returns the most recently issued SVID, or nil before the first issue.
+// Current returns a defensive copy of the most recently issued SVID, or nil
+// before the first issue. The copy has independent Certificates and Bundle
+// slices so a caller mutating the returned value (reassigning fields or slice
+// elements) cannot corrupt Manager state or race the rotation loop.
 func (m *Manager) Current() *SVID {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.current
+	return m.current.clone()
 }
 
 // Stop cancels the rotation loop and waits for it to exit. Safe to call once
@@ -337,14 +340,11 @@ func (m *Manager) refreshDelay() time.Duration {
 }
 
 // failureDelay returns how long to wait before the next retry while rotation is
-// failing: retryInterval, but never longer than the time remaining until the
-// current SVID expires, so the loop wakes exactly at expiry to remove a stale
-// credential. Clamped to >= 0.
-// failureDelay returns how long to wait before the next retry while rotation is
 // failing. While the current SVID is still valid, it caps the wait at the time
 // remaining until expiry so the loop wakes exactly at expiry to remove a stale
 // credential. Once the SVID has already expired (untilExpiry <= 0) it uses the
 // full retryInterval to avoid busy-looping on repeated refresh/removal retries.
+// Clamped to >= 0.
 func (m *Manager) failureDelay() time.Duration {
 	d := m.retryInterval
 	if cur := m.Current(); cur != nil {

@@ -56,6 +56,28 @@ type Document struct {
 	ExpiresAt   string `json:"expires_at"`    // RFC3339
 }
 
+// clone returns a defensive copy of the SVID, or nil if s is nil. The
+// Certificates and Bundle slices are duplicated into fresh backing arrays so a
+// holder mutating the returned value or its slices cannot affect the original.
+// The parsed *x509.Certificate entries and the crypto.Signer key are treated as
+// immutable and shared by reference (deep-copying them would require re-parsing
+// and is unnecessary — callers do not mutate certificate internals or the key).
+func (s *SVID) clone() *SVID {
+	if s == nil {
+		return nil
+	}
+	cp := *s
+	if s.Certificates != nil {
+		cp.Certificates = make([]*x509.Certificate, len(s.Certificates))
+		copy(cp.Certificates, s.Certificates)
+	}
+	if s.Bundle != nil {
+		cp.Bundle = make([]*x509.Certificate, len(s.Bundle))
+		copy(cp.Bundle, s.Bundle)
+	}
+	return &cp
+}
+
 // leaf returns the leaf certificate, or nil if the chain is empty.
 func (s *SVID) leaf() *x509.Certificate {
 	if len(s.Certificates) == 0 {
@@ -70,9 +92,15 @@ func (s *SVID) Validate() error {
 	if err := validateSPIFFEID(s.ID); err != nil {
 		return err
 	}
-	leaf := s.leaf()
-	if leaf == nil {
+	if len(s.Certificates) == 0 {
 		return fmt.Errorf("svid: certificate chain is empty")
+	}
+	// Guard against nil certificate entries from a malformed Source before
+	// dereferencing the leaf, so a non-empty chain whose first entry is nil is
+	// reported as a nil entry (not a misleading "empty chain") and the rest of
+	// validation (and Verify) fail closed instead of panicking.
+	if i := firstNilCert(s.Certificates); i >= 0 {
+		return fmt.Errorf("svid: certificate chain entry %d is nil", i)
 	}
 	if len(s.Bundle) == 0 {
 		return fmt.Errorf("svid: trust bundle is empty")
@@ -80,14 +108,10 @@ func (s *SVID) Validate() error {
 	if s.PrivateKey == nil {
 		return fmt.Errorf("svid: private key is missing")
 	}
-	// Guard against nil certificate entries from a malformed Source so the rest
-	// of validation (and Verify) fail closed instead of panicking.
-	if i := firstNilCert(s.Certificates); i >= 0 {
-		return fmt.Errorf("svid: certificate chain entry %d is nil", i)
-	}
 	if i := firstNilCert(s.Bundle); i >= 0 {
 		return fmt.Errorf("svid: trust bundle entry %d is nil", i)
 	}
+	leaf := s.leaf()
 	if err := s.validateWindow(leaf); err != nil {
 		return err
 	}

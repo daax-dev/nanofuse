@@ -49,6 +49,53 @@ func TestManager_Start_FailSafeOnUnreachableSPIRE(t *testing.T) {
 	}
 }
 
+func TestManager_Current_ReturnsDefensiveCopy(t *testing.T) {
+	id := testSPIFFEID("engineering", "jpoley", "vm-copy")
+	clk := newFakeClock(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))
+	src, err := NewLocalCASource(id, DefaultSVIDTTL, clk)
+	if err != nil {
+		t.Fatalf("NewLocalCASource: %v", err)
+	}
+	mgr, _ := newTestManager(t, src, clk)
+	if err := mgr.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer mgr.Stop()
+
+	got := mgr.Current()
+	if got == nil {
+		t.Fatal("Current must be set after Start")
+	}
+	// Two calls must not alias the same struct: a caller mutating one copy must
+	// not affect Manager state or another caller.
+	if other := mgr.Current(); got == other {
+		t.Fatal("Current() must return a fresh copy, not the shared internal pointer")
+	}
+	origID := got.ID
+	origLen := len(got.Certificates)
+	origLeaf := got.Certificates[0]
+
+	// Mutate the returned value and its slices.
+	got.ID = "spiffe://attacker.example/evil"
+	got.ExpiresAt = got.ExpiresAt.Add(-100 * time.Hour)
+	got.Certificates[0] = nil
+	got.Bundle[0] = nil
+
+	after := mgr.Current()
+	if after.ID != origID {
+		t.Fatalf("mutating returned SVID corrupted Manager ID: got %q, want %q", after.ID, origID)
+	}
+	if len(after.Certificates) != origLen || after.Certificates[0] != origLeaf {
+		t.Fatal("mutating returned Certificates slice corrupted Manager state")
+	}
+	if after.Bundle[0] == nil {
+		t.Fatal("mutating returned Bundle slice corrupted Manager state")
+	}
+	if err := after.Verify(clk.Now()); err != nil {
+		t.Fatalf("Manager SVID must remain valid after caller mutation: %v", err)
+	}
+}
+
 func TestManager_Start_WritesMode0400(t *testing.T) {
 	id := testSPIFFEID("engineering", "jpoley", "vm-mount")
 	clk := newFakeClock(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))

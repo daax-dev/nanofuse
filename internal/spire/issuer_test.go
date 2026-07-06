@@ -107,6 +107,67 @@ func TestLocalCASource_RotationProducesFreshCert(t *testing.T) {
 	}
 }
 
+func TestLocalCASource_LongTTLLeafDoesNotOutliveCA(t *testing.T) {
+	// A caller requesting ttl > 24h must still receive a currently-valid SVID:
+	// the CA validity has to cover the leaf's NotAfter, otherwise Validate/Verify
+	// reject the leaf for outliving its issuing CA.
+	id := testSPIFFEID("engineering", "jpoley", "vm-longttl")
+	clk := newFakeClock(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))
+	const ttl = 72 * time.Hour
+	src, err := NewLocalCASource(id, ttl, clk)
+	if err != nil {
+		t.Fatalf("NewLocalCASource: %v", err)
+	}
+	svid, err := src.FetchSVID(context.Background())
+	if err != nil {
+		t.Fatalf("FetchSVID: %v", err)
+	}
+	if got := svid.ExpiresAt.Sub(svid.IssuedAt); got != ttl {
+		t.Fatalf("TTL = %s, want %s", got, ttl)
+	}
+	// The CA (trust bundle root) must not expire before the leaf.
+	leaf := svid.Certificates[0]
+	ca := svid.Bundle[0]
+	if ca.NotAfter.Before(leaf.NotAfter) {
+		t.Fatalf("CA NotAfter %s precedes leaf NotAfter %s; leaf outlives its CA",
+			ca.NotAfter.Format(time.RFC3339), leaf.NotAfter.Format(time.RFC3339))
+	}
+	if err := svid.Validate(); err != nil {
+		t.Fatalf("Validate with ttl > 24h: %v", err)
+	}
+	if err := svid.Verify(clk.Now()); err != nil {
+		t.Fatalf("Verify with ttl > 24h: %v", err)
+	}
+}
+
+func TestLocalCASource_LeafNeverOutlivesCA(t *testing.T) {
+	// For a long-running Source, a leaf minted late in the CA's life must be
+	// clamped so it never outlives the CA (an unclampled leaf would fail Verify).
+	id := testSPIFFEID("engineering", "jpoley", "vm-latefetch")
+	clk := newFakeClock(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))
+	const ttl = time.Hour
+	src, err := NewLocalCASource(id, ttl, clk)
+	if err != nil {
+		t.Fatalf("NewLocalCASource: %v", err)
+	}
+	// CA lifetime is ttl + 24h. Advance to just inside it so a full-ttl leaf
+	// would otherwise outlive the CA, forcing the clamp.
+	clk.Advance(24*time.Hour + 30*time.Minute)
+	svid, err := src.FetchSVID(context.Background())
+	if err != nil {
+		t.Fatalf("FetchSVID: %v", err)
+	}
+	leaf := svid.Certificates[0]
+	ca := svid.Bundle[0]
+	if leaf.NotAfter.After(ca.NotAfter) {
+		t.Fatalf("leaf NotAfter %s outlives CA NotAfter %s",
+			leaf.NotAfter.Format(time.RFC3339), ca.NotAfter.Format(time.RFC3339))
+	}
+	if err := svid.Verify(clk.Now()); err != nil {
+		t.Fatalf("clamped SVID must still verify: %v", err)
+	}
+}
+
 func TestNewLocalCASource_RejectsBadInput(t *testing.T) {
 	if _, err := NewLocalCASource("not-a-spiffe-id", DefaultSVIDTTL, nil); err == nil {
 		t.Fatal("expected error for non-SPIFFE ID")

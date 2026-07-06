@@ -9,10 +9,11 @@ import (
 )
 
 // writeCredentialAtomic is the portable fallback for non-unix platforms. It
-// performs best-effort symlink/mode checks (POSIX ownership semantics are not
-// available here) and an atomic temp-then-rename write. The SVID mount target
-// is a Linux guest path; the fd-anchored implementation in credwrite_unix.go is
-// the production path.
+// rejects a symlinked or non-directory target directory (best effort; POSIX
+// ownership and fd-anchoring semantics are not available here) and performs an
+// atomic temp-then-rename write with the file set to mode 0400. The SVID mount
+// target is a Linux guest path; the fd-anchored implementation in
+// credwrite_unix.go is the production path.
 func writeCredentialAtomic(dir, name string, data []byte) error {
 	info, err := os.Lstat(dir)
 	if err != nil {

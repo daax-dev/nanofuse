@@ -77,11 +77,17 @@ func NewLocalCASource(spiffeID string, ttl time.Duration, clock Clock) (*LocalCA
 		return nil, fmt.Errorf("local CA: generate key: %w", err)
 	}
 	now := clock.Now()
+	// The CA must outlive every leaf it signs. FetchSVID mints leaves with
+	// NotAfter = fetchTime + ttl, so a caller requesting ttl > 24h (or leaves
+	// minted later in the Source's lifetime) would otherwise produce an SVID that
+	// outlives the CA and fails Validate/Verify. Size CA validity to the leaf TTL
+	// plus a day of headroom (never below the original 24h floor).
+	caValidity := ttl + 24*time.Hour
 	caTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: fmt.Sprintf("nanofuse-local-ca/%s", trustDomain)},
 		NotBefore:             now.Add(-time.Minute),
-		NotAfter:              now.Add(24 * time.Hour),
+		NotAfter:              now.Add(caValidity),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -130,6 +136,14 @@ func (l *LocalCASource) FetchSVID(ctx context.Context) (*SVID, error) {
 	// drift that would make ExpiresAt appear to exceed the leaf NotAfter).
 	now := l.clock.Now().Truncate(time.Second)
 	notAfter := now.Add(l.ttl)
+	// The local CA has a fixed lifetime chosen at construction. A leaf must never
+	// outlive its issuing CA (that chain would fail Verify), so clamp NotAfter to
+	// the CA's for a leaf minted late in the CA's life. The construction-time
+	// headroom (ttl + 24h) means this clamp is a no-op for the common case,
+	// including ttl > 24h fetched promptly; it only guards long-running dev use.
+	if caNotAfter := l.caCert.NotAfter; notAfter.After(caNotAfter) {
+		notAfter = caNotAfter
+	}
 	leafTmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(serial),
 		NotBefore:             now.Add(-time.Second),

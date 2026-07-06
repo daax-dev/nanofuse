@@ -88,6 +88,28 @@ func (b *FSBlob) keyPath(key string) (string, error) {
 	return full, nil
 }
 
+// ctxReader wraps a reader so an in-progress copy is interrupted when ctx is
+// canceled/timed out (checked before each Read), rather than only at call entry.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
+
+// ctxReadCloser is a ctxReader that also closes the underlying source.
+type ctxReadCloser struct {
+	ctxReader
+	c io.Closer
+}
+
+func (c ctxReadCloser) Close() error { return c.c.Close() }
+
 // Put implements Blob. It honors the "fully consume r" contract via io.Copy,
 // which reads r to EOF (or a read error) before the object is committed.
 func (b *FSBlob) Put(ctx context.Context, key string, r io.Reader) error {
@@ -113,7 +135,7 @@ func (b *FSBlob) Put(ctx context.Context, key string, r io.Reader) error {
 			_ = os.Remove(tmpName)
 		}
 	}()
-	if _, err := io.Copy(tmp, r); err != nil {
+	if _, err := io.Copy(tmp, ctxReader{ctx: ctx, r: r}); err != nil {
 		return fmt.Errorf("snapshotstore: write object %q: %w", key, err)
 	}
 	if err := tmp.Sync(); err != nil {
@@ -145,7 +167,7 @@ func (b *FSBlob) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 		}
 		return nil, fmt.Errorf("snapshotstore: open object %q: %w", key, err)
 	}
-	return f, nil
+	return ctxReadCloser{ctxReader: ctxReader{ctx: ctx, r: f}, c: f}, nil
 }
 
 // List implements Blob.
@@ -157,6 +179,10 @@ func (b *FSBlob) List(ctx context.Context, prefix string) ([]string, error) {
 	walkErr := filepath.WalkDir(b.root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		// Honor cancellation during a long walk instead of only at entry.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
 		}
 		if d.IsDir() {
 			return nil

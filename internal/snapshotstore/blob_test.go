@@ -99,3 +99,24 @@ func TestNewFSBlobRequiresRoot(t *testing.T) {
 		t.Fatal("NewFSBlob(\"\") should fail")
 	}
 }
+
+func TestFSBlobGetReaderHonorsCanceledContext(t *testing.T) {
+	blob, err := NewFSBlob(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := blob.Put(ctx, "a/b", bytes.NewReader([]byte("payload"))); err != nil {
+		t.Fatal(err)
+	}
+	cctx, cancel := context.WithCancel(ctx)
+	rc, err := blob.Get(cctx, "a/b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	cancel() // cancel after opening; the reader must now refuse reads
+	if _, rerr := rc.Read(make([]byte, 4)); !errors.Is(rerr, context.Canceled) {
+		t.Errorf("Read after cancel = %v, want context.Canceled", rerr)
+	}
+}

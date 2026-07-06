@@ -193,7 +193,7 @@ func validateFallbackKernel(path string) error {
 		return err
 	}
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("not a regular file")
+		return fmt.Errorf("not a regular file (mode %s)", info.Mode())
 	}
 	return nil
 }

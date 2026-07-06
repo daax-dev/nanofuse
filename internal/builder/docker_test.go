@@ -3,6 +3,7 @@ package builder
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -77,7 +78,8 @@ func TestDockerBuilderExtract(t *testing.T) {
 		t.Skip("Set INTEGRATION_TEST=1 to run integration tests")
 	}
 
-	builder := NewDockerBuilder("/tmp/nanofuse-test", true)
+	dataDir := t.TempDir()
+	builder := NewDockerBuilder(dataDir, true)
 
 	if err := builder.Available(); err != nil {
 		t.Skipf("Docker not available: %v", err)
@@ -96,7 +98,7 @@ func TestDockerBuilderExtract(t *testing.T) {
 
 	// Use a simple image for testing
 	result, err := builder.Extract(ctx, "alpine:latest", ExtractOptions{
-		OutputDir:          "/tmp/nanofuse-test/extract-test",
+		OutputDir:          filepath.Join(t.TempDir(), "extract-test"),
 		RootfsSizeMB:       256,
 		Verbose:            true,
 		FallbackKernelPath: fallbackKernel,

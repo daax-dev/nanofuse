@@ -230,32 +230,8 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 		if host == "" {
 			continue
 		}
-		if opts.ResolveEgress && opts.Resolver != nil && isLiteralHost(host) {
-			ips, err := opts.Resolver(host)
-			if err == nil && len(ips) > 0 {
-				added := false
-				for _, ip := range ips {
-					cidr, ok := hostCIDR(ip)
-					if !ok {
-						continue // resolver returned a non-IP string; skip it
-					}
-					if _, dup := seenCIDR[cidr]; dup {
-						added = true // already covered; not a dropped host
-						continue
-					}
-					seenCIDR[cidr] = struct{}{}
-					policy.AllowRules = append(policy.AllowRules, client.EgressRule{
-						CIDR:        cidr,
-						Protocol:    "tcp",
-						Port:        443,
-						Description: "resolved from gondolin allow-host " + host + " (point-in-time; HTTPS/443 only)",
-					})
-					added = true
-				}
-				if added {
-					continue
-				}
-			}
+		if resolveHostToRules(host, opts, policy, seenCIDR) {
+			continue
 		}
 		dropped = append(dropped, host)
 	}
@@ -314,6 +290,39 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 
 // isLiteralHost reports whether host is a plain hostname (no wildcard, no path,
 // no scheme) that can be resolved to an IP.
+// resolveHostToRules attempts to resolve a literal host to deduped egress allow
+// rules (HTTPS/443), appending them to policy. It reports true when at least one
+// rule was produced (or already covered by an earlier duplicate), meaning the
+// host is handled; false means the caller should record it as dropped.
+func resolveHostToRules(host string, opts Options, policy *client.EgressPolicy, seenCIDR map[string]struct{}) bool {
+	if !opts.ResolveEgress || opts.Resolver == nil || !isLiteralHost(host) {
+		return false
+	}
+	ips, err := opts.Resolver(host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	added := false
+	for _, ip := range ips {
+		cidr, ok := hostCIDR(ip)
+		if !ok {
+			continue // resolver returned a non-IP string; skip it
+		}
+		added = true
+		if _, dup := seenCIDR[cidr]; dup {
+			continue // already covered by an earlier host/IP
+		}
+		seenCIDR[cidr] = struct{}{}
+		policy.AllowRules = append(policy.AllowRules, client.EgressRule{
+			CIDR:        cidr,
+			Protocol:    "tcp",
+			Port:        443,
+			Description: "resolved from gondolin allow-host " + host + " (point-in-time; HTTPS/443 only)",
+		})
+	}
+	return added
+}
+
 // hostCIDR returns a single-host CIDR for a resolved IP — /32 for IPv4 (incl.
 // IPv4-in-IPv6, canonicalized) and /128 for IPv6 — with ok=true. If the string
 // is not a parseable IP it returns ("", false) and the caller drops the entry.

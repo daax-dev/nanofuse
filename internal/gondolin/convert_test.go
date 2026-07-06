@@ -419,3 +419,28 @@ func TestConvert_HostSecretValuesNotEchoed(t *testing.T) {
 		t.Errorf("host-secret value must not be echoed in the report: %q", d.Detail)
 	}
 }
+
+func TestConvert_UnknownDNSModeRejected(t *testing.T) {
+	sb := &Sandbox{Image: "img", Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)}, DNS: "syntheti"}
+	if _, _, err := Convert(sb, Options{AllowLossy: true}); err == nil {
+		t.Fatal("expected error for unknown dns mode, got nil")
+	} else if !strings.Contains(err.Error(), "unknown gondolin dns mode") {
+		t.Errorf("error = %v, want unknown-dns-mode rejection", err)
+	}
+	// A known mode is accepted.
+	sb.DNS = "synthetic"
+	if _, _, err := Convert(sb, Options{AllowLossy: true}); err != nil {
+		t.Errorf("known dns mode should be accepted, got: %v", err)
+	}
+}
+
+func TestConvert_SetsValidDefaultKernelArgs(t *testing.T) {
+	sb := &Sandbox{Image: "img", Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)}}
+	req, _, err := Convert(sb, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.Config.KernelArgs == "" {
+		t.Error("converted request must carry non-empty KernelArgs so it is submittable")
+	}
+}

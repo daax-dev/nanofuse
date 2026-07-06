@@ -17,6 +17,11 @@ const (
 	DefaultMemoryMiB = 512
 )
 
+// defaultKernelArgs is a safe, complete boot command line used for the converted
+// request so it is valid if submitted directly (gondolin has no kernel-args
+// concept). It matches nanofuse's own default boot args.
+const defaultKernelArgs = "console=ttyS0 root=/dev/vda rw"
+
 // Severity classifies a divergence between gondolin and nanofuse.
 type Severity string
 
@@ -81,6 +86,16 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		return nil, nil, fmt.Errorf("image is required (gondolin --image)")
 	}
 
+	// --- dns mode: validate before use so a typo/unknown value fails closed
+	// rather than silently enabling DNS (especially under --allow-lossy) ---
+	if mode := strings.TrimSpace(sb.DNS); mode != "" {
+		switch mode {
+		case "synthetic", "trusted", "open":
+		default:
+			return nil, nil, fmt.Errorf("unknown gondolin dns mode %q (expected synthetic, trusted, or open)", mode)
+		}
+	}
+
 	// --- resources (nanofuse-authored; disclose defaults) ---
 	vcpus := DefaultVCPUs
 	memory := DefaultMemoryMiB
@@ -127,19 +142,19 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		network.EgressPolicy = policy
 	}
 
-	// Only the fields the conversion can derive from gondolin are set. VMConfig
-	// fields with no gondolin equivalent (KernelArgs, Disks, Mounts, Secrets, …)
-	// are left at their zero value. This request object is a conversion result
-	// for RenderSpecYAML (which omits those fields from the preview), not a
-	// ready-to-POST API payload: a caller that submits it is responsible for
-	// populating any fields the daemon does not default, e.g. KernelArgs, which
-	// the client marshals without omitempty.
+	// Set a valid default KernelArgs so the request is submittable as-is: the
+	// client marshals kernel_args without omitempty, and gondolin has no
+	// kernel-args concept, so leaving it "" would send an empty value if a caller
+	// POSTs this request. Other VMConfig fields with no gondolin equivalent
+	// (Disks, Mounts, Secrets, …) stay zero; RenderSpecYAML shows only the
+	// conversion-relevant subset.
 	req := &client.CreateVMRequest{
 		Image: image,
 		Config: client.VMConfig{
-			VCPUs:     vcpus,
-			MemoryMiB: memory,
-			Network:   network,
+			VCPUs:      vcpus,
+			MemoryMiB:  memory,
+			KernelArgs: defaultKernelArgs,
+			Network:    network,
 		},
 	}
 

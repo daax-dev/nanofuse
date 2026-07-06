@@ -248,6 +248,61 @@ func waitForRotation(t *testing.T, mgr *Manager, prev *SVID, timeout time.Durati
 	t.Fatal("timed out waiting for rotation to replace the SVID")
 }
 
+func TestManager_Start_RejectsSecondCallAfterFailure(t *testing.T) {
+	// A first Start that fails (SPIRE unreachable) must still consume the
+	// single-call guard: a second Start is rejected and never re-attempts
+	// issuance, so a failed startup cannot be silently retried on the same
+	// Manager.
+	src := &countingSource{inner: failingSource{}}
+	mgr, _ := newTestManager(t, src, newFakeClock(time.Now()))
+
+	if err := mgr.Start(context.Background()); err == nil {
+		t.Fatal("first Start must fail when SPIRE is unreachable")
+	}
+
+	err := mgr.Start(context.Background())
+	if err == nil {
+		t.Fatal("second Start must be rejected even after a failed first Start")
+	}
+	if !strings.Contains(err.Error(), "already started") {
+		t.Fatalf("second Start must report already-started, got %q", err.Error())
+	}
+	if calls := src.count(); calls != 1 {
+		t.Fatalf("second Start must not attempt issuance again; FetchSVID calls = %d, want 1", calls)
+	}
+}
+
+func TestManager_IssueAndPersist_NoWriteOnCanceledContext(t *testing.T) {
+	// Cancellation that lands after the post-fetch check but before the write
+	// (driven via the Now() call during verification) must abort without
+	// persisting a credential.
+	id := testSPIFFEID("engineering", "jpoley", "vm-cancel")
+	base := newFakeClock(time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC))
+	// The source uses its own clock so fetch does not trip the cancellation; only
+	// the manager's verification Now() does.
+	src, err := NewLocalCASource(id, DefaultSVIDTTL, base)
+	if err != nil {
+		t.Fatalf("NewLocalCASource: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	clk := &cancelOnNowClock{inner: base, cancel: cancel}
+	mgr, path := newTestManager(t, src, clk)
+
+	err = mgr.Start(ctx)
+	if err == nil {
+		t.Fatal("Start must fail when the context is canceled mid-flow")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error must wrap context.Canceled, got %v", err)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatal("no SVID document must be written when the context is canceled before the write")
+	}
+	if mgr.Current() != nil {
+		t.Fatal("Current() must be nil when issuance was canceled before persist")
+	}
+}
+
 func TestNewManager_Validation(t *testing.T) {
 	if _, err := NewManager(ManagerConfig{}); err == nil {
 		t.Fatal("expected error when source is nil")

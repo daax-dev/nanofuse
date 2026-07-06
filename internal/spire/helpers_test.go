@@ -125,6 +125,27 @@ func (c *countingSource) count() int {
 	return c.calls
 }
 
+// cancelOnNowClock cancels a context the first time Now is called, then
+// delegates to inner. It lets a test drive cancellation to a precise point in
+// issueAndPersist (the m.clk.Now() call during verification), after the
+// post-fetch check but before the write, without racing.
+type cancelOnNowClock struct {
+	inner  Clock
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
+func (c *cancelOnNowClock) Now() time.Time {
+	c.once.Do(func() {
+		if c.cancel != nil {
+			c.cancel()
+		}
+	})
+	return c.inner.Now()
+}
+
+func (c *cancelOnNowClock) After(d time.Duration) <-chan time.Time { return c.inner.After(d) }
+
 // testSPIFFEID builds a D025-format SPIFFE ID using the production builder so
 // tests stay aligned with the registration path and credisolation per-VM
 // identity distinctness.

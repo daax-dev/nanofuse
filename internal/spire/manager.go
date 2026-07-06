@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -70,8 +71,12 @@ type Manager struct {
 	mu      sync.RWMutex
 	current *SVID
 
-	cancel context.CancelFunc
-	done   chan struct{}
+	// started guards Start against re-entry. It is set atomically at entry so a
+	// second call is rejected even if the first returned an error; the manager
+	// starts at most once over its lifetime.
+	started atomic.Bool
+	cancel  context.CancelFunc
+	done    chan struct{}
 }
 
 // NewManager validates configuration and constructs a Manager. It does not
@@ -125,9 +130,11 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 // Fail-safe: if the initial SVID cannot be obtained, Start returns an error that
 // names SPIRE unreachability and starts no background work. Callers MUST treat
 // this as fatal (refuse to launch the workload) rather than continuing without
-// an identity. Start must be called at most once.
+// an identity. Start must be called at most once: the single-call guard is set
+// atomically at entry, so any subsequent call is rejected with an error even if
+// the first call failed. Callers must construct a new Manager to retry.
 func (m *Manager) Start(ctx context.Context) error {
-	if m.done != nil {
+	if !m.started.CompareAndSwap(false, true) {
 		return fmt.Errorf("svid manager: already started")
 	}
 	if err := m.issueAndPersist(ctx); err != nil {
@@ -204,6 +211,12 @@ func (m *Manager) issueAndPersist(ctx context.Context) error {
 	data, err := svid.MarshalDocument()
 	if err != nil {
 		return fmt.Errorf("render SVID document: %w", err)
+	}
+	// Final cancellation check immediately before the write: a lifecycle canceled
+	// during verification/marshal must not result in a freshly persisted
+	// credential landing on disk.
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := m.writeDocument(data); err != nil {
 		return err

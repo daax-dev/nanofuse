@@ -26,7 +26,7 @@ func writeCredentialAtomic(dir, name string, data []byte) error {
 	if err := unix.Fstat(dirFD, &st); err != nil {
 		return fmt.Errorf("fstat SVID directory %q: %w", dir, err)
 	}
-	if st.Mode&unix.S_IFDIR == 0 {
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return fmt.Errorf("SVID directory path %q is not a directory", dir)
 	}
 	if st.Mode&0o077 != 0 {

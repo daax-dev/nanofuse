@@ -124,6 +124,11 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		network.EgressPolicy = policy
 	}
 
+	// Only the fields the conversion can derive from gondolin are set. VMConfig
+	// fields with no gondolin equivalent (KernelArgs, Disks, Mounts, Secrets, …)
+	// are intentionally left at their zero value: the nanofuse daemon applies its
+	// own defaults for them (e.g. an empty KernelArgs means "use the default boot
+	// args", per issue #193). RenderSpecYAML likewise omits them from the preview.
 	req := &client.CreateVMRequest{
 		Image: image,
 		Config: client.VMConfig{

@@ -16,11 +16,12 @@ import (
 
 // sanitizeForTerminal strips control characters (including ANSI escape
 // sequences' ESC) from strings that may derive from untrusted input files,
-// preventing terminal escape/control-character injection when the divergence
-// report is printed. Tabs are kept; all other control runes are dropped.
+// preventing terminal escape/control-character injection when output is printed.
+// Newlines and tabs are preserved (they are benign and structural for YAML);
+// all other control runes are dropped.
 func sanitizeForTerminal(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r == '\t' {
+		if r == '\t' || r == '\n' {
 			return r
 		}
 		if unicode.IsControl(r) {
@@ -127,7 +128,10 @@ Examples:
 		}
 
 		fmt.Printf("\n# nanofuse spec\n")
-		fmt.Print(string(specYAML))
+		// yaml.Marshal already escapes control characters in string values, but
+		// sanitize the terminal-bound output as defense in depth against escape
+		// injection from the untrusted input file (the -o file path writes raw).
+		fmt.Print(sanitizeForTerminal(string(specYAML)))
 		return nil
 	},
 }

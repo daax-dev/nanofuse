@@ -93,7 +93,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		data, err := os.ReadFile(args[0])
 		if err != nil {
-			return fmt.Errorf("read gondolin mirror: %w", err)
+			return fmt.Errorf("read gondolin mirror: %s", sanitizeInline(err.Error()))
 		}
 
 		sb, err := gondolin.Parse(data)
@@ -137,7 +137,7 @@ Examples:
 
 		if convertOutput != "" {
 			if err := os.WriteFile(convertOutput, specYAML, 0o600); err != nil {
-				return fmt.Errorf("write nanofuse spec: %w", err)
+				return fmt.Errorf("write nanofuse spec: %s", sanitizeInline(err.Error()))
 			}
 			fmt.Printf("Wrote nanofuse spec to %s\n", sanitizeInline(convertOutput))
 			return nil

@@ -434,13 +434,15 @@ func TestConvert_UnknownDNSModeRejected(t *testing.T) {
 	}
 }
 
-func TestConvert_SetsValidDefaultKernelArgs(t *testing.T) {
+func TestConvert_LeavesKernelArgsToDaemon(t *testing.T) {
+	// The converted request is a preview; KernelArgs (no gondolin equivalent) is
+	// left unset so the daemon owns the default rather than the converter drifting.
 	sb := &Sandbox{Image: "img", Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)}}
 	req, _, err := Convert(sb, Options{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.Config.KernelArgs == "" {
-		t.Error("converted request must carry non-empty KernelArgs so it is submittable")
+	if req.Config.KernelArgs != "" {
+		t.Errorf("KernelArgs should be left unset for the daemon; got %q", req.Config.KernelArgs)
 	}
 }

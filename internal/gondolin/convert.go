@@ -17,11 +17,6 @@ const (
 	DefaultMemoryMiB = 512
 )
 
-// defaultKernelArgs is a safe, complete boot command line used for the converted
-// request so it is valid if submitted directly (gondolin has no kernel-args
-// concept). It matches nanofuse's own default boot args.
-const defaultKernelArgs = "console=ttyS0 root=/dev/vda rw"
-
 // Severity classifies a divergence between gondolin and nanofuse.
 type Severity string
 
@@ -142,19 +137,19 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		network.EgressPolicy = policy
 	}
 
-	// Set a valid default KernelArgs so the request is submittable as-is: the
-	// client marshals kernel_args without omitempty, and gondolin has no
-	// kernel-args concept, so leaving it "" would send an empty value if a caller
-	// POSTs this request. Other VMConfig fields with no gondolin equivalent
-	// (Disks, Mounts, Secrets, …) stay zero; RenderSpecYAML shows only the
-	// conversion-relevant subset.
+	// This request is a conversion RESULT for RenderSpecYAML (a human-readable
+	// preview that shows only the fields gondolin maps: image, resources,
+	// network), not a ready-to-POST API payload. Fields with no gondolin
+	// equivalent (KernelArgs, Disks, Mounts, Secrets, …) are left at their zero
+	// value; the daemon owns their defaults. Deliberately not hardcoding a
+	// KernelArgs default here: it would couple this converter to and drift from
+	// the daemon's boot args.
 	req := &client.CreateVMRequest{
 		Image: image,
 		Config: client.VMConfig{
-			VCPUs:      vcpus,
-			MemoryMiB:  memory,
-			KernelArgs: defaultKernelArgs,
-			Network:    network,
+			VCPUs:     vcpus,
+			MemoryMiB: memory,
+			Network:   network,
 		},
 	}
 

@@ -78,14 +78,14 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	case errors.Is(err, fs.ErrNotExist):
 		// Genuinely absent: skip the perms check (or fail under --strict).
 		if isolationStrict {
-			return fmt.Errorf("credential store %s is absent: %w", isolationSecretsDir, err)
+			return fmt.Errorf("credential store %q is absent: %w", isolationSecretsDir, err)
 		}
-		fmt.Fprintf(out, "  [skip] store-perms — %s not present on this host (use --strict to fail)\n",
+		fmt.Fprintf(out, "  [skip] store-perms — %q not present on this host (use --strict to fail)\n",
 			isolationSecretsDir)
 	default:
 		// Permission denied, I/O error, etc. — do not misreport as "absent";
 		// a verifier that cannot read the store has not verified it.
-		return fmt.Errorf("cannot stat credential store %s: %w", isolationSecretsDir, err)
+		return fmt.Errorf("cannot stat credential store %q: %w", isolationSecretsDir, err)
 	}
 
 	report := credisolation.VerifyHost(opts)
@@ -104,7 +104,9 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	// yet must not be treated as a failure. An absent store under --strict
 	// already returned an error above.
 	if report.HasFailure() {
-		return fmt.Errorf("credential isolation verification failed")
+		// Include the status line so stderr alone is actionable when stdout (the
+		// per-check detail) is not captured.
+		return fmt.Errorf("credential isolation verification failed: %s", report.StatusLine())
 	}
 	return nil
 }

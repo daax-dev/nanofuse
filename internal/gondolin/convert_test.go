@@ -302,6 +302,28 @@ func TestConvert_NoBlockingSilentlyDropped(t *testing.T) {
 	}
 }
 
+func TestConvert_DivergenceDetailEscapesUntrustedInput(t *testing.T) {
+	// Divergence.Detail must be safe at the source: a consumer that prints it
+	// without the CLI's terminal sanitizer must not receive raw control chars or
+	// newlines injected via untrusted YAML (here, an env var name).
+	sb := &Sandbox{
+		Image:     "img",
+		Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)},
+		Env:       map[string]string{"A\nINJECT\r": "v"},
+	}
+	_, divs, _ := Convert(sb, Options{AllowLossy: true})
+	d := findDiv(divs, "--env")
+	if d == nil {
+		t.Fatalf("expected --env divergence, got %+v", divs)
+	}
+	if strings.ContainsAny(d.Detail, "\n\r\x00") {
+		t.Errorf("Detail must not carry raw control chars from untrusted input: %q", d.Detail)
+	}
+	if !strings.Contains(d.Detail, `\nINJECT\r`) {
+		t.Errorf("expected escaped env key in Detail, got %q", d.Detail)
+	}
+}
+
 func TestConvert_Deterministic(t *testing.T) {
 	sb := &Sandbox{Image: "img", Env: map[string]string{"B": "2", "A": "1"},
 		HostSecret: []string{"X"}, MountHostFS: []string{"/a:/b"}}

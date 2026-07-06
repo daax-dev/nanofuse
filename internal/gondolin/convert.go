@@ -183,23 +183,23 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		"nanofuse CreateVMRequest has no guest working-directory field; cwd cannot be set at create time.")
 	addBlocking("--env", len(sb.Env) > 0,
 		fmt.Sprintf("nanofuse has no guest environment injection; %d env var(s) (%s) cannot be delivered to the guest.",
-			len(sb.Env), strings.Join(sortedKeys(sb.Env), ", ")))
+			len(sb.Env), quotedList(sortedKeys(sb.Env))))
 	addBlocking("--host-secret", len(sb.HostSecret) > 0,
 		fmt.Sprintf("nanofuse has no host-secret injection; %d host-secret entr(y/ies) cannot be delivered "+
 			"(entries omitted from this report in case they contain secret values).",
 			len(sb.HostSecret)))
 	addBlocking("--mount-hostfs", len(sb.MountHostFS) > 0,
 		fmt.Sprintf("nanofuse CreateVMRequest exposes no host-directory bind mounts; %d mount(s) (%s) cannot be represented.",
-			len(sb.MountHostFS), strings.Join(sb.MountHostFS, ", ")))
+			len(sb.MountHostFS), quotedList(sb.MountHostFS)))
 	addBlocking("--mount-memfs", len(sb.MountMemFS) > 0,
 		fmt.Sprintf("nanofuse has no in-memory mount primitive; %d memfs mount(s) (%s) cannot be represented.",
-			len(sb.MountMemFS), strings.Join(sb.MountMemFS, ", ")))
+			len(sb.MountMemFS), quotedList(sb.MountMemFS)))
 	addBlocking("--ssh-allow-host", len(sb.SSHAllowHost) > 0,
 		fmt.Sprintf("nanofuse has no SSH egress broker; %d ssh-allow-host rule(s) (%s) cannot be represented.",
-			len(sb.SSHAllowHost), strings.Join(sb.SSHAllowHost, ", ")))
+			len(sb.SSHAllowHost), quotedList(sb.SSHAllowHost)))
 	addBlocking("--tcp-map", len(sb.TCPMap) > 0,
 		fmt.Sprintf("nanofuse egress is CIDR-based and has no guest->upstream TCP remapping; %d tcp-map rule(s) (%s) cannot be represented.",
-			len(sb.TCPMap), strings.Join(sb.TCPMap, ", ")))
+			len(sb.TCPMap), quotedList(sb.TCPMap)))
 	addBlocking("--rootfs-size", strings.TrimSpace(sb.RootfsSize) != "",
 		fmt.Sprintf("nanofuse CreateVMRequest has no rootfs-size control; requested size %q cannot be applied.", strings.TrimSpace(sb.RootfsSize)))
 
@@ -279,7 +279,7 @@ func buildEgressPolicy(sb *Sandbox, hosts []string, opts Options) ([]Divergence,
 				Detail: fmt.Sprintf("L7 HTTP allowlist resolved to point-in-time /32 CIDR rules where possible; "+
 					"%d entr(y/ies) dropped under default-deny (wildcards/paths, or literal hosts that failed DNS resolution): %s. "+
 					"Resolved rules are a snapshot and do not track DNS changes.",
-					len(dropped), strings.Join(dropped, ", ")),
+					len(dropped), quotedList(dropped)),
 			})
 		}
 		if len(policy.AllowRules) > 0 {
@@ -297,7 +297,7 @@ func buildEgressPolicy(sb *Sandbox, hosts []string, opts Options) ([]Divergence,
 			Severity: SeverityWarn,
 			Detail: fmt.Sprintf("--resolve-egress was requested but no resolver is configured; "+
 				"gondolin L7 HTTP allowlist (%s) left under default-deny (no outbound allowed).",
-				strings.Join(hosts, ", ")),
+				quotedList(hosts)),
 		})
 	default:
 		divs = append(divs, Divergence{
@@ -306,7 +306,7 @@ func buildEgressPolicy(sb *Sandbox, hosts []string, opts Options) ([]Divergence,
 			Detail: fmt.Sprintf("gondolin L7 HTTP allowlist (%s) cannot be expressed as nanofuse L3/L4 CIDR rules; "+
 				"egress locked to default-deny (safe degrade, no outbound allowed). "+
 				"Use --resolve-egress to opt in to point-in-time hostname->CIDR resolution.",
-				strings.Join(hosts, ", ")),
+				quotedList(hosts)),
 		})
 	}
 
@@ -414,6 +414,19 @@ func blockingFeatures(divs []Divergence) []string {
 		}
 	}
 	return out
+}
+
+// quotedList renders untrusted user-supplied strings (env keys, mount specs,
+// host rules) as a comma-separated list of Go-quoted literals. Quoting escapes
+// control characters, newlines, and non-printable unicode (bidi/zero-width/
+// unicode whitespace) at the source, so a Divergence.Detail is safe to print or
+// log even by a consumer that does not run the CLI's terminal sanitizer.
+func quotedList(items []string) string {
+	q := make([]string, len(items))
+	for i, s := range items {
+		q[i] = fmt.Sprintf("%q", s)
+	}
+	return strings.Join(q, ", ")
 }
 
 func sortedKeys(m map[string]string) []string {

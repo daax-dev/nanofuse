@@ -125,7 +125,7 @@ func TestCliUseColorHonorsNanofuseNoColor(t *testing.T) {
 
 func TestSanitizersDropUnicodeWhitespace(t *testing.T) {
 	// U+2028 line sep, U+2029 para sep, U+00A0 NBSP must be removed by both.
-	in := "a b c d"
+	in := "a\u2028b\u2029c\u00a0d"
 	if got := sanitizeInline(in); got != "abcd" {
 		t.Errorf("sanitizeInline(%q) = %q, want abcd", in, got)
 	}

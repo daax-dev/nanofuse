@@ -77,6 +77,10 @@ func TestGuardMounts(t *testing.T) {
 		{"unrelated bind", MountSpec{Target: "/data", Source: "/host/data", Type: "bind"}, false},
 		{"sibling path", MountSpec{Target: "/var/run/secrets/other", Source: "/h", Type: "bind"}, false},
 		{"prefix-but-not-ancestor", MountSpec{Target: "/var/run/secrets/daaxxy", Source: "/h", Type: "bind"}, false},
+		{"canonical /run over store", MountSpec{Target: "/run/secrets/daax", Source: "/host/leak", Type: "bind"}, true},
+		{"canonical /run descendant", MountSpec{Target: "/run/secrets/daax/svid.json", Source: "/host/svid", Type: "bind"}, true},
+		{"canonical /run ancestor shadows store", MountSpec{Target: "/run", Source: "/host/run", Type: "bind"}, true},
+		{"canonical /run sibling", MountSpec{Target: "/run/secrets/other", Source: "/h", Type: "bind"}, false},
 		{"empty target", MountSpec{}, false},
 	}
 	for _, tc := range tests {

@@ -109,6 +109,14 @@ func (b *DockerBuilder) Extract(ctx context.Context, imageRef string, opts Extra
 		}
 		outputDir = filepath.Join(b.dataDir, "images", sanitizeDigest(digest))
 	}
+	// Resolve outputDir to an absolute path so every path derived from it
+	// (the extracted kernel and the rootfs) satisfies ExtractResult's absolute
+	// contract regardless of a relative opts.OutputDir.
+	if abs, err := filepath.Abs(outputDir); err == nil {
+		outputDir = abs
+	} else {
+		return nil, fmt.Errorf("resolve output directory %q to an absolute path: %w", outputDir, err)
+	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)

@@ -42,7 +42,7 @@ jobs:
           cache: true
 
       - name: Install Mage
-        run: go install github.com/magefile/mage@latest
+        run: go install github.com/magefile/mage@v1.17.2
 
       - name: Run CI checks (same as local)
         run: mage ci
@@ -132,7 +132,7 @@ jobs:
           cache: true
 
       - name: Install Mage for release
-        run: go install github.com/magefile/mage@latest
+        run: go install github.com/magefile/mage@v1.17.2
 
       - name: Build release binaries
         env:
@@ -348,7 +348,7 @@ jobs:
           version: v2.12.2
 
       - name: Install Mage
-        run: go install github.com/magefile/mage@latest
+        run: go install github.com/magefile/mage@v1.17.2
 
       - name: Run linters
         run: mage lint
@@ -371,7 +371,7 @@ jobs:
           cache: true
 
       - name: Install Mage
-        run: go install github.com/magefile/mage@latest
+        run: go install github.com/magefile/mage@v1.17.2
 
       - name: Validate
         run: mage validate

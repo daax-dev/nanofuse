@@ -8,6 +8,8 @@ jobs:
   comment-build-info:
     name: Comment Build Info
     runs-on: self-hosted
+    # Skip fork PRs on self-hosted runners (untrusted code); run for pushes and same-repo PRs only
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       pull-requests: write
 

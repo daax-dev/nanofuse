@@ -64,6 +64,12 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	if strings.TrimSpace(isolationSecretsDir) == "" {
 		return fmt.Errorf("--secrets-dir must not be empty")
 	}
+	// Reject leading/trailing whitespace: on Unix " /x" and "/x " are paths
+	// distinct from "/x" (and " /x" is relative), so an accidentally padded
+	// value would silently verify the wrong location. Require the exact path.
+	if isolationSecretsDir != strings.TrimSpace(isolationSecretsDir) {
+		return fmt.Errorf("--secrets-dir %q has leading or trailing whitespace; pass the exact path", isolationSecretsDir)
+	}
 
 	opts := credisolation.HostCheckOptions{
 		SecretsDir:  isolationSecretsDir,
@@ -85,7 +91,7 @@ func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	default:
 		// Permission denied, I/O error, etc. — do not misreport as "absent";
 		// a verifier that cannot read the store has not verified it.
-		return fmt.Errorf("cannot stat credential store %q: %w", isolationSecretsDir, err)
+		return fmt.Errorf("cannot lstat credential store %q: %w", isolationSecretsDir, err)
 	}
 
 	report := credisolation.VerifyHost(opts)

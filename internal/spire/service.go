@@ -44,15 +44,42 @@ type WorkloadEntry struct {
 	WorkloadID  string
 }
 
+// normalizeTrustDomain canonicalizes a configured trust domain for use in a
+// SPIFFE ID. SPIFFE trust domains are case-insensitive DNS names, but the
+// SPIFFE ID grammar enforced by validateSPIFFEID accepts only the lowercase
+// form; emitting the normalized value keeps built IDs from failing that
+// downstream validation on a case-only difference.
+func normalizeTrustDomain(td string) string {
+	return strings.ToLower(strings.TrimSpace(td))
+}
+
+// validateTrustDomain rejects a configured trust domain that would produce a
+// SPIFFE ID failing validateSPIFFEID. It checks the normalized (lowercased)
+// form, so a case-only difference is accepted and normalized rather than
+// rejected — keeping this gate consistent with BuildSPIFFEID, which emits the
+// same normalized value.
+func (s *Service) validateTrustDomain() error {
+	td := normalizeTrustDomain(s.cfg.TrustDomain)
+	if td == "" {
+		return fmt.Errorf("trust_domain is required for SPIFFE identity")
+	}
+	if !isValidTrustDomain(td) {
+		return fmt.Errorf("trust_domain %q is not a valid RFC 1123 DNS name (lowercase letters, digits, and interior hyphens)", s.cfg.TrustDomain)
+	}
+	return nil
+}
+
 // BuildSPIFFEID builds a D025-compliant SPIFFE ID for a microVM.
 // Format: spiffe://poley.dev/g/{group}/u/{user}/w/microvm/{vm-id}
+// The configured trust domain is normalized (see normalizeTrustDomain) so the
+// resulting ID is in the canonical lowercase form validateSPIFFEID expects.
 func (s *Service) BuildSPIFFEID(groupID, ownerUserID, vmID string) string {
 	workloadType := s.cfg.WorkloadType
 	if workloadType == "" {
 		workloadType = "microvm"
 	}
 	return fmt.Sprintf("spiffe://%s/g/%s/u/%s/w/%s/%s",
-		s.cfg.TrustDomain, groupID, ownerUserID, workloadType, vmID)
+		normalizeTrustDomain(s.cfg.TrustDomain), groupID, ownerUserID, workloadType, vmID)
 }
 
 // safeIDPattern validates identifiers contain only safe characters (alphanumeric, hyphen, underscore)
@@ -203,6 +230,11 @@ func (s *Service) CreateVMWorkloadEntry(ctx context.Context, vmID, groupID, owne
 		return "", err
 	}
 	if err := validateVMID(vmID); err != nil {
+		return "", err
+	}
+	// Reject a bad trust domain at the source rather than building an ID that
+	// only fails validateSPIFFEID downstream.
+	if err := s.validateTrustDomain(); err != nil {
 		return "", err
 	}
 

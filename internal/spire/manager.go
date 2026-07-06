@@ -248,7 +248,11 @@ func (m *Manager) issueAndPersist(ctx context.Context) error {
 		return err
 	}
 	m.mu.Lock()
-	m.current = svid
+	// Store a defensive copy: the Source contract makes no immutability guarantee
+	// about the returned *SVID, so a Source that reuses or mutates the struct (or
+	// its Certificates/Bundle slices) after FetchSVID could otherwise race with
+	// readers of m.current. Cloning gives the Manager sole ownership of its copy.
+	m.current = svid.clone()
 	m.mu.Unlock()
 	m.log.Info("SVID issued",
 		slog.String("spiffe_id", svid.ID),

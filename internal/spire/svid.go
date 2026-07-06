@@ -487,8 +487,8 @@ func decodeKeyPEM(data []byte) (crypto.Signer, error) {
 	// makes the credential ambiguous (which key is authoritative?), so it is not
 	// silently accepted. Only trailing whitespace (a stray final newline) is
 	// tolerated.
-	if len(bytes.TrimSpace(rest)) != 0 {
-		return nil, fmt.Errorf("unexpected trailing data after PEM block (%d bytes); a persisted key must contain exactly one block", len(bytes.TrimSpace(rest)))
+	if trailing := bytes.TrimSpace(rest); len(trailing) != 0 {
+		return nil, fmt.Errorf("unexpected trailing data after PEM block (%d bytes); a persisted key must contain exactly one block", len(trailing))
 	}
 	// The persisted credential encodes the key as a PKCS#8 "PRIVATE KEY" block
 	// (see MarshalDocument). Require that exact type so an unexpected block (e.g.

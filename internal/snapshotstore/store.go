@@ -86,10 +86,17 @@ func (s *TieredStore) Put(ctx context.Context, id string, files []SourceFile, rt
 	if len(files) == 0 {
 		return nil, fmt.Errorf("snapshotstore: no files to store for snapshot %q", id)
 	}
+	seenNames := make(map[string]struct{}, len(files))
 	for _, f := range files {
 		if err := validateName(f.Name); err != nil {
 			return nil, err
 		}
+		// Names map 1:1 to backend object keys; duplicates would race and
+		// overwrite the same object and corrupt the manifest.
+		if _, dup := seenNames[f.Name]; dup {
+			return nil, fmt.Errorf("snapshotstore: duplicate file name %q in snapshot %q", f.Name, id)
+		}
+		seenNames[f.Name] = struct{}{}
 	}
 
 	entries := make([]FileEntry, len(files))

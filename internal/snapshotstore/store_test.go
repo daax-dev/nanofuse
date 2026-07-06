@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -460,5 +461,21 @@ func TestGetIgnoresTamperedManifestKey(t *testing.T) {
 	}
 	if string(got) != string(data) {
 		t.Errorf("restored content = %q, want %q (tampered key must be ignored)", got, data)
+	}
+}
+
+func TestPutRejectsDuplicateNames(t *testing.T) {
+	ctx := context.Background()
+	store, _ := newStore(t)
+	dir := t.TempDir()
+	p := writeFile(t, dir, "dup", []byte("x"))
+	files := []SourceFile{
+		{Name: "dup", Role: "a", Path: p},
+		{Name: "dup", Role: "b", Path: p},
+	}
+	if _, err := store.Put(ctx, "snap-dup", files, RuntimeVersions{}); err == nil {
+		t.Fatal("expected error for duplicate file names, got nil")
+	} else if !strings.Contains(err.Error(), "duplicate file name") {
+		t.Errorf("error = %v, want duplicate-name rejection", err)
 	}
 }

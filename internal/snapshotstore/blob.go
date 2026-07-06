@@ -63,15 +63,16 @@ func (b *FSBlob) keyPath(key string) (string, error) {
 	if key == "" {
 		return "", fmt.Errorf("snapshotstore: empty object key")
 	}
-	// Confine the key under the root: prepending "/" and cleaning collapses any
-	// leading ".." traversal (e.g. "../../x" -> "/x"), and filepath.Join then
-	// roots it under b.root. Note filepath.Join does NOT discard b.root when the
-	// second argument is absolute — it treats each element as a segment, so
-	// Join("/root", "/x") == "/root/x". The Rel check below is belt-and-suspenders.
-	clean := filepath.Clean("/" + filepath.FromSlash(key))
-	full := filepath.Join(b.root, clean)
-	rel, err := filepath.Rel(b.root, full)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+	// Confine the key under the root. Rooting at "/" then cleaning collapses any
+	// leading ".." traversal (e.g. "../../x" -> "/x"); trimming the leading
+	// separator makes it an unambiguously RELATIVE path before joining, so the
+	// join can only produce a location within b.root. The Rel check below is
+	// belt-and-suspenders.
+	rooted := filepath.Clean(string(os.PathSeparator) + filepath.FromSlash(key))
+	rel := strings.TrimPrefix(rooted, string(os.PathSeparator))
+	full := filepath.Join(b.root, rel)
+	check, err := filepath.Rel(b.root, full)
+	if err != nil || check == ".." || strings.HasPrefix(check, ".."+string(os.PathSeparator)) {
 		return "", fmt.Errorf("snapshotstore: object key %q escapes blob root", key)
 	}
 	return full, nil

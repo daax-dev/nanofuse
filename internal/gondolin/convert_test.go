@@ -406,3 +406,16 @@ func TestConvert_ResolveEgressDedupesDuplicateIPs(t *testing.T) {
 		t.Fatalf("expected 2 deduped rules, got %d: %+v", n, req.Config.Network.EgressPolicy.AllowRules)
 	}
 }
+
+func TestConvert_HostSecretValuesNotEchoed(t *testing.T) {
+	sb := &Sandbox{Image: "img", Resources: &Resources{VCPUs: iptr(2), MemoryMiB: iptr(512)},
+		HostSecret: []string{"SUPERSECRETVALUE123"}}
+	_, divs, _ := Convert(sb, Options{AllowLossy: true})
+	d := findDiv(divs, "--host-secret")
+	if d == nil {
+		t.Fatal("expected a --host-secret divergence")
+	}
+	if strings.Contains(d.Detail, "SUPERSECRETVALUE123") {
+		t.Errorf("host-secret value must not be echoed in the report: %q", d.Detail)
+	}
+}

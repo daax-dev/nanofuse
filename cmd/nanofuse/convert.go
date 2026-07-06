@@ -107,8 +107,12 @@ Examples:
 		req, divs, convErr := gondolin.Convert(sb, opts)
 
 		// Always print the divergence report so the operator sees the full
-		// picture, whether or not the conversion failed closed.
-		printDivergences(divs)
+		// picture, whether or not the conversion failed closed. Skip it for a pure
+		// input-validation error (no divergences) so we don't print a misleading
+		// "no divergences" line alongside a validation failure.
+		if convErr == nil || len(divs) > 0 {
+			printDivergences(divs)
+		}
 
 		if convErr != nil {
 			return convErr
@@ -123,7 +127,7 @@ Examples:
 			if err := os.WriteFile(convertOutput, specYAML, 0o600); err != nil {
 				return fmt.Errorf("write nanofuse spec: %w", err)
 			}
-			fmt.Printf("Wrote nanofuse spec to %s\n", convertOutput)
+			fmt.Printf("Wrote nanofuse spec to %s\n", sanitizeForTerminal(convertOutput))
 			return nil
 		}
 

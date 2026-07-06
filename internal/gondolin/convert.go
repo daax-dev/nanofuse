@@ -63,8 +63,11 @@ type Options struct {
 
 // Convert maps a gondolin mirror sandbox to a nanofuse CreateVMRequest and a
 // divergence report. It returns a non-nil error when blocking divergences exist
-// and opts.AllowLossy is false (fail-closed). The request and divergences are
-// always returned so callers can display the full report alongside the error.
+// and opts.AllowLossy is false (fail-closed); in that case the request and the
+// divergences are both returned so callers can display the full report
+// alongside the error. Input-validation failures (nil sandbox, missing image,
+// invalid resources) instead return a nil request and nil/partial divergences
+// with the validation error.
 func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, error) {
 	if sb == nil {
 		return nil, nil, fmt.Errorf("nil sandbox")
@@ -157,8 +160,9 @@ func Convert(sb *Sandbox, opts Options) (*client.CreateVMRequest, []Divergence, 
 		fmt.Sprintf("nanofuse has no guest environment injection; %d env var(s) (%s) cannot be delivered to the guest.",
 			len(sb.Env), strings.Join(sortedKeys(sb.Env), ", ")))
 	addBlocking("--host-secret", len(sb.HostSecret) > 0,
-		fmt.Sprintf("nanofuse has no host-secret injection; %d secret(s) (%s) cannot be delivered.",
-			len(sb.HostSecret), strings.Join(sb.HostSecret, ", ")))
+		fmt.Sprintf("nanofuse has no host-secret injection; %d host-secret entr(y/ies) cannot be delivered "+
+			"(entries omitted from this report in case they contain secret values).",
+			len(sb.HostSecret)))
 	addBlocking("--mount-hostfs", len(sb.MountHostFS) > 0,
 		fmt.Sprintf("nanofuse CreateVMRequest exposes no host-directory bind mounts; %d mount(s) (%s) cannot be represented.",
 			len(sb.MountHostFS), strings.Join(sb.MountHostFS, ", ")))

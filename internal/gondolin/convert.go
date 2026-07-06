@@ -291,14 +291,23 @@ func buildEgressPolicy(sb *Sandbox, opts Options) ([]Divergence, *client.EgressP
 		})
 	}
 
+	// Resolver output order (e.g. net.LookupHost) is not guaranteed stable across
+	// runs/hosts; sort the rules so RenderSpecYAML output is deterministic.
+	sort.SliceStable(policy.AllowRules, func(i, j int) bool {
+		if policy.AllowRules[i].CIDR != policy.AllowRules[j].CIDR {
+			return policy.AllowRules[i].CIDR < policy.AllowRules[j].CIDR
+		}
+		return policy.AllowRules[i].Port < policy.AllowRules[j].Port
+	})
+
 	return divs, policy
 }
 
 // isLiteralHost reports whether host is a plain hostname (no wildcard, no path,
 // no scheme) that can be resolved to an IP.
-// hostCIDR returns a single-host CIDR for a resolved IP: /32 for IPv4, /128 for
-// IPv6. Falls back to /32 only if the string is not a parseable IP (defensive;
-// resolver output is expected to be valid).
+// hostCIDR returns a single-host CIDR for a resolved IP — /32 for IPv4 (incl.
+// IPv4-in-IPv6, canonicalized) and /128 for IPv6 — with ok=true. If the string
+// is not a parseable IP it returns ("", false) and the caller drops the entry.
 func hostCIDR(ip string) (string, bool) {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
@@ -355,9 +364,13 @@ func sortDivergences(divs []Divergence) {
 
 // --- rendering -----------------------------------------------------------
 
-// renderSpec is a presentation view of client.CreateVMRequest with stable YAML
-// keys mirroring the nanofuse JSON schema. Rendered deterministically for
-// display and golden tests.
+// renderSpec is a presentation view of the fields this conversion actually
+// populates on client.CreateVMRequest (image, resources, network/egress), using
+// stable YAML keys that match the nanofuse schema. It is a human-readable
+// preview, not a full API payload: fields the conversion never sets (e.g.
+// kernel_args, disks, mounts, secrets) are intentionally omitted so the daemon
+// applies its own defaults. Rendered deterministically for display and golden
+// tests.
 type renderSpec struct {
 	Name   string       `yaml:"name,omitempty"`
 	Image  string       `yaml:"image"`

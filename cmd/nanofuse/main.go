@@ -96,6 +96,7 @@ It provides simple commands for VM lifecycle management, snapshots, and image ha
 			"version":    true,
 			"layer":      true,
 			"isolation":  true, // local-only credential-store checks; no API client needed
+			"convert":    true, // local-only file conversion; no API client needed
 		}
 		if skipCommands[cmd.Name()] {
 			return nil
@@ -209,6 +210,7 @@ func init() {
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(completionCmd)
 	rootCmd.AddCommand(layerCmd)
+	rootCmd.AddCommand(convertCmd)
 
 	// Customize version output
 	rootCmd.SetVersionTemplate(`{{.Version}}

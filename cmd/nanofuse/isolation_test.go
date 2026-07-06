@@ -78,3 +78,39 @@ func TestRunIsolationVerifyPassesOnGoodStore(t *testing.T) {
 		t.Errorf("output missing the PASS status line; got: %s", out.String())
 	}
 }
+
+func TestRunIsolationVerifyRejectsWhitespacePaddedSecretsDir(t *testing.T) {
+	// A padded value is a distinct path on Unix (" /x" is relative), so it is a
+	// usage error: non-zero (returns err) with no status line printed.
+	for _, dir := range []string{" /var/run/secrets/daax", "/var/run/secrets/daax "} {
+		t.Run(dir, func(t *testing.T) {
+			withIsolationFlags(t, dir, false, false)
+			cmd := &cobra.Command{}
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			err := runIsolationVerify(cmd, nil)
+			if err == nil {
+				t.Fatalf("expected an error for whitespace-padded --secrets-dir %q, got nil", dir)
+			}
+			if !strings.Contains(err.Error(), "whitespace") {
+				t.Errorf("error = %v, want whitespace rejection for %q", err, dir)
+			}
+			if out.String() != "" {
+				t.Errorf("a usage error must not print a status line; got: %s", out.String())
+			}
+		})
+	}
+}
+
+func TestIsolationCommandsSkipAPIClientSetup(t *testing.T) {
+	// A bad NANOFUSE_TIMEOUT makes applyClientEnvironment fail. The local-only
+	// isolation command (and its verify subcommand) must skip API client setup,
+	// so PersistentPreRunE returns nil despite the invalid env. If a regression
+	// removed "isolation" from the skip set, this pre-run would surface the error.
+	t.Setenv("NANOFUSE_TIMEOUT", "not-a-duration")
+	for _, cmd := range []*cobra.Command{isolationCmd, isolationVerifyCmd} {
+		if err := rootCmd.PersistentPreRunE(cmd, nil); err != nil {
+			t.Errorf("PersistentPreRunE(%q) = %v, want nil (isolation must skip API client setup)", cmd.Name(), err)
+		}
+	}
+}

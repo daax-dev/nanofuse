@@ -58,8 +58,9 @@ func init() {
 func runIsolationVerify(cmd *cobra.Command, _ []string) error {
 	out := cmd.OutOrStdout()
 
-	// Reject an explicitly empty --secrets-dir (cobra permits it) rather than
-	// silently treating it as an absent store and emitting empty-path messages.
+	// Reject an empty or whitespace-only --secrets-dir (cobra permits it) rather
+	// than silently treating it as an absent store and emitting empty-path
+	// messages.
 	if strings.TrimSpace(isolationSecretsDir) == "" {
 		return fmt.Errorf("--secrets-dir must not be empty")
 	}

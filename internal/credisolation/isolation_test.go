@@ -101,7 +101,7 @@ func TestGuardMountsFailsClosedOnRelativeTarget(t *testing.T) {
 	t.Parallel()
 	// A leading-whitespace target is relative on Linux (byte-string paths): the
 	// guard must not trim it into an absolute path, it must fail closed.
-	for _, target := range []string{"relative/path", "secrets/daax", "../escape", " /var/run/secrets/daax", "   "} {
+	for _, target := range []string{"relative/path", "secrets/daax", "../escape", " /var/run/secrets/daax", "   ", "/var/run/secrets/daax\x00/evil"} {
 		err := GuardMounts([]MountSpec{{Target: target, Source: "/h", Type: "bind"}})
 		if !errors.Is(err, ErrInvalidMountTarget) {
 			t.Errorf("GuardMounts(target=%q) = %v, want ErrInvalidMountTarget (fail closed)", target, err)

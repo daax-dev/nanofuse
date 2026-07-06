@@ -228,6 +228,12 @@ func guardOne(m MountSpec) error {
 		// its own and it definitionally cannot reach the credential store.
 		return nil
 	}
+	if strings.IndexByte(target, 0) >= 0 {
+		// Fail closed on an embedded NUL: a later NUL-terminated syscall or
+		// Firecracker API would act on a truncated path, so the bytes the guard
+		// reasons about here would not match the bytes the mount layer uses.
+		return fmt.Errorf("%w: %q", ErrInvalidMountTarget, target)
+	}
 	if !strings.HasPrefix(target, "/") {
 		// Fail closed: a non-absolute target (including one that only appears
 		// relative because of leading whitespace) cannot be reasoned about by

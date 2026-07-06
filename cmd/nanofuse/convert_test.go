@@ -139,3 +139,14 @@ func TestSanitizersDropUnicodeWhitespace(t *testing.T) {
 		t.Error("sanitizeBlock should keep newline and space")
 	}
 }
+
+func TestSanitizersDropFormatChars(t *testing.T) {
+	// U+202E RIGHT-TO-LEFT OVERRIDE (category Cf) must be removed by both.
+	in := "a‮b"
+	if got := sanitizeInline(in); got != "ab" {
+		t.Errorf("sanitizeInline(%q) = %q, want ab", in, got)
+	}
+	if got := sanitizeBlock(in); got != "ab" {
+		t.Errorf("sanitizeBlock(%q) = %q, want ab", in, got)
+	}
+}

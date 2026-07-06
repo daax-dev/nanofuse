@@ -24,7 +24,7 @@ func sanitizeInline(s string) string {
 		if r == ' ' {
 			return r
 		}
-		if unicode.IsControl(r) || unicode.IsSpace(r) {
+		if unicode.IsControl(r) || unicode.IsSpace(r) || unicode.In(r, unicode.Cf) {
 			return -1
 		}
 		return r
@@ -41,7 +41,7 @@ func sanitizeBlock(s string) string {
 		if r == '\n' || r == ' ' {
 			return r
 		}
-		if unicode.IsControl(r) || unicode.IsSpace(r) {
+		if unicode.IsControl(r) || unicode.IsSpace(r) || unicode.In(r, unicode.Cf) {
 			return -1
 		}
 		return r
@@ -115,8 +115,8 @@ Examples:
 		if convertResolveEgress {
 			resolver := &net.Resolver{}
 			opts.Resolver = func(host string) ([]string, error) {
-				// Bound each lookup and honour command cancellation (net.LookupHost
-				// cannot be canceled or timed out).
+				// Bound each lookup with a per-lookup timeout derived from the
+				// command context, so a slow resolver cannot hang the conversion.
 				lookupCtx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 				defer cancel()
 				return resolver.LookupHost(lookupCtx, host)

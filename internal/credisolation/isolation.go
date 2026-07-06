@@ -367,17 +367,31 @@ func VerifyDirPerms(p string, requireRoot bool) (VerifyResult, error) {
 	}
 	ownerDetail := ""
 	if requireRoot {
-		if uid, gid, ok := statOwner(info); ok {
-			if uid != RequiredOwnerUID || gid != RequiredOwnerGID {
-				res.Detail = fmt.Sprintf("%s owner %d:%d != required 0:0", p, uid, gid)
-				return res, nil
-			}
-			ownerDetail = " owner 0:0"
+		uid, gid, ok := statOwner(info)
+		if detail := requiredRootOwnerFailure(p, uid, gid, ok); detail != "" {
+			res.Detail = detail
+			return res, nil
 		}
+		ownerDetail = " owner 0:0"
 	}
 	res.Pass = true
 	res.Detail = fmt.Sprintf("%s mode 0700%s", p, ownerDetail)
 	return res, nil
+}
+
+// requiredRootOwnerFailure reports why a required root:root ownership assertion
+// is not satisfied, or "" when it holds. It fails closed when ownership cannot
+// be determined (ok=false, e.g. non-POSIX platforms): a security verifier must
+// not PASS an assertion the caller explicitly requested but that cannot be
+// verified.
+func requiredRootOwnerFailure(p string, uid, gid int, ok bool) string {
+	if !ok {
+		return fmt.Sprintf("%s ownership could not be determined; cannot verify required root:root", p)
+	}
+	if uid != RequiredOwnerUID || gid != RequiredOwnerGID {
+		return fmt.Sprintf("%s owner %d:%d != required 0:0", p, uid, gid)
+	}
+	return ""
 }
 
 // HostCheckOptions configures the host-side verification sweep performed by

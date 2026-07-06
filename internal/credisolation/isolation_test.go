@@ -514,3 +514,31 @@ func mkStore(t *testing.T, mode os.FileMode) string {
 	}
 	return dir
 }
+
+func TestRequiredRootOwnerFailure(t *testing.T) {
+	cases := []struct {
+		name          string
+		uid, gid      int
+		ok            bool
+		wantFailSubst string // "" means the requirement holds (no failure)
+	}{
+		{"indeterminate ownership fails closed", 0, 0, false, "could not be determined"},
+		{"root:root holds", 0, 0, true, ""},
+		{"non-root uid fails", 1000, 0, true, "!= required 0:0"},
+		{"non-root gid fails", 0, 1000, true, "!= required 0:0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := requiredRootOwnerFailure("/store", tc.uid, tc.gid, tc.ok)
+			if tc.wantFailSubst == "" {
+				if got != "" {
+					t.Errorf("requiredRootOwnerFailure = %q, want no failure", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.wantFailSubst) {
+				t.Errorf("requiredRootOwnerFailure = %q, want substring %q", got, tc.wantFailSubst)
+			}
+		})
+	}
+}

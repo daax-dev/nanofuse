@@ -57,6 +57,10 @@ func TestRunIsolationVerifyAbsentStoreStrictFails(t *testing.T) {
 	if err := runIsolationVerify(cmd, nil); err == nil {
 		t.Fatal("strict + absent store should return an error, got nil")
 	}
+	// Output contract: a run that fails still prints the terminal status line.
+	if !strings.Contains(out.String(), "credential isolation: FAIL") {
+		t.Errorf("strict + absent should print the FAIL status line; got: %s", out.String())
+	}
 }
 
 func TestRunIsolationVerifyPassesOnGoodStore(t *testing.T) {

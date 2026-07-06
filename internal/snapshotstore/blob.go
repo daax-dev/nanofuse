@@ -154,6 +154,12 @@ func (b *FSBlob) Put(ctx context.Context, key string, r io.Reader) error {
 	// Put returned success, which would break the manifest-last commit ordering
 	// (a data object could be lost while the manifest that references it persists).
 	if err := fsyncDir(filepath.Dir(path)); err != nil {
+		// The object is already renamed into place but its directory entry is not
+		// durably flushed. Roll it back (best-effort) so a failed Put does not
+		// leave a visible key behind — critical for the manifest commit marker,
+		// where a lingering key would make a snapshot look committed despite the
+		// error.
+		_ = os.Remove(path)
 		return fmt.Errorf("snapshotstore: sync object dir for %q: %w", key, err)
 	}
 	return nil

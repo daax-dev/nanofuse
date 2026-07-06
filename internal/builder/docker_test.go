@@ -83,14 +83,23 @@ func TestDockerBuilderExtract(t *testing.T) {
 		t.Skipf("Docker not available: %v", err)
 	}
 
+	// alpine (like most OCI images) contains no kernel, so a fallback kernel is
+	// required. Provide one via NANOFUSE_TEST_FALLBACK_KERNEL; skip otherwise so
+	// the test stays meaningful instead of reliably failing on kernel extraction.
+	fallbackKernel := os.Getenv("NANOFUSE_TEST_FALLBACK_KERNEL")
+	if fallbackKernel == "" {
+		t.Skip("Set NANOFUSE_TEST_FALLBACK_KERNEL to a kernel path to run this integration test")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	// Use a simple image for testing
 	result, err := builder.Extract(ctx, "alpine:latest", ExtractOptions{
-		OutputDir:    "/tmp/nanofuse-test/extract-test",
-		RootfsSizeMB: 256,
-		Verbose:      true,
+		OutputDir:          "/tmp/nanofuse-test/extract-test",
+		RootfsSizeMB:       256,
+		Verbose:            true,
+		FallbackKernelPath: fallbackKernel,
 	})
 
 	if err != nil {
@@ -102,8 +111,10 @@ func TestDockerBuilderExtract(t *testing.T) {
 	t.Logf("  Rootfs: %s", result.RootfsPath)
 	t.Logf("  Duration: %v", result.Duration)
 
-	// Note: alpine doesn't have a kernel, so this test will fail on kernel extraction
-	// In a real test, we'd use a nanofuse base image
+	// alpine has no kernel, so the fallback must have been used.
+	if result.KernelPath != fallbackKernel {
+		t.Errorf("expected fallback kernel %q to be used, got %q", fallbackKernel, result.KernelPath)
+	}
 }
 
 func TestValidateFallbackKernel(t *testing.T) {

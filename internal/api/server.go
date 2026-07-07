@@ -25,6 +25,15 @@ import (
 	"github.com/daax-dev/nanofuse/internal/vmm"
 )
 
+// spireRegistrar is the subset of *spire.Service the API handlers depend on.
+// Declaring it as an interface lets tests inject a stub to exercise the
+// fail-closed enforcement path (see SPIRE.Required); *spire.Service satisfies it.
+type spireRegistrar interface {
+	IsEnabled() bool
+	CreateVMWorkloadEntry(ctx context.Context, vmID, groupID, ownerUserID string) (string, error)
+	DeleteVMWorkloadEntry(ctx context.Context, spiffeID string) error
+}
+
 // Server represents the API server
 type Server struct {
 	config           *config.Config
@@ -35,7 +44,7 @@ type Server struct {
 	logger           *logging.Logger
 	startTime        time.Time
 	recordingStorage RecordingStorageInterface
-	spireService     *spire.Service
+	spireService     spireRegistrar
 }
 
 // loadExistingAllocations loads IP allocations from existing VMs in the database

@@ -131,6 +131,12 @@ func (s *TieredStore) Put(ctx context.Context, id string, files []SourceFile, rt
 	if err != nil {
 		return nil, fmt.Errorf("snapshotstore: marshal manifest for %q: %w", id, err)
 	}
+	// Enforce the same size bound the read path applies, so Put never commits a
+	// manifest that Manifest()/Get() would later reject with ErrManifestTooLarge
+	// (which would leave an unreadable snapshot). Fail before the commit marker.
+	if int64(len(data)) > maxManifestBytes {
+		return nil, fmt.Errorf("%w: manifest %q is %d bytes (> %d)", ErrManifestTooLarge, id, len(data), maxManifestBytes)
+	}
 	// Commit marker: the manifest is written strictly last.
 	if err := s.blob.Put(ctx, objectKey(id, manifestObject), bytes.NewReader(data)); err != nil {
 		return nil, fmt.Errorf("snapshotstore: write manifest for %q: %w", id, err)

@@ -7,8 +7,10 @@
 - Exactly one memory source. Use `mem_backend` (preferred; `mem_file_path` is
   deprecated): `{ "backend_type": "File", "backend_path": <mem file> }`.
   `backend_type` enum is `File | Uffd`; `File` uses kernel page-fault handling.
-- `resume_vm: true` — resumes vCPUs after a successful load (avoids a second
-  `PATCH /vm {state:Resumed}` round-trip).
+- `resume_vm: false` — the snapshot loads paused; LoadSnapshot resumes the
+  vCPUs with an explicit `PATCH /vm {state:Resumed}` *after* the SPIRE vsock
+  proxy is listening, so early guest->host vsock traffic cannot race a
+  not-yet-listening proxy.
 - Load must happen on a FRESH Firecracker process with no boot source (no
   `--config-file`, no instance-start). Host tap devices referenced by the
   snapshot must already exist and be reachable by the new process.
@@ -30,7 +32,10 @@
   -> start fresh Firecracker (no config) -> wait for socket -> `sendSnapshotLoad`
   -> `setupVMRuntime` + reaper goroutine. On any post-spawn failure, kill and
   reap the process (no zombie) and return an actionable error.
-  vsock/SPIRE re-wiring is out of scope for this change (documented limitation).
+  The host-side SPIRE vsock proxy IS re-wired on resume (started while the VM is
+  paused, before the resume PATCH) so a resumed VM keeps host-service access;
+  it is tracked for Stop cleanup. Cross-node/in-guest SPIRE agent work remains
+  out of scope (that is #17 / AC2 territory).
 
 ### 2. Runtime interface + other implementors
 - Add `LoadSnapshot(vm, snapshotPath, memPath) error` to `vmm.Manager`.
@@ -61,7 +66,7 @@
 
 ## Tests (TDD, written first)
 - firecracker: request schema (`/snapshot/load`, `mem_backend.backend_type=File`,
-  `backend_path`, `resume_vm=true`); input/file validation; `waitForSocketReady`
+  `backend_path`, `resume_vm=false`); input/file validation; `waitForSocketReady`
   success + timeout.
 - api: happy path (state Running, LoadSnapshot args), running-VM conflict,
   snapshot not found, wrong owner, missing files, unsupported runtime -> 501.

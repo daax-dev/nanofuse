@@ -14,7 +14,9 @@ AC1 on a root/KVM sandbox (e.g. the vagrant-skill box with nested KVM).
 
 ## What WAS verified without KVM
 - Firecracker `PUT /snapshot/load` request schema (`snapshot_path`,
-  `mem_backend{backend_type:"File",backend_path}`, `resume_vm:true`; deprecated
+  `mem_backend{backend_type:"File",backend_path}`, `resume_vm:false` (loads
+  paused; LoadSnapshot resumes via a subsequent `PATCH /vm {Resumed}` after the
+  vsock proxy is up); deprecated
   `mem_file_path` absent) — unit test `TestSendSnapshotLoadSendsFirecrackerRequest`
   drives a real unix-socket HTTP server; 100% coverage of `sendSnapshotLoad`.
 - Schema confirmed against the primary source:

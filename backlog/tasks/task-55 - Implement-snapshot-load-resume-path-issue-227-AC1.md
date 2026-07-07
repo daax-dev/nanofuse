@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-07-06 22:49'
-updated_date: '2026-07-06 23:14'
+updated_date: '2026-07-07 00:39'
 labels:
   - issue-227
   - snapshot
@@ -21,11 +21,11 @@ Wire Firecracker PUT /snapshot/load into the resume path so 'vm resume --from-sn
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 Runtime LoadSnapshot sends PUT /snapshot/load with snapshot_path, mem_backend{backend_type:File,backend_path}, resume_vm:true on a fresh Firecracker process
-- [x] #2 resume --from-snapshot restores a non-running VM and leaves it Running
-- [x] #3 Snapshot resume validates existence, ownership, and backing-file presence with actionable errors
-- [x] #4 Running VM rejected with conflict; unsupported runtime mapped to 501
-- [x] #5 Unit tests cover request schema, validation, state machine, and error mapping; e2e documented
+- [x] #1 resume --from-snapshot restores a non-running VM and leaves it Running
+- [x] #2 Snapshot resume validates existence, ownership, and backing-file presence with actionable errors
+- [x] #3 Running VM rejected with conflict; unsupported runtime mapped to 501
+- [x] #4 Unit tests cover request schema, validation, state machine, and error mapping; e2e documented
+- [x] #5 Runtime LoadSnapshot sends PUT /snapshot/load (mem_backend{backend_type:File}, resume_vm:false) on a fresh Firecracker process, loads paused, then resumes vCPUs via PATCH /vm after the vsock proxy is listening
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -63,4 +63,7 @@ Real KVM resume NOT run (agent user lacks /dev/kvm + sudo; host firecracker v1.7
 AC2 cross-node resume (depends on #130/#250). Snapshot arch-match + config-drift validation (need snapshot-record schema change; not reachable in AC1 happy path).
 
 Validation: producer claude-opus-4-8, validator gemini-2.5-pro (cross-provider), verdict: no outstanding correctness issues.
+
+## Revision (PR #263, Copilot review)
+LoadSnapshot now loads the snapshot PAUSED (resume_vm:false), starts the SPIRE vsock proxy, then resumes vCPUs via PATCH /vm {Resumed} - the proxy is listening before any guest vsock traffic (starting it before the load would race Firecracker vsock restore on the same UDS). setupVMRuntime + reaper run only after a successful resume, so a failed resume never persists a stale runtime. resume-from-snapshot state guard is an allowlist (Stopped/Created/Failed); backing-file stat maps IsNotExist->404, other errors->500+log.
 <!-- SECTION:NOTES:END -->

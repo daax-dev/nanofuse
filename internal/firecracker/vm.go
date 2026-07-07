@@ -704,9 +704,6 @@ func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error
 		return fmt.Errorf("failed to load snapshot for VM %s: %w", vm.ID, err)
 	}
 
-	// Record runtime info and reap the process on exit (prevents zombies).
-	setupVMRuntime(vm, cmd, socketPath, consolePath)
-
 	// Restart the host-side SPIRE vsock proxy the same way Start does, so a
 	// resumed VM keeps access to host services over vsock and the proxy is
 	// tracked in m.vsockProxies for Stop cleanup (otherwise it would leak).
@@ -721,6 +718,11 @@ func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error
 		return fmt.Errorf("failed to resume loaded snapshot for VM %s: %w", vm.ID, err)
 	}
 
+	// Record runtime info and reap the process on exit only after a fully
+	// successful resume. Doing it earlier would let a failed resume PATCH (which
+	// kills the process above) leave vm.Runtime pointing at a dead PID/socket that
+	// the caller could persist.
+	setupVMRuntime(vm, cmd, socketPath, consolePath)
 	go m.waitForProcessExit(vm.ID, cmd)
 
 	return nil

@@ -295,13 +295,9 @@ func TestLoadSnapshotMissingBackingFiles(t *testing.T) {
 }
 
 func TestWaitForSocketReady(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("/tmp", "nf-fc-wait-*")
-	if err != nil {
-		t.Fatalf("temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
-
-	socketPath := filepath.Join(tmpDir, "ready.sock")
+	// t.TempDir cleans up automatically; the path stays well under the unix
+	// socket sun_path limit (108) for this short test name.
+	socketPath := filepath.Join(t.TempDir(), "ready.sock")
 
 	// Missing socket: must time out quickly.
 	if err := waitForSocketReady(socketPath, 150*time.Millisecond); err == nil {

@@ -149,6 +149,65 @@ func TestHandleCreateVMSpireRequiredUnreachableFailsClosed(t *testing.T) {
 	}
 }
 
+// Required mode must not be bypassable: a request that supplies no identity
+// inputs (owner_user_id/group_id absent) would otherwise create a VM with no
+// SVID even though the operator requires one. It must be rejected (400) with no
+// leaked VM, and registration must not even be attempted.
+func TestHandleCreateVMSpireRequiredMissingInputsRejected(t *testing.T) {
+	db := newSPIRETestDB(t)
+	// Reachable SPIRE so the only reason no identity is minted is the missing inputs.
+	spireSvc := &spireRegistrarStub{enabled: true, spiffeID: "spiffe://poley.dev/x"}
+	server := newSPIRETestServer(t, db, config.SPIREConfig{Enabled: true, Required: true}, spireSvc)
+
+	body := `{"name":"nf-spire","image":"docker.io/library/alpine:3.20"}`
+	req := httptest.NewRequest(http.MethodPost, "/vms", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.handleCreateVM(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	vms, err := db.ListVMs("")
+	if err != nil {
+		t.Fatalf("ListVMs: %v", err)
+	}
+	if len(vms) != 0 {
+		t.Fatalf("VMs persisted = %d, want 0 (required mode must not create an identity-less VM)", len(vms))
+	}
+	vmsDir := filepath.Join(server.config.Storage.DataDir, "vms")
+	entries, err := os.ReadDir(vmsDir)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("ReadDir(%s): %v", vmsDir, err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("leaked %d per-VM storage dir(s); cleanup incomplete", len(entries))
+	}
+}
+
+// Required mode must also reject an explicit opt-out (auto_register_spiffe:false):
+// a client cannot decline identity provisioning when the operator requires it.
+func TestHandleCreateVMSpireRequiredAutoRegisterDisabledRejected(t *testing.T) {
+	db := newSPIRETestDB(t)
+	spireSvc := &spireRegistrarStub{enabled: true, spiffeID: "spiffe://poley.dev/x"}
+	server := newSPIRETestServer(t, db, config.SPIREConfig{Enabled: true, Required: true}, spireSvc)
+
+	body := `{"name":"nf-spire","image":"docker.io/library/alpine:3.20","owner_user_id":"alice","group_id":"team","auto_register_spiffe":false}`
+	req := httptest.NewRequest(http.MethodPost, "/vms", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.handleCreateVM(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	vms, err := db.ListVMs("")
+	if err != nil {
+		t.Fatalf("ListVMs: %v", err)
+	}
+	if len(vms) != 0 {
+		t.Fatalf("VMs persisted = %d, want 0 (opt-out must not bypass required identity)", len(vms))
+	}
+}
+
 // AC-2: Required + SPIRE reachable -> create succeeds and VM carries the SVID.
 func TestHandleCreateVMSpireRequiredReachableSucceeds(t *testing.T) {
 	db := newSPIRETestDB(t)

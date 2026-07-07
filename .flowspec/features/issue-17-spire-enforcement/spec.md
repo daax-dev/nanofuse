@@ -63,9 +63,9 @@ be provisioned must not start, and no partial/leaked resources may remain.
 ## Acceptance Criteria (measurable)
 
 - **AC-1 (core, DoD AC4):** With identity mandatory and the provider unreachable,
-  a create request fails with a response whose error text names SPIRE
-  unreachability, and no microVM record, network, storage, or identity entry
-  remains afterward.
+  a create request fails with a response whose error text names SPIRE as
+  unavailable or misconfigured (without asserting a single specific cause), and
+  no microVM record, network, storage, or identity entry remains afterward.
 - **AC-2:** With identity mandatory and the provider reachable, a create request
   succeeds and the microVM record carries the issued identity.
 - **AC-3:** With identity NOT mandatory and the provider unreachable, a create

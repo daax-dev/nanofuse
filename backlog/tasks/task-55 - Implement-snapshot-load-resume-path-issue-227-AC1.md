@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-07-06 22:49'
-updated_date: '2026-07-07 00:39'
+updated_date: '2026-07-07 00:53'
 labels:
   - issue-227
   - snapshot
@@ -41,29 +41,26 @@ Wire Firecracker PUT /snapshot/load into the resume path so 'vm resume --from-sn
 nanofuse could create Firecracker snapshots but had no restore path: Manager.Resume and the resume handler ignored the snapshot; nothing called Firecracker PUT /snapshot/load. Snapshots were write-only.
 
 ## Approach (AC1, local)
-- firecracker.Manager.LoadSnapshot: starts a FRESH Firecracker process with no --config-file (snapshot supplies machine state), waits for the API socket, then PUT /snapshot/load with mem_backend{backend_type:File},resume_vm:true. Reaps the process (no zombies); kills+reaps on any post-spawn failure.
-- Schema verified against Firecracker v1.15 swagger (SnapshotLoadParams/MemoryBackend); mem_backend preferred over deprecated mem_file_path; resume_vm avoids a second PATCH /vm.
+- firecracker.Manager.LoadSnapshot: starts a FRESH Firecracker process with no --config-file (snapshot supplies machine state), waits for the API socket, then PUT /snapshot/load with mem_backend{backend_type:File}, resume_vm:FALSE (loads paused). It then starts the SPIRE vsock proxy and resumes vCPUs via PATCH /vm {Resumed} - the proxy is listening before any guest vsock traffic (starting it before the load would race Firecracker vsock restore on the same UDS). setupVMRuntime + reaper run only after a successful resume, so a failed resume never persists a stale runtime. Kills+reaps on any post-spawn failure; backing paths must be regular files (Lstat, rejects symlinks/dirs).
+- Schema verified against Firecracker v1.15 swagger (SnapshotLoadParams/MemoryBackend); mem_backend preferred over deprecated mem_file_path.
 - vmm.Manager gains LoadSnapshot; applecontainer returns ErrUnsupportedOperation.
-- handleVMResumeByPath branches on snapshot_id -> resumeVMFromSnapshot: rejects running/resuming/starting VMs (409), validates snapshot existence/ownership/in-root-path/backing-files, re-establishes host tap idempotently, sets Resuming -> LoadSnapshot -> Running with state restore/kill on failure, maps unsupported runtime to 501.
+- handleVMResumeByPath branches on snapshot_id -> resumeVMFromSnapshot: allows only no-live-runtime states (Stopped/Created/Failed), validates snapshot existence/ownership/in-root-path/backing-files (IsNotExist->404, other stat errors->500), re-establishes host tap idempotently, sets Resuming -> LoadSnapshot -> Running with state restore/kill on failure, maps unsupported runtime to 501.
 - CLI/client already wired (--from-snapshot).
 
-## Security/robustness (from 3 rounds gemini-2.5-pro review + premortem)
-- Path-traversal guard on stored snapshot paths (mirrors handleDeleteSnapshot).
-- 0750 vmDir perms. Tap cleanup on attach failure. Mark-failed on state-restore double-failure; kill orphaned runtime if final persist fails.
+## Security/robustness (from 3 rounds gemini-2.5-pro review + premortem, plus Copilot review)
+- Path-traversal guard on stored snapshot paths (mirrors handleDeleteSnapshot); backing paths must be regular files.
+- 0750 vmDir perms (enforced via Chmod). Tap cleanup on attach failure. Mark-failed on state-restore double-failure; kill orphaned runtime if final persist fails. vsock proxy stale-cleanup before restart; no leak.
 
 ## Tests
-- firecracker: sendSnapshotLoad schema (100%), waitForSocketReady (100%), LoadSnapshot validation, missing-files.
-- api: happy path + running-conflict + not-found + wrong-owner + missing-files + path-outside-root + unsupported->501.
-- Gate: gofmt clean, go vet clean, golangci-lint v2.12.2 (CI-pinned) 0 issues, go test -race ./... green, gosec at baseline parity (no new findings).
+- firecracker: sendSnapshotLoad schema (resume_vm:false), waitForSocketReady, LoadSnapshot validation.
+- api: happy path + live-runtime-state conflict + not-found + wrong-owner + missing-files + not-accessible(500) + non-regular-file(500) + path-outside-root + empty-body-unpause + unsupported->501.
+- Gate: gofmt/vet clean, golangci-lint v2.12.2 (CI-pinned) 0 issues, go test -race ./... green.
 
 ## e2e
 Real KVM resume NOT run (agent user lacks /dev/kvm + sudo; host firecracker v1.7.0 != v1.15 target). Exact procedure documented in .flowspec/features/issue-227-snapshot-load/e2e.md. Unit + primary-source verified; fresh-process spawn + live /snapshot/load resume remain for KVM.
 
 ## Out of scope (documented follow-ups)
-AC2 cross-node resume (depends on #130/#250). Snapshot arch-match + config-drift validation (need snapshot-record schema change; not reachable in AC1 happy path).
+AC2 cross-node resume (depends on #130). Snapshot arch-match + config-drift validation (need snapshot-record schema change; not reachable in AC1 happy path).
 
-Validation: producer claude-opus-4-8, validator gemini-2.5-pro (cross-provider), verdict: no outstanding correctness issues.
-
-## Revision (PR #263, Copilot review)
-LoadSnapshot now loads the snapshot PAUSED (resume_vm:false), starts the SPIRE vsock proxy, then resumes vCPUs via PATCH /vm {Resumed} - the proxy is listening before any guest vsock traffic (starting it before the load would race Firecracker vsock restore on the same UDS). setupVMRuntime + reaper run only after a successful resume, so a failed resume never persists a stale runtime. resume-from-snapshot state guard is an allowlist (Stopped/Created/Failed); backing-file stat maps IsNotExist->404, other errors->500+log.
+Validation: producer claude-opus-4-8, validator gemini-2.5-pro (cross-provider) + Copilot review rounds; verdict: no outstanding correctness issues.
 <!-- SECTION:NOTES:END -->

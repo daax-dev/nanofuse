@@ -1424,12 +1424,17 @@ func (s *Server) resolveResumableSnapshot(w http.ResponseWriter, vm *types.VM, s
 	return snapshot, true
 }
 
-// checkSnapshotFilePresent verifies a snapshot backing file exists. A missing
-// file is a 404 (snapshot not found); any other stat error (e.g. EACCES or a
-// transient IO failure) is a 500 with an explicit "not accessible" message and a
-// server log entry, since it is not the same condition as "not found".
+// checkSnapshotFilePresent verifies a snapshot backing file exists and is a
+// regular file. A missing file is a 404 (snapshot not found); any other stat
+// error (e.g. EACCES or a transient IO failure) is a 500 with an explicit "not
+// accessible" message and a server log entry, since it is not the same condition
+// as "not found". Lstat (not Stat) is used so a symlink is inspected in place: a
+// symlink or directory at the stored path is rejected as a 500, closing a
+// symlink-escape gap that Stat's link-following would otherwise leave in the
+// path-traversal defense.
 func (s *Server) checkSnapshotFilePresent(w http.ResponseWriter, snapshotID, kind, path string) bool {
-	if _, statErr := os.Stat(path); statErr != nil {
+	info, statErr := os.Lstat(path)
+	if statErr != nil {
 		if os.IsNotExist(statErr) {
 			types.WriteError(w, http.StatusNotFound, types.ErrSnapshotNotFound,
 				fmt.Sprintf("Snapshot %s file missing at '%s'", kind, path),
@@ -1439,6 +1444,13 @@ func (s *Server) checkSnapshotFilePresent(w http.ResponseWriter, snapshotID, kin
 		s.logger.Printf("ERROR: cannot stat snapshot %s file %q for %s: %v", kind, path, snapshotID, statErr)
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
 			fmt.Sprintf("Snapshot %s file not accessible at '%s'", kind, path),
+			map[string]interface{}{"snapshot_id": snapshotID, "path": path})
+		return false
+	}
+	if !info.Mode().IsRegular() {
+		s.logger.Printf("ERROR: snapshot %s path %q for %s is not a regular file (mode %v)", kind, path, snapshotID, info.Mode())
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			fmt.Sprintf("Snapshot %s path is not a regular file: '%s'", kind, path),
 			map[string]interface{}{"snapshot_id": snapshotID, "path": path})
 		return false
 	}

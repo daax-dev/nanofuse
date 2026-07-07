@@ -642,6 +642,19 @@ func (m *Manager) startVsockProxyIfConfigured(vmID, vsockPath string) {
 		vmID, m.spireConfig.VsockPort, m.spireConfig.AgentSocket)
 }
 
+// requireRegularFile reports an error unless path is an existing regular file.
+// It uses Lstat so a symlink is rejected in place rather than followed.
+func requireRegularFile(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("not accessible: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file (mode %v)", info.Mode())
+	}
+	return nil
+}
+
 // LoadSnapshot boots a fresh Firecracker process from a previously created
 // snapshot and resumes it. Unlike Resume (which unpauses an already-running
 // process), a snapshot load requires a brand-new Firecracker process with no
@@ -658,11 +671,14 @@ func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error
 	if memPath == "" {
 		return fmt.Errorf("snapshot memory path is required")
 	}
-	if _, err := os.Stat(snapshotPath); err != nil {
-		return fmt.Errorf("snapshot state file not accessible at %s: %w", snapshotPath, err)
+	// Require regular files. Lstat (not Stat) inspects a symlink in place, so a
+	// symlink or directory at either path is rejected here rather than followed
+	// into Firecracker as opaque load input.
+	if err := requireRegularFile(snapshotPath); err != nil {
+		return fmt.Errorf("snapshot state file at %s: %w", snapshotPath, err)
 	}
-	if _, err := os.Stat(memPath); err != nil {
-		return fmt.Errorf("snapshot memory file not accessible at %s: %w", memPath, err)
+	if err := requireRegularFile(memPath); err != nil {
+		return fmt.Errorf("snapshot memory file at %s: %w", memPath, err)
 	}
 
 	vmDir := filepath.Join(m.dataDir, "vms", vm.ID)

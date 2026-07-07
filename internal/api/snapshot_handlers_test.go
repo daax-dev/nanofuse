@@ -654,6 +654,46 @@ func TestHandleVMResumeFromSnapshotFileNotAccessible(t *testing.T) {
 	}
 }
 
+func TestHandleVMResumeFromSnapshotRejectsNonRegularFile(t *testing.T) {
+	// A directory (or symlink) at the backing-file path must be rejected with a
+	// 500, not treated as a valid regular file.
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+	dir := snapshotDirFor(server, vm.ID, "snapshot-load-nonreg")
+	// The state "file" is actually a directory.
+	stateDir := filepath.Join(dir, "vm.snap")
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	snap := &types.Snapshot{
+		ID:               "snapshot-load-nonreg",
+		VMID:             vm.ID,
+		SnapshotFilePath: stateDir,
+		MemoryFilePath:   filepath.Join(dir, "mem.snap"),
+		CreatedAt:        time.Now(),
+	}
+	if err := db.CreateSnapshot(snap); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 0 {
+		t.Fatalf("LoadSnapshot must not be called for a non-regular backing path")
+	}
+}
+
 func TestHandleVMResumeFromSnapshotMissingFiles(t *testing.T) {
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
 	if err != nil {

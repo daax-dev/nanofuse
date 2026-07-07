@@ -59,8 +59,10 @@ from a previously created snapshot.
    unchanged.
 6. When the runtime does not support snapshot restore, the caller receives a
    not-implemented result identifying the unsupported operation.
-7. The restore request sent to the runtime carries the snapshot state path, the
-   memory backing path, and an instruction to resume execution.
+7. The restore supplies the runtime with the snapshot state path and the memory
+   backing path, and the VM ends up resumed and executing from that captured
+   state (whether the runtime resumes as part of the load or via a subsequent
+   resume step is a runtime detail).
 
 ## Assumptions
 - The natural local lifecycle is: create -> start -> pause -> snapshot -> stop ->

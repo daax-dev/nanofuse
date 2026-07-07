@@ -654,6 +654,34 @@ func TestHandleVMResumeFromSnapshotFileNotAccessible(t *testing.T) {
 	}
 }
 
+func TestHandleVMResumeFromSnapshotNonFirecrackerSkipsTapAndReturns501(t *testing.T) {
+	// For a non-firecracker runtime, snapshot resume must not touch host TAP
+	// devices (even with Mode=nat and a TapDevice set) and must surface the
+	// runtime's ErrUnsupportedOperation as 501 - not a 500 from TAP creation.
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	vm.Config.Network = types.NetworkConfig{Mode: "nat", TapDevice: "tap-bogus-noexist"}
+	if err := db.UpdateVM(vm); err != nil {
+		t.Fatalf("UpdateVM: %v", err)
+	}
+	stub := &runtimeImageProviderStub{loadSnapshotErr: fmt.Errorf("%w: apple container", vmm.ErrUnsupportedOperation)}
+	server := newSnapshotResumeServer(t, db, stub)
+	server.config.Runtime.Driver = "apple_container"
+	snap := writeSnapshotRecord(t, server, "snapshot-load-nofc", vm.ID)
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusNotImplemented, w.Body.String())
+	}
+}
+
 func TestHandleVMResumeFromSnapshotRejectsNonRegularFile(t *testing.T) {
 	// A directory (or symlink) at the backing-file path must be rejected with a
 	// 500, not treated as a valid regular file.

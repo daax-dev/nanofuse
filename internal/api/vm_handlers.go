@@ -1574,6 +1574,15 @@ func (s *Server) snapshotFileWithinManagedRoot(p string) bool {
 // is absent. It is idempotent and a no-op for VMs without firecracker
 // networking, which keeps snapshot resume hermetic for non-networked VMs.
 func (s *Server) ensureVMTapForResume(vm *types.VM) error {
+	// TAP re-establishment is firecracker-specific. Other runtimes (e.g. apple
+	// container) neither create nor need a Linux TAP, yet their VMs still default
+	// to Network.Mode "nat" at create time. Mirror setupVMNetworking's runtime
+	// gate so snapshot resume never touches host TAP devices for a non-firecracker
+	// runtime — that runtime's LoadSnapshot returns ErrUnsupportedOperation, which
+	// the caller maps to 501, without a spurious 500 or a stray TAP first.
+	if selectedRuntimeDriver(s.config) != "firecracker" {
+		return nil
+	}
 	if vm.Config.Network.Mode == "" || vm.Config.Network.Mode == "none" {
 		return nil
 	}

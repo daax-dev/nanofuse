@@ -592,12 +592,6 @@ func (m *Manager) CreateSnapshot(vm *types.VM, snapshotPath, memPath string) err
 	return nil
 }
 
-// startVsockProxyIfConfigured starts the host-side SPIRE vsock proxy for a VM
-// and tracks it in m.vsockProxies for later Stop cleanup. It is best-effort: a
-// failure is logged and not fatal (matching Start's behaviour). It is a no-op
-// when SPIRE/vsock is not configured, so the same gate that decides whether the
-// Firecracker vsock device exists also decides whether the proxy runs. Shared by
-// Start and LoadSnapshot so a snapshot-resumed VM gets the same wiring.
 // stopVsockProxy stops and removes the tracked vsock proxy for vmID, if any, and
 // reports whether one was stopped. The map is mutated under vsockMu but the
 // (potentially blocking) Stop runs outside the lock, matching Manager.Stop.
@@ -614,6 +608,12 @@ func (m *Manager) stopVsockProxy(vmID string) bool {
 	return ok
 }
 
+// startVsockProxyIfConfigured starts the host-side SPIRE vsock proxy for a VM
+// and tracks it in m.vsockProxies for later Stop cleanup. It is best-effort: a
+// failure is logged and not fatal (matching Start's behaviour). It is a no-op
+// when SPIRE/vsock is not configured, so the same gate that decides whether the
+// Firecracker vsock device exists also decides whether the proxy runs. Shared by
+// Start and LoadSnapshot so a snapshot-resumed VM gets the same wiring.
 func (m *Manager) startVsockProxyIfConfigured(vmID, vsockPath string) {
 	if m.spireConfig == nil || !m.spireConfig.Enabled || m.spireConfig.VsockCID < 3 {
 		return

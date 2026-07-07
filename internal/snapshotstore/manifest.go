@@ -76,6 +76,10 @@ var (
 	// succeed while restoring nothing).
 	ErrEmptyManifest = errors.New("snapshotstore: manifest lists no files")
 
+	// ErrManifestTooLarge means a manifest object exceeds the maximum size we are
+	// willing to read, guarding against an oversized/tampered manifest object.
+	ErrManifestTooLarge = errors.New("snapshotstore: manifest object exceeds the maximum size")
+
 	// ErrUnsupportedCompression means a manifest declares a compression codec
 	// this build does not support.
 	ErrUnsupportedCompression = errors.New("snapshotstore: unsupported compression codec")

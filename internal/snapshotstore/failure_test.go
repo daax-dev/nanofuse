@@ -53,6 +53,23 @@ func TestManifestCorruptJSON(t *testing.T) {
 	}
 }
 
+func TestManifestRejectsOversizedObject(t *testing.T) {
+	store, root := newStore(t)
+	id := "snap-huge"
+	if err := os.MkdirAll(filepath.Join(root, id), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// An object larger than the read limit must be rejected outright, not
+	// silently truncated to a "valid" prefix.
+	blob := make([]byte, maxManifestBytes+10)
+	if err := os.WriteFile(filepath.Join(root, id, manifestObject), blob, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := store.Manifest(context.Background(), id); !errors.Is(err, ErrManifestTooLarge) {
+		t.Fatalf("Manifest on oversized object = %v, want ErrManifestTooLarge", err)
+	}
+}
+
 func TestGetMissingDataObject(t *testing.T) {
 	store, root := newStore(t)
 	ctx := context.Background()

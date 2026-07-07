@@ -229,9 +229,15 @@ func (s *TieredStore) Manifest(ctx context.Context, id string) (*Manifest, error
 	}
 	defer func() { _ = rc.Close() }()
 
-	data, err := io.ReadAll(io.LimitReader(rc, maxManifestBytes))
+	// Read one byte past the limit so an object larger than maxManifestBytes is
+	// detected and rejected, rather than silently truncated (json.Unmarshal would
+	// otherwise ignore the trailing bytes and accept an oversized/tampered object).
+	data, err := io.ReadAll(io.LimitReader(rc, maxManifestBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("snapshotstore: read manifest for %q: %w", id, err)
+	}
+	if int64(len(data)) > maxManifestBytes {
+		return nil, fmt.Errorf("%w: manifest %q exceeds %d bytes", ErrManifestTooLarge, id, maxManifestBytes)
 	}
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {

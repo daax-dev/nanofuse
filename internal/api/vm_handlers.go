@@ -1532,11 +1532,23 @@ func (s *Server) resumeVMFromSnapshot(w http.ResponseWriter, vm *types.VM, snaps
 
 	vm.State = types.StateRunning
 	if err := s.db.UpdateVM(vm); err != nil {
-		// The runtime is up but the control plane cannot record it. Kill the
-		// freshly started process so we do not leak an untracked runtime.
-		s.logger.Printf("ERROR: Failed to persist running state for VM %s after snapshot load; killing orphaned runtime: %v", vm.ID, err)
-		if killErr := s.runtimeManager.Kill(vm); killErr != nil {
-			s.logger.Printf("WARN: Failed to kill orphaned runtime for VM %s: %v", vm.ID, killErr)
+		// The runtime is up but the control plane cannot record it. Tear it down
+		// and restore a resumable state. Stop (not Kill) also stops the vsock proxy
+		// that LoadSnapshot started, which Kill would leak; and the VM must not be
+		// left stuck in Resuming, which the resume-from-snapshot allowlist excludes.
+		s.logger.Printf("ERROR: Failed to persist running state for VM %s after snapshot load; stopping runtime: %v", vm.ID, err)
+		if stopErr := s.runtimeManager.Stop(vm, 5); stopErr != nil {
+			s.logger.Printf("WARN: Failed to stop runtime for VM %s after persist failure: %v", vm.ID, stopErr)
+		}
+		// Best-effort state restore (prevState, then Failed), mirroring the
+		// LoadSnapshot failure path above, so the VM is not stranded in Resuming.
+		vm.State = prevState
+		if updErr := s.db.UpdateVM(vm); updErr != nil {
+			s.logger.Printf("ERROR: Failed to restore VM %s state after persist failure; marking failed: %v", vm.ID, updErr)
+			vm.State = types.StateFailed
+			if failErr := s.db.UpdateVM(vm); failErr != nil {
+				s.logger.Printf("ERROR: Failed to mark VM %s failed: %v", vm.ID, failErr)
+			}
 		}
 		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to update VM state", nil)
 		return

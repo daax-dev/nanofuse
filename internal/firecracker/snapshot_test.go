@@ -237,8 +237,8 @@ func TestSendSnapshotLoadSendsFirecrackerRequest(t *testing.T) {
 	if got.MemBackend.BackendPath != memPath {
 		t.Fatalf("mem_backend.backend_path = %q, want %q", got.MemBackend.BackendPath, memPath)
 	}
-	if !got.ResumeVM {
-		t.Fatalf("resume_vm = false, want true")
+	if got.ResumeVM {
+		t.Fatalf("resume_vm = true, want false (snapshot loads paused; LoadSnapshot resumes after the vsock proxy is up)")
 	}
 
 	// The deprecated mem_file_path field must not be present alongside mem_backend.

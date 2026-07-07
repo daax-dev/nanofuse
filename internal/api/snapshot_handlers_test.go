@@ -611,6 +611,49 @@ func TestHandleVMResumeFromSnapshotWrongOwner(t *testing.T) {
 	}
 }
 
+func TestHandleVMResumeFromSnapshotFileNotAccessible(t *testing.T) {
+	// A stat error other than "not exist" (here ENOTDIR: a path component is a
+	// regular file) must map to 500 not-accessible, not a misleading 404.
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+	dir := snapshotDirFor(server, vm.ID, "snapshot-load-enotdir")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// vm.snap is a regular file, so stat of vm.snap/child fails with ENOTDIR.
+	regular := filepath.Join(dir, "vm.snap")
+	if err := os.WriteFile(regular, []byte("state"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	snap := &types.Snapshot{
+		ID:               "snapshot-load-enotdir",
+		VMID:             vm.ID,
+		SnapshotFilePath: filepath.Join(regular, "child"),
+		MemoryFilePath:   filepath.Join(dir, "mem.snap"),
+		CreatedAt:        time.Now(),
+	}
+	if err := db.CreateSnapshot(snap); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 0 {
+		t.Fatalf("LoadSnapshot must not be called when a backing file is not accessible")
+	}
+}
+
 func TestHandleVMResumeFromSnapshotMissingFiles(t *testing.T) {
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
 	if err != nil {

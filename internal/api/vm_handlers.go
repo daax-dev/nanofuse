@@ -1414,20 +1414,35 @@ func (s *Server) resolveResumableSnapshot(w http.ResponseWriter, vm *types.VM, s
 
 	// Verify the backing files are present before touching runtime state so the
 	// caller gets a clear error instead of an opaque runtime failure.
-	if _, statErr := os.Stat(snapshot.SnapshotFilePath); statErr != nil {
-		types.WriteError(w, http.StatusNotFound, types.ErrSnapshotNotFound,
-			fmt.Sprintf("Snapshot state file missing at '%s'", snapshot.SnapshotFilePath),
-			map[string]interface{}{"snapshot_id": snapshotID, "path": snapshot.SnapshotFilePath})
+	if !s.checkSnapshotFilePresent(w, snapshotID, "state", snapshot.SnapshotFilePath) {
 		return nil, false
 	}
-	if _, statErr := os.Stat(snapshot.MemoryFilePath); statErr != nil {
-		types.WriteError(w, http.StatusNotFound, types.ErrSnapshotNotFound,
-			fmt.Sprintf("Snapshot memory file missing at '%s'", snapshot.MemoryFilePath),
-			map[string]interface{}{"snapshot_id": snapshotID, "path": snapshot.MemoryFilePath})
+	if !s.checkSnapshotFilePresent(w, snapshotID, "memory", snapshot.MemoryFilePath) {
 		return nil, false
 	}
 
 	return snapshot, true
+}
+
+// checkSnapshotFilePresent verifies a snapshot backing file exists. A missing
+// file is a 404 (snapshot not found); any other stat error (e.g. EACCES or a
+// transient IO failure) is a 500 with an explicit "not accessible" message and a
+// server log entry, since it is not the same condition as "not found".
+func (s *Server) checkSnapshotFilePresent(w http.ResponseWriter, snapshotID, kind, path string) bool {
+	if _, statErr := os.Stat(path); statErr != nil {
+		if os.IsNotExist(statErr) {
+			types.WriteError(w, http.StatusNotFound, types.ErrSnapshotNotFound,
+				fmt.Sprintf("Snapshot %s file missing at '%s'", kind, path),
+				map[string]interface{}{"snapshot_id": snapshotID, "path": path})
+			return false
+		}
+		s.logger.Printf("ERROR: cannot stat snapshot %s file %q for %s: %v", kind, path, snapshotID, statErr)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			fmt.Sprintf("Snapshot %s file not accessible at '%s'", kind, path),
+			map[string]interface{}{"snapshot_id": snapshotID, "path": path})
+		return false
+	}
+	return true
 }
 
 // resumeVMFromSnapshot restores a VM from a previously created snapshot by

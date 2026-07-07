@@ -141,8 +141,10 @@ type memoryBackend struct {
 }
 
 // snapshotLoadRequest mirrors Firecracker's SnapshotLoadParams (v1.15).
-// mem_backend is preferred over the deprecated mem_file_path. resume_vm:true
-// resumes the vCPUs after a successful load, avoiding a second PATCH /vm.
+// mem_backend is preferred over the deprecated mem_file_path. resume_vm is left
+// false so the VM loads paused: LoadSnapshot starts the SPIRE vsock proxy before
+// resuming the vCPUs (via a separate PATCH /vm) so an early guest->host vsock
+// connection cannot race a not-yet-listening proxy.
 type snapshotLoadRequest struct {
 	SnapshotPath string        `json:"snapshot_path"`
 	MemBackend   memoryBackend `json:"mem_backend"`
@@ -596,6 +598,22 @@ func (m *Manager) CreateSnapshot(vm *types.VM, snapshotPath, memPath string) err
 // when SPIRE/vsock is not configured, so the same gate that decides whether the
 // Firecracker vsock device exists also decides whether the proxy runs. Shared by
 // Start and LoadSnapshot so a snapshot-resumed VM gets the same wiring.
+// stopVsockProxy stops and removes the tracked vsock proxy for vmID, if any, and
+// reports whether one was stopped. The map is mutated under vsockMu but the
+// (potentially blocking) Stop runs outside the lock, matching Manager.Stop.
+func (m *Manager) stopVsockProxy(vmID string) bool {
+	m.vsockMu.Lock()
+	proxy, ok := m.vsockProxies[vmID]
+	if ok {
+		delete(m.vsockProxies, vmID)
+	}
+	m.vsockMu.Unlock()
+	if ok {
+		proxy.Stop()
+	}
+	return ok
+}
+
 func (m *Manager) startVsockProxyIfConfigured(vmID, vsockPath string) {
 	if m.spireConfig == nil || !m.spireConfig.Enabled || m.spireConfig.VsockCID < 3 {
 		return
@@ -603,15 +621,8 @@ func (m *Manager) startVsockProxyIfConfigured(vmID, vsockPath string) {
 	// Stop any stale proxy for this vmID before replacing its map entry. If the
 	// Firecracker process died without Stop being called, the old proxy is still
 	// running but orphaned from the map; overwriting the entry without stopping it
-	// would leak the goroutine/socket. Stop outside the lock, matching Stop.
-	m.vsockMu.Lock()
-	stale, hadStale := m.vsockProxies[vmID]
-	if hadStale {
-		delete(m.vsockProxies, vmID)
-	}
-	m.vsockMu.Unlock()
-	if hadStale {
-		stale.Stop()
+	// would leak the goroutine/socket.
+	if m.stopVsockProxy(vmID) {
 		log.Printf("INFO: Stopped stale vsock proxy for VM %s before restart", vmID)
 	}
 
@@ -686,6 +697,8 @@ func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error
 		return fmt.Errorf("firecracker API socket not ready for VM %s: %w", vm.ID, err)
 	}
 
+	// Load the snapshot paused (resume_vm:false). The vCPUs are resumed further
+	// down, only after the vsock proxy is listening.
 	if err := sendSnapshotLoad(socketPath, snapshotPath, memPath); err != nil {
 		killAndReap(cmd)
 		return fmt.Errorf("failed to load snapshot for VM %s: %w", vm.ID, err)
@@ -697,7 +710,16 @@ func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error
 	// Restart the host-side SPIRE vsock proxy the same way Start does, so a
 	// resumed VM keeps access to host services over vsock and the proxy is
 	// tracked in m.vsockProxies for Stop cleanup (otherwise it would leak).
+	// Started while the VM is still paused so it is listening before any guest
+	// vsock traffic can arrive.
 	m.startVsockProxyIfConfigured(vm.ID, filepath.Join(vmDir, "vsock.sock"))
+
+	// Now that the proxy is up, resume the loaded VM's vCPUs.
+	if err := firecrackerPATCH(socketPath, "/vm", vmStateRequest{State: "Resumed"}); err != nil {
+		m.stopVsockProxy(vm.ID)
+		killAndReap(cmd)
+		return fmt.Errorf("failed to resume loaded snapshot for VM %s: %w", vm.ID, err)
+	}
 
 	go m.waitForProcessExit(vm.ID, cmd)
 
@@ -714,7 +736,7 @@ func sendSnapshotLoad(socketPath, snapshotPath, memPath string) error {
 			BackendType: "File",
 			BackendPath: memPath,
 		},
-		ResumeVM: true,
+		ResumeVM: false, // load paused; LoadSnapshot resumes after the proxy is up
 	}
 	if err := firecrackerPUT(socketPath, "/snapshot/load", req); err != nil {
 		return fmt.Errorf("firecracker /snapshot/load failed: %w", err)

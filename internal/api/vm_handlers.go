@@ -1325,7 +1325,16 @@ func (s *Server) handleVMResumeByPath(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if resumeReq.SnapshotID != nil && *resumeReq.SnapshotID != "" {
+	if resumeReq.SnapshotID != nil {
+		// snapshot_id was explicitly provided: an empty value is an invalid
+		// request, not a request to fall through to the in-place unpause path
+		// (which would silently resume a paused VM the caller did not ask to
+		// unpause).
+		if *resumeReq.SnapshotID == "" {
+			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+				"snapshot_id must be a non-empty snapshot id when provided", nil)
+			return
+		}
 		s.resumeVMFromSnapshot(w, vm, *resumeReq.SnapshotID)
 		return
 	}
@@ -1492,6 +1501,18 @@ func (s *Server) resumeVMFromSnapshot(w http.ResponseWriter, vm *types.VM, snaps
 			s.logger.Printf("WARN: Failed to release lock: %v", err)
 		}
 	}()
+
+	// Re-check the snapshot backing files under the lock. resolveResumableSnapshot
+	// validated them before AcquireLock; re-checking here closes a TOCTOU where the
+	// files are deleted or replaced in between, so a missing file stays a clean 404
+	// before any state mutation — rather than a 500 from LoadSnapshot with the VM
+	// stranded in Resuming.
+	if !s.checkSnapshotFilePresent(w, snapshot.ID, "state", snapshot.SnapshotFilePath) {
+		return
+	}
+	if !s.checkSnapshotFilePresent(w, snapshot.ID, "memory", snapshot.MemoryFilePath) {
+		return
+	}
 
 	// Re-establish the host tap device the snapshot expects. No-op when the VM
 	// has no networking or its tap already exists.

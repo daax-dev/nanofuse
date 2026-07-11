@@ -540,6 +540,33 @@ func TestHandleVMResumeFromSnapshotRejectsLiveRuntimeStates(t *testing.T) {
 	}
 }
 
+// An explicitly-provided but empty snapshot_id is an invalid request: it must
+// not silently fall through to the in-place unpause path (which would resume a
+// paused VM the caller never asked to unpause).
+func TestHandleVMResumeFromSnapshotEmptyIDRejected(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	// A paused VM would be resumable by the in-place path, so this proves the
+	// empty snapshot_id is rejected rather than falling through to unpause.
+	vm := createSnapshotHandlerTestVM(t, db, types.StatePaused, "")
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, ""))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 0 {
+		t.Fatalf("LoadSnapshot must not be called for an empty snapshot_id")
+	}
+}
+
 func TestHandleVMResumeFromSnapshotNotFound(t *testing.T) {
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
 	if err != nil {

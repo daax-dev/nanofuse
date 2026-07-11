@@ -20,7 +20,33 @@ type Config struct {
 	Network     NetworkConfig     `yaml:"network"`
 	SPIRE       SPIREConfig       `yaml:"spire"`
 	Auth        AuthConfig        `yaml:"auth"`
+
+	SnapshotStore SnapshotStoreConfig `yaml:"snapshot_store"`
 }
+
+// SnapshotStoreConfig configures the optional object-storage snapshot tier
+// (issue #130). When Backend is empty the tier is disabled and snapshots stay
+// on local disk only (the default). When enabled, a snapshot's files are
+// additionally compressed and stored behind the configured backend with a
+// version-pinned manifest, making them portable and durable.
+type SnapshotStoreConfig struct {
+	// Backend selects the object backend: "" (disabled) or "filesystem".
+	// "s3" is reserved for a future backend and is not yet implemented.
+	Backend string `yaml:"backend,omitempty"`
+	// Path is the root directory for the filesystem backend.
+	Path string `yaml:"path,omitempty"`
+	// Compression is the codec used when tiering; only "zstd" is supported.
+	// Empty defaults to "zstd".
+	Compression string `yaml:"compression,omitempty"`
+	// Parallelism bounds concurrent per-file transfers (0 = library default).
+	Parallelism int `yaml:"parallelism,omitempty"`
+}
+
+// Snapshot store backend identifiers.
+const (
+	SnapshotBackendDisabled   = ""
+	SnapshotBackendFilesystem = "filesystem"
+)
 
 // RuntimeConfig selects the local microVM runtime backend.
 type RuntimeConfig struct {
@@ -244,7 +270,28 @@ func (c *Config) Validate() error {
 	if c.Limits.MaxTotalMemoryMiB <= 0 {
 		return fmt.Errorf("limits.max_total_memory_mib must be positive")
 	}
+	if err := c.validateSnapshotStore(); err != nil {
+		return err
+	}
 	return c.validateAuth()
+}
+
+func (c *Config) validateSnapshotStore() error {
+	switch c.SnapshotStore.Backend {
+	case SnapshotBackendDisabled:
+		return nil
+	case SnapshotBackendFilesystem:
+		if c.SnapshotStore.Path == "" {
+			return fmt.Errorf("snapshot_store.path is required when snapshot_store.backend is %q", SnapshotBackendFilesystem)
+		}
+	default:
+		return fmt.Errorf("snapshot_store.backend %q is not supported (use %q or leave empty to disable)",
+			c.SnapshotStore.Backend, SnapshotBackendFilesystem)
+	}
+	if c.SnapshotStore.Compression != "" && c.SnapshotStore.Compression != "zstd" {
+		return fmt.Errorf("snapshot_store.compression %q is not supported (only \"zstd\")", c.SnapshotStore.Compression)
+	}
+	return nil
 }
 
 func (c *Config) validateRuntime() error {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,8 +9,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daax-dev/nanofuse/internal/snapshotstore"
 	"github.com/daax-dev/nanofuse/internal/types"
 )
+
+// maxConcurrentTiering caps how many background snapshot-tiering jobs may run at
+// once, so a burst of snapshot-create requests cannot spawn unbounded parallel
+// compress+upload work and exhaust host CPU/IO. Snapshot creation is itself
+// VM-locked and low-frequency, so a small cap is sufficient and excess jobs
+// simply wait for a slot.
+const maxConcurrentTiering = 4
+
+// snapshotTierTimeout bounds a single background object-storage tiering upload.
+// Detached from the HTTP request, it guards against an upload hanging forever
+// while still allowing large transfers to complete.
+const snapshotTierTimeout = 30 * time.Minute
 
 // handleListSnapshots lists snapshots for a VM
 func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request, vmID string) {
@@ -150,7 +164,70 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, vm
 	}
 
 	s.logger.Printf("INFO: Created snapshot: %s for VM %s", snapshotID, vm.Name)
+
+	// Optionally tier the snapshot to durable object storage (issue #130). This
+	// is additive and best-effort: the local snapshot above is already valid and
+	// recorded, so tiering runs in the background and a tiering failure is only
+	// logged. Running it in a goroutine (rather than inline) means (a) the local
+	// snapshot response is never delayed or failed by a potentially large upload,
+	// (b) the VM lock — released by the deferred ReleaseLock when this handler
+	// returns — is not held for the duration of the transfer, and (c) tiering is
+	// detached from the HTTP request lifecycle: it uses its own background context
+	// (see tierSnapshot), so a client disconnect or request timeout does not
+	// cancel an in-progress upload.
+	if s.snapshotStore != nil {
+		s.tierWG.Add(1)
+		go func() {
+			defer s.tierWG.Done()
+			s.tierGuard(func() {
+				s.tierSnapshot(vm.ID, snapshotID, snapPath, memPath)
+			})
+		}()
+	}
+
 	writeJSON(w, http.StatusCreated, snapshot)
+}
+
+// tierGuard runs fn while holding one of maxConcurrentTiering tiering slots, so
+// a burst of snapshot-create requests cannot spawn unbounded parallel
+// compress+upload work and exhaust host CPU/IO. Excess callers block on the
+// semaphore until a slot frees. A nil semaphore (only reachable via direct
+// struct construction in tests) means unbounded.
+func (s *Server) tierGuard(fn func()) {
+	if s.tierSem != nil {
+		s.tierSem <- struct{}{}
+		defer func() { <-s.tierSem }()
+	}
+	fn()
+}
+
+// tierSnapshot pushes a freshly created snapshot's files to the configured
+// object-storage tier with a version-pinned manifest. No-op when tiering is
+// disabled. The store id namespaces the snapshot by VM so ids are unique and
+// self-describing on any node.
+//
+// It is intended to run in a background goroutine (see handleCreateSnapshot) and
+// deliberately derives its own context from context.Background() rather than the
+// request context: the upload must not be cancelled if the originating HTTP
+// client disconnects or its request times out. A bounded timeout still guards
+// against an upload hanging indefinitely.
+func (s *Server) tierSnapshot(vmID, snapshotID, snapPath, memPath string) {
+	if s.snapshotStore == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), snapshotTierTimeout)
+	defer cancel()
+	storeID := vmID + "__" + snapshotID
+	files := []snapshotstore.SourceFile{
+		{Name: "vm.snap", Role: "vmstate", Path: snapPath},
+		{Name: "mem.snap", Role: "memory", Path: memPath},
+	}
+	manifest, err := s.snapshotStore.Put(ctx, storeID, files, s.snapshotRuntime)
+	if err != nil {
+		s.logger.Printf("WARN: Failed to tier snapshot %s to object storage (id=%s): %v", snapshotID, storeID, err)
+		return
+	}
+	s.logger.Printf("INFO: Tiered snapshot %s to object storage (id=%s, %d files)", snapshotID, storeID, len(manifest.Files))
 }
 
 // handleGetSnapshot gets a specific snapshot

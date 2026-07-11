@@ -264,7 +264,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	response := types.HealthResponse{
 		Status:        "healthy",
-		Version:       "0.1.0",
+		Version:       apiVersion,
 		UptimeSeconds: int64(uptime),
 	}
 
@@ -324,7 +324,7 @@ func (s *Server) capabilitiesResponse() types.CapabilitiesResponse {
 
 	return types.CapabilitiesResponse{
 		Status:  "ok",
-		Version: "0.1.0",
+		Version: apiVersion,
 		Host: types.HostCapabilities{
 			OS:           runtime.GOOS,
 			Arch:         runtime.GOARCH,

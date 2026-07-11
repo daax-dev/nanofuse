@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
+	"sync"
 	"syscall"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/daax-dev/nanofuse/internal/network"
 	"github.com/daax-dev/nanofuse/internal/recording"
 	"github.com/daax-dev/nanofuse/internal/registry"
+	"github.com/daax-dev/nanofuse/internal/snapshotstore"
 	"github.com/daax-dev/nanofuse/internal/spire"
 	"github.com/daax-dev/nanofuse/internal/storage"
 	"github.com/daax-dev/nanofuse/internal/vmm"
@@ -36,7 +38,28 @@ type Server struct {
 	startTime        time.Time
 	recordingStorage RecordingStorageInterface
 	spireService     *spire.Service
+	// snapshotStore, when non-nil, is the optional object-storage tier snapshots
+	// are additionally pushed to for durability and cross-node portability
+	// (issue #130). Nil means local-disk-only (the default).
+	snapshotStore snapshotstore.Store
+	// snapshotRuntime pins the runtime versions recorded in tiered snapshot
+	// manifests; probed once at startup.
+	snapshotRuntime snapshotstore.RuntimeVersions
+	// tierWG tracks in-flight background snapshot-tiering uploads so tests can
+	// wait for completion and the process can (best-effort) observe outstanding
+	// work. Uploads run detached from the HTTP request; see tierSnapshot.
+	tierWG sync.WaitGroup
+	// tierSem bounds the number of concurrent background tiering jobs so a burst
+	// of snapshot-create requests cannot spawn unbounded parallel
+	// compress+upload work and exhaust CPU/IO. Buffered to maxConcurrentTiering.
+	tierSem chan struct{}
 }
+
+// apiVersion is the single source of truth for the version this daemon reports
+// (health endpoint) and pins into tiered snapshot manifests as the nanofuse
+// runtime version. Kept as a literal until build-time injection is wired for
+// the daemon binary.
+const apiVersion = "0.1.0"
 
 // loadExistingAllocations loads IP allocations from existing VMs in the database
 // This prevents IP conflicts after daemon restart
@@ -143,6 +166,46 @@ func selectedRuntimeDriver(cfg *config.Config) string {
 		return "firecracker"
 	}
 	return cfg.Runtime.Driver
+}
+
+// initSnapshotStore builds the optional object-storage snapshot tier from
+// config. It returns (nil, zero) when the tier is disabled or cannot be
+// initialized; snapshot tiering is best-effort and never fatal to daemon
+// startup. The returned RuntimeVersions pin the runtime into tiered manifests.
+func initSnapshotStore(cfg *config.Config, logger *logging.Logger) (snapshotstore.Store, snapshotstore.RuntimeVersions) {
+	var rt snapshotstore.RuntimeVersions
+	if cfg == nil || cfg.SnapshotStore.Backend == config.SnapshotBackendDisabled {
+		return nil, rt
+	}
+	if cfg.SnapshotStore.Backend != config.SnapshotBackendFilesystem {
+		logger.Warn("Snapshot tier backend %q not implemented; tiering disabled", cfg.SnapshotStore.Backend)
+		return nil, rt
+	}
+
+	blob, err := snapshotstore.NewFSBlob(cfg.SnapshotStore.Path)
+	if err != nil {
+		logger.Warn("Snapshot tier disabled: %v", err)
+		return nil, rt
+	}
+	store := snapshotstore.NewTieredStore(blob, snapshotstore.Options{
+		Parallelism: cfg.SnapshotStore.Parallelism,
+	})
+
+	// Pin the nanofuse (daemon) version into every manifest so a restore knows
+	// which control-plane build produced the snapshot. Kernel and other fields
+	// stay empty unless trivially probed, rather than being fabricated.
+	rt.Nanofuse = apiVersion
+
+	// Probe the runtime versions to pin into manifests (best-effort).
+	if selectedRuntimeDriver(cfg) == "firecracker" && cfg.Firecracker.BinaryPath != "" {
+		if v, verr := firecracker.BinaryVersion(cfg.Firecracker.BinaryPath); verr == nil {
+			rt.Firecracker = v
+		} else {
+			logger.Warn("Could not probe firecracker version for snapshot manifests: %v", verr)
+		}
+	}
+	logger.Info("Snapshot object-storage tier enabled: backend=%s path=%s", cfg.SnapshotStore.Backend, cfg.SnapshotStore.Path)
+	return store, rt
 }
 
 func newRuntimeManager(cfg *config.Config, logger *logging.Logger) (vmm.Manager, error) {
@@ -421,6 +484,12 @@ func startServer(cfg *config.Config) error {
 		logger.Info("Recording storage initialized: %s", recordingsPath)
 	}
 
+	// Initialize optional object-storage snapshot tier (issue #130). Disabled by
+	// default; when configured, snapshots are additionally tiered for durability
+	// and cross-node portability. Best-effort: a failure here never blocks the
+	// daemon or the local-disk snapshot path.
+	snapshotStore, snapshotRuntime := initSnapshotStore(cfg, logger)
+
 	// Create server
 	// Initialize SPIRE service for workload registration
 	spireService := spire.NewService(&cfg.SPIRE)
@@ -438,6 +507,9 @@ func startServer(cfg *config.Config) error {
 		startTime:        time.Now(),
 		recordingStorage: recordingStorage,
 		spireService:     spireService,
+		snapshotStore:    snapshotStore,
+		snapshotRuntime:  snapshotRuntime,
+		tierSem:          make(chan struct{}, maxConcurrentTiering),
 	}
 
 	// Set up process exit handler to reap zombies and update VM state

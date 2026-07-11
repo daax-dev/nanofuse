@@ -1,0 +1,246 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/daax-dev/nanofuse/internal/config"
+	"github.com/daax-dev/nanofuse/internal/logging"
+	"github.com/daax-dev/nanofuse/internal/snapshotstore"
+	"github.com/daax-dev/nanofuse/internal/storage"
+	"github.com/daax-dev/nanofuse/internal/types"
+)
+
+// snapshotWritingStub overrides CreateSnapshot to produce real files on disk so
+// the object-storage tiering path has content to upload.
+type snapshotWritingStub struct {
+	*runtimeImageProviderStub
+}
+
+func (s *snapshotWritingStub) CreateSnapshot(_ *types.VM, snapPath, memPath string) error {
+	if err := os.MkdirAll(filepath.Dir(snapPath), 0o750); err != nil {
+		return err
+	}
+	if err := os.WriteFile(snapPath, []byte("vm-state-bytes"), 0o600); err != nil {
+		return err
+	}
+	return os.WriteFile(memPath, []byte("memory-bytes-guest-ram"), 0o600)
+}
+
+func TestHandleCreateSnapshotTiersToObjectStore(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StatePaused, "")
+	logger, err := logging.New(logging.Config{Level: "error"})
+	if err != nil {
+		t.Fatalf("logging.New: %v", err)
+	}
+
+	tierRoot := t.TempDir()
+	blob, err := snapshotstore.NewFSBlob(tierRoot)
+	if err != nil {
+		t.Fatalf("NewFSBlob: %v", err)
+	}
+	store := snapshotstore.NewTieredStore(blob, snapshotstore.Options{})
+
+	server := &Server{
+		db:              db,
+		config:          &config.Config{Storage: config.StorageConfig{DataDir: t.TempDir()}},
+		logger:          logger,
+		runtimeManager:  &snapshotWritingStub{&runtimeImageProviderStub{}},
+		snapshotStore:   store,
+		snapshotRuntime: snapshotstore.RuntimeVersions{Firecracker: "v1.7.0", Nanofuse: "test"},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vm.ID+"/snapshots", nil)
+	w := httptest.NewRecorder()
+	server.handleCreateSnapshot(w, req, vm.ID)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
+	}
+
+	// Tiering runs in a detached background goroutine; wait for it before
+	// asserting the object store's contents.
+	server.tierWG.Wait()
+
+	ctx := context.Background()
+	ids, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("store.List: %v", err)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("tiered snapshots = %v, want exactly 1", ids)
+	}
+	if !strings.HasPrefix(ids[0], vm.ID+"__") {
+		t.Fatalf("tiered id = %q, want prefix %q", ids[0], vm.ID+"__")
+	}
+
+	manifest, err := store.Manifest(ctx, ids[0])
+	if err != nil {
+		t.Fatalf("store.Manifest: %v", err)
+	}
+	if manifest.Runtime.Firecracker != "v1.7.0" {
+		t.Errorf("manifest firecracker = %q, want v1.7.0", manifest.Runtime.Firecracker)
+	}
+	if len(manifest.Files) != 2 {
+		t.Fatalf("manifest files = %d, want 2 (vm.snap + mem.snap)", len(manifest.Files))
+	}
+
+	// Restore the tiered snapshot and confirm byte-for-byte recovery.
+	dest := t.TempDir()
+	if _, err := store.Get(ctx, ids[0], dest); err != nil {
+		t.Fatalf("store.Get: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "vm.snap"))
+	if err != nil {
+		t.Fatalf("read restored vm.snap: %v", err)
+	}
+	if string(got) != "vm-state-bytes" {
+		t.Fatalf("restored vm.snap = %q, want %q", got, "vm-state-bytes")
+	}
+}
+
+// failingStore is a snapshotstore.Store whose Put always fails, used to prove a
+// background tiering error is only logged and never fails the snapshot response.
+type failingStore struct{}
+
+func (failingStore) Put(context.Context, string, []snapshotstore.SourceFile, snapshotstore.RuntimeVersions) (*snapshotstore.Manifest, error) {
+	return nil, errors.New("simulated object-store failure")
+}
+func (failingStore) Get(context.Context, string, string) (*snapshotstore.Manifest, error) {
+	return nil, errors.New("not implemented")
+}
+func (failingStore) List(context.Context) ([]string, error) { return nil, nil }
+func (failingStore) Manifest(context.Context, string) (*snapshotstore.Manifest, error) {
+	return nil, errors.New("not implemented")
+}
+
+func TestHandleCreateSnapshotTierFailureDoesNotFailResponse(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StatePaused, "")
+	logger, _ := logging.New(logging.Config{Level: "error"})
+	server := &Server{
+		db:             db,
+		config:         &config.Config{Storage: config.StorageConfig{DataDir: t.TempDir()}},
+		logger:         logger,
+		runtimeManager: &snapshotWritingStub{&runtimeImageProviderStub{}},
+		snapshotStore:  failingStore{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vm.ID+"/snapshots", nil)
+	w := httptest.NewRecorder()
+	server.handleCreateSnapshot(w, req, vm.ID)
+
+	// The local snapshot must succeed even though background tiering fails.
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
+	}
+
+	// Draining the background upload must not panic or affect the response.
+	server.tierWG.Wait()
+
+	// The local snapshot record persists regardless of the tiering failure.
+	snaps, err := db.ListSnapshots(vm.ID)
+	if err != nil {
+		t.Fatalf("ListSnapshots: %v", err)
+	}
+	if len(snaps) != 1 {
+		t.Fatalf("local snapshots = %d, want 1", len(snaps))
+	}
+}
+
+func TestHandleCreateSnapshotWithoutStoreDoesNotTier(t *testing.T) {
+	// Regression guard: with no store configured, the create path is unchanged.
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StatePaused, "")
+	logger, _ := logging.New(logging.Config{Level: "error"})
+	server := &Server{
+		db:             db,
+		config:         &config.Config{Storage: config.StorageConfig{DataDir: t.TempDir()}},
+		logger:         logger,
+		runtimeManager: &snapshotWritingStub{&runtimeImageProviderStub{}},
+		// snapshotStore is nil.
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/vms/"+vm.ID+"/snapshots", nil)
+	w := httptest.NewRecorder()
+	server.handleCreateSnapshot(w, req, vm.ID)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestTierGuardBoundsConcurrency verifies tierGuard never lets more than
+// maxConcurrentTiering (here overridden to 2) jobs run at once: 5 jobs are
+// launched but at most 2 may hold a slot simultaneously.
+func TestTierGuardBoundsConcurrency(t *testing.T) {
+	const limit = 2
+	server := &Server{tierSem: make(chan struct{}, limit)}
+
+	var mu sync.Mutex
+	cur, max := 0, 0
+	running := make(chan struct{}, 5)
+	release := make(chan struct{})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			server.tierGuard(func() {
+				mu.Lock()
+				cur++
+				if cur > max {
+					max = cur
+				}
+				mu.Unlock()
+				running <- struct{}{}
+				<-release // hold the slot until the test releases it
+				mu.Lock()
+				cur--
+				mu.Unlock()
+			})
+		}()
+	}
+
+	// Exactly `cap` jobs should be running; a (cap+1)th must not start.
+	for i := 0; i < limit; i++ {
+		<-running
+	}
+	select {
+	case <-running:
+		t.Fatal("more than cap tiering jobs ran concurrently; tierGuard did not bound them")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release) // let all jobs finish
+	wg.Wait()
+
+	if max != limit {
+		t.Fatalf("max concurrent tiering = %d, want %d (semaphore cap)", max, limit)
+	}
+}

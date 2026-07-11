@@ -178,7 +178,10 @@ install_firecracker() {
     # compare `firecracker --version` and reinstall (overwrite) on a mismatch.
     if [[ -x /usr/local/bin/firecracker ]]; then
         local installed_version
-        installed_version=$(/usr/local/bin/firecracker --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        # `|| true` so a broken/wrong-arch binary or a no-match grep (both exit
+        # non-zero under `set -euo pipefail`) yields an empty version and falls
+        # through to reinstall, instead of aborting provisioning.
+        installed_version=$(/usr/local/bin/firecracker --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
         if [[ "$installed_version" == "$FIRECRACKER_VERSION" ]]; then
             info "Firecracker v${FIRECRACKER_VERSION} already installed"
             return 0

@@ -299,8 +299,11 @@ func (s *TieredStore) List(ctx context.Context) ([]string, error) {
 			continue
 		}
 		id := strings.TrimSuffix(k, suffix)
-		if id == "" || strings.Contains(id, "/") {
-			continue // only top-level snapshot prefixes
+		// Only surface ids that are valid snapshot-id segments (rejects "", "/",
+		// "..", ".", etc.). This keeps List() consistent with Get()/Manifest()
+		// (which call validateSnapshotID) and never leaks untrusted backend keys.
+		if validateSnapshotID(id) != nil {
+			continue
 		}
 		ids = append(ids, id)
 	}

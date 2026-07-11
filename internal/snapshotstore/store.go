@@ -276,11 +276,12 @@ func (s *TieredStore) Manifest(ctx context.Context, id string) (*Manifest, error
 	}
 	// Normalize each entry's Key to the canonical, derived value so callers that
 	// use Manifest() directly (inspection, future direct-download) never observe
-	// a tampered Key from the untrusted manifest object. Get() already derives
-	// its own download key from (id, name) and ignores the stored Key; this makes
-	// the returned manifest consistent with that behavior.
+	// a tampered Key from the untrusted manifest object. This must match how
+	// putFile/getFile key objects — the compressed name (<id>/<name>.zst) — so the
+	// returned Key actually resolves in the blob backend. Get() derives the same
+	// key and ignores the stored one; this makes the returned manifest consistent.
 	for i := range m.Files {
-		m.Files[i].Key = objectKey(id, m.Files[i].Name)
+		m.Files[i].Key = objectKey(id, m.Files[i].Name+".zst")
 	}
 	return &m, nil
 }

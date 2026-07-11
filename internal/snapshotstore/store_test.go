@@ -293,6 +293,15 @@ func TestCrossNodeRestore(t *testing.T) {
 	if m.Runtime.Firecracker != "v1.7.0" {
 		t.Errorf("host B sees firecracker = %q, want v1.7.0", m.Runtime.Firecracker)
 	}
+	// Manifest() must normalize each Key to the canonical *compressed* object key
+	// (<id>/<name>.zst) — the key objects are actually stored/read under — so a
+	// caller using Manifest() directly sees keys that resolve in the backend.
+	for _, fe := range m.Files {
+		want := "session-42/" + fe.Name + ".zst"
+		if fe.Key != want {
+			t.Errorf("manifest Key for %q = %q, want canonical compressed key %q", fe.Name, fe.Key, want)
+		}
+	}
 	dest := t.TempDir()
 	if _, err := storeB.Get(ctx, "session-42", dest); err != nil {
 		t.Fatalf("host B Get: %v", err)

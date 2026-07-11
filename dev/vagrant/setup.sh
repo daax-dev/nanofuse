@@ -176,7 +176,10 @@ install_firecracker() {
     # version. A bare existence check would leave a previously-provisioned box
     # stuck on an older Firecracker after FIRECRACKER_VERSION is bumped, so
     # compare `firecracker --version` and reinstall (overwrite) on a mismatch.
-    if [[ -x /usr/local/bin/firecracker ]]; then
+    # Both firecracker AND jailer must be present for the fast-path: this
+    # function installs both, so a matching firecracker with a missing/broken
+    # jailer must still trigger reinstall to repair the harness.
+    if [[ -x /usr/local/bin/firecracker && -x /usr/local/bin/jailer ]]; then
         local installed_version
         # `|| true` so a broken/wrong-arch binary or a no-match grep (both exit
         # non-zero under `set -euo pipefail`) yields an empty version and falls

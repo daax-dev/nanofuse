@@ -285,7 +285,10 @@ func setupVMRuntime(vm *types.VM, cmd *exec.Cmd, socketPath, consolePath string)
 // Start starts a Firecracker VM
 func (m *Manager) Start(vm *types.VM, image *types.Image) error {
 	vmDir := filepath.Join(m.dataDir, "vms", vm.ID)
-	if err := os.MkdirAll(vmDir, 0755); err != nil {
+	// 0750 (not 0755) keeps the Firecracker API socket — which controls the
+	// microVM — reachable only by the daemon's user/group, consistent with
+	// LoadSnapshot so freshly-started and resumed VMs have identical perms.
+	if err := os.MkdirAll(vmDir, 0750); err != nil {
 		return fmt.Errorf("failed to create VM directory: %w", err)
 	}
 

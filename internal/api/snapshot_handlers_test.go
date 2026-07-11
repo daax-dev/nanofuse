@@ -801,6 +801,61 @@ func TestHandleVMResumeFromSnapshotRejectsPathOutsideRoot(t *testing.T) {
 	}
 }
 
+// TestHandleVMResumeFromSnapshotRejectsSymlinkedParent covers the case a purely
+// lexical containment check misses: a symlinked *intermediate* directory inside
+// the managed root that redirects the real path to files outside it. The guard
+// must resolve symlinks on the parent and refuse the load.
+func TestHandleVMResumeFromSnapshotRejectsSymlinkedParent(t *testing.T) {
+	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
+	if err != nil {
+		t.Fatalf("storage.New: %v", err)
+	}
+	defer db.Close()
+
+	vm := createSnapshotHandlerTestVM(t, db, types.StateStopped, "")
+	stub := &runtimeImageProviderStub{}
+	server := newSnapshotResumeServer(t, db, stub)
+
+	// Real backing files OUTSIDE the managed root.
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "vm.snap"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "mem.snap"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// Symlinked intermediate component INSIDE the root -> outside dir. The stored
+	// path is lexically within the root but resolves out of it.
+	vmDir := filepath.Join(server.config.Storage.DataDir, "snapshots", vm.ID)
+	if err := os.MkdirAll(vmDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link := filepath.Join(vmDir, "evil")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	snap := &types.Snapshot{
+		ID:               "snapshot-symlinked",
+		VMID:             vm.ID,
+		SnapshotFilePath: filepath.Join(link, "vm.snap"),
+		MemoryFilePath:   filepath.Join(link, "mem.snap"),
+		CreatedAt:        time.Now(),
+	}
+	if err := db.CreateSnapshot(snap); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	server.handleVMResumeByPath(w, resumeFromSnapshotRequest(t, vm.ID, snap.ID))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusInternalServerError, w.Body.String())
+	}
+	if stub.loadSnapshotCalls != 0 {
+		t.Fatalf("LoadSnapshot must not be called for a symlink-escaped snapshot path")
+	}
+}
+
 func TestHandleVMResumeFromSnapshotUnsupportedRuntime(t *testing.T) {
 	db, err := storage.New(filepath.Join(t.TempDir(), "nanofuse.db"))
 	if err != nil {

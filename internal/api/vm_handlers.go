@@ -1561,13 +1561,44 @@ func (s *Server) resumeVMFromSnapshot(w http.ResponseWriter, vm *types.VM, snaps
 // snapshotFileWithinManagedRoot reports whether p resolves to a location inside
 // the managed snapshots tree ({DataDir}/snapshots). It defends the snapshot
 // resume path against loading arbitrary host files via a malformed stored path.
+//
+// A purely lexical check (filepath.Rel) is not sufficient: a symlinked
+// intermediate component (e.g. snapshots/<vm> -> /etc) passes lexical
+// containment yet redirects the real path outside the root. So after the cheap
+// lexical gate we also resolve symlinks on the file's parent directory and
+// re-check containment against the resolved root. The final path component is
+// separately required to be a regular (non-symlink) file by
+// checkSnapshotFilePresent, closing the final-component symlink case.
 func (s *Server) snapshotFileWithinManagedRoot(p string) bool {
 	root := filepath.Clean(filepath.Join(s.config.Storage.DataDir, "snapshots"))
-	rel, err := filepath.Rel(root, filepath.Clean(p))
-	if err != nil {
+	cleaned := filepath.Clean(p)
+
+	withinLexical := func(base, target string) bool {
+		rel, err := filepath.Rel(base, target)
+		return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+	}
+
+	// Lexical containment first (rejects ../ escapes cheaply).
+	if !withinLexical(root, cleaned) {
 		return false
 	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		// Snapshots root does not exist yet (no snapshot ever created) or is
+		// unreadable: no in-root file can exist, so lexical containment plus the
+		// downstream presence check (precise 404) are sufficient — don't mask a
+		// missing file as an invalid path.
+		return true
+	}
+	realDir, err := filepath.EvalSymlinks(filepath.Dir(cleaned))
+	if err != nil {
+		// Parent missing/unreadable: the lexical check already passed, so defer
+		// to the downstream presence check (precise 404) rather than masking a
+		// missing file as an invalid path.
+		return true
+	}
+	return realDir == realRoot || withinLexical(realRoot, realDir)
 }
 
 // ensureVMTapForResume recreates the host tap device a snapshot expects when it

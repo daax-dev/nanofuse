@@ -26,6 +26,7 @@ type spireRegistrarStub struct {
 	spiffeID     string
 	createErr    error
 	validateErr  error
+	createCalls  int
 	deleteCalls  int
 	lastDeleteID string
 }
@@ -35,6 +36,7 @@ func (s *spireRegistrarStub) IsEnabled() bool { return s.enabled }
 func (s *spireRegistrarStub) ValidateIdentityParams(_, _ string) error { return s.validateErr }
 
 func (s *spireRegistrarStub) CreateVMWorkloadEntry(_ context.Context, _, _, _ string) (string, error) {
+	s.createCalls++
 	if s.createErr != nil {
 		return "", s.createErr
 	}
@@ -170,6 +172,9 @@ func TestHandleCreateVMSpireRequiredMissingInputsRejected(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
+	if spireSvc.createCalls != 0 {
+		t.Fatalf("CreateVMWorkloadEntry called %d times, want 0 (missing inputs must be rejected before registration)", spireSvc.createCalls)
+	}
 	vms, err := db.ListVMs("")
 	if err != nil {
 		t.Fatalf("ListVMs: %v", err)
@@ -217,6 +222,9 @@ func TestHandleCreateVMSpireRequiredInvalidInputsRejectedAs400(t *testing.T) {
 		t.Fatalf("error code = %s, want %s", apiErr.Error.Code, types.ErrInvalidRequest)
 	}
 	// Backend registration must not have been attempted for malformed input.
+	if spireSvc.createCalls != 0 {
+		t.Fatalf("CreateVMWorkloadEntry called %d times, want 0 (malformed input must be rejected before registration)", spireSvc.createCalls)
+	}
 	vms, err := db.ListVMs("")
 	if err != nil {
 		t.Fatalf("ListVMs: %v", err)
@@ -240,6 +248,9 @@ func TestHandleCreateVMSpireRequiredAutoRegisterDisabledRejected(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if spireSvc.createCalls != 0 {
+		t.Fatalf("CreateVMWorkloadEntry called %d times, want 0 (opt-out must be rejected before registration)", spireSvc.createCalls)
 	}
 	vms, err := db.ListVMs("")
 	if err != nil {

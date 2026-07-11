@@ -189,7 +189,7 @@ install_firecracker() {
             info "Firecracker v${FIRECRACKER_VERSION} already installed"
             return 0
         fi
-        info "Firecracker v${installed_version:-unknown} installed but v${FIRECRACKER_VERSION} pinned — reinstalling..."
+        info "Firecracker ${installed_version:+v}${installed_version:-unknown (unparseable)} installed but v${FIRECRACKER_VERSION} pinned — reinstalling..."
     fi
 
     info "Installing Firecracker v${FIRECRACKER_VERSION}..."

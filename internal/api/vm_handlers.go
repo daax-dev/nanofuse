@@ -1585,18 +1585,18 @@ func (s *Server) snapshotFileWithinManagedRoot(p string) bool {
 
 	realRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		// Snapshots root does not exist yet (no snapshot ever created) or is
-		// unreadable: no in-root file can exist, so lexical containment plus the
-		// downstream presence check (precise 404) are sufficient — don't mask a
-		// missing file as an invalid path.
-		return true
+		// Only a not-exist error is safe to pass through: the snapshots root does
+		// not exist yet, so no in-root file can exist and the downstream presence
+		// check will return a precise 404. Any other error (EACCES/EPERM/…) must
+		// fail closed — we cannot prove the path stays in the managed root.
+		return os.IsNotExist(err)
 	}
 	realDir, err := filepath.EvalSymlinks(filepath.Dir(cleaned))
 	if err != nil {
-		// Parent missing/unreadable: the lexical check already passed, so defer
-		// to the downstream presence check (precise 404) rather than masking a
-		// missing file as an invalid path.
-		return true
+		// Same policy for the parent directory: defer to the 404 path only when
+		// it genuinely does not exist; otherwise fail closed rather than let a
+		// symlinked intermediate directory slip past on an unreadable path.
+		return os.IsNotExist(err)
 	}
 	return realDir == realRoot || withinLexical(realRoot, realDir)
 }

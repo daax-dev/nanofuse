@@ -664,14 +664,17 @@ func (s *Server) registerSPIREForCreate(w http.ResponseWriter, r *http.Request, 
 	// provisioned so far; the VM record is not persisted and no SPIRE entry
 	// exists yet.
 	s.cleanupCreatedVMResources(vmID, config)
-	reason := "SPIRE service unavailable"
+	// Log the specific cause (which may include backend/CLI output) for
+	// operators, but return only a stable, high-level reason to the client — the
+	// raw SPIRE error can leak docker/CLI internals that should not cross the API
+	// boundary.
 	if spireErr != nil {
-		// registerSPIREWorkload already logged the failure; do not assert the
-		// specific cause (unreachable vs. validation/config).
-		reason = spireErr.Error()
+		s.logger.Printf("ERROR: SPIRE required but registration failed for VM %s; aborting create: %v", vmID, spireErr)
+	} else {
+		s.logger.Printf("ERROR: SPIRE required but no identity was minted for VM %s; aborting create", vmID)
 	}
 	types.WriteError(w, http.StatusServiceUnavailable, types.ErrServiceUnavailable,
-		fmt.Sprintf("SPIRE is required but unavailable or misconfigured; refusing to create VM without a workload identity: %s", reason),
+		"SPIRE is required but unavailable or misconfigured; refusing to create VM without a workload identity",
 		map[string]interface{}{"spire_required": true})
 	return "", true
 }
@@ -805,6 +808,19 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 			"SPIRE identity is required: supply owner_user_id and group_id and do not disable auto_register_spiffe",
 			map[string]interface{}{"spire_required": true})
 		return
+	}
+	// With identity inputs present in fail-closed mode, validate their FORMAT up
+	// front: malformed values (invalid characters) are a client error (400), not
+	// a SPIRE backend failure (503). Reserving 503 for genuine unavailability
+	// keeps the two failure classes distinguishable to callers.
+	if s.spireRequired() && !spireIdentityInputsMissing(&req) && s.spireService != nil {
+		if err := s.spireService.ValidateIdentityParams(req.GroupID, req.OwnerUserID); err != nil {
+			s.logger.Printf("WARN: SPIRE required but identity inputs are invalid: %v", err)
+			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+				fmt.Sprintf("Invalid SPIRE identity inputs: %v", err),
+				map[string]interface{}{"spire_required": true})
+			return
+		}
 	}
 
 	// Validate and resolve image

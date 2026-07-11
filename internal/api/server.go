@@ -30,6 +30,11 @@ import (
 // fail-closed enforcement path (see SPIRE.Required); *spire.Service satisfies it.
 type spireRegistrar interface {
 	IsEnabled() bool
+	// ValidateIdentityParams checks that group_id/owner_user_id are well-formed
+	// (client-input validation) so the create handler can reject malformed input
+	// with 400 up front, before attempting backend registration (which would
+	// otherwise surface as a 503).
+	ValidateIdentityParams(groupID, ownerUserID string) error
 	CreateVMWorkloadEntry(ctx context.Context, vmID, groupID, ownerUserID string) (string, error)
 	DeleteVMWorkloadEntry(ctx context.Context, spiffeID string) error
 }

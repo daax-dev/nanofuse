@@ -25,11 +25,14 @@ type spireRegistrarStub struct {
 	enabled      bool
 	spiffeID     string
 	createErr    error
+	validateErr  error
 	deleteCalls  int
 	lastDeleteID string
 }
 
 func (s *spireRegistrarStub) IsEnabled() bool { return s.enabled }
+
+func (s *spireRegistrarStub) ValidateIdentityParams(_, _ string) error { return s.validateErr }
 
 func (s *spireRegistrarStub) CreateVMWorkloadEntry(_ context.Context, _, _, _ string) (string, error) {
 	if s.createErr != nil {
@@ -181,6 +184,45 @@ func TestHandleCreateVMSpireRequiredMissingInputsRejected(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("leaked %d per-VM storage dir(s); cleanup incomplete", len(entries))
+	}
+}
+
+// Required mode: identity inputs that are present but malformed (invalid
+// characters) are a client error and must be rejected with 400 up front — not
+// surfaced as a 503 backend failure. Registration must not be attempted.
+func TestHandleCreateVMSpireRequiredInvalidInputsRejectedAs400(t *testing.T) {
+	db := newSPIRETestDB(t)
+	// Reachable SPIRE, but validation of the inputs fails: the only reason to
+	// reject is the malformed identity, which must be a 400 (not 503).
+	spireSvc := &spireRegistrarStub{
+		enabled:     true,
+		spiffeID:    "spiffe://poley.dev/x",
+		validateErr: errors.New("group_id contains invalid characters: bad;group"),
+	}
+	server := newSPIRETestServer(t, db, config.SPIREConfig{Enabled: true, Required: true}, spireSvc)
+
+	body := `{"name":"nf-spire","image":"docker.io/library/alpine:3.20","owner_user_id":"alice","group_id":"bad;group"}`
+	req := httptest.NewRequest(http.MethodPost, "/vms", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.handleCreateVM(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (invalid identity is a client error); body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	var apiErr types.APIError
+	if err := json.NewDecoder(rec.Body).Decode(&apiErr); err != nil {
+		t.Fatalf("decode API error: %v", err)
+	}
+	if apiErr.Error.Code != types.ErrInvalidRequest {
+		t.Fatalf("error code = %s, want %s", apiErr.Error.Code, types.ErrInvalidRequest)
+	}
+	// Backend registration must not have been attempted for malformed input.
+	vms, err := db.ListVMs("")
+	if err != nil {
+		t.Fatalf("ListVMs: %v", err)
+	}
+	if len(vms) != 0 {
+		t.Fatalf("VMs persisted = %d, want 0", len(vms))
 	}
 }
 

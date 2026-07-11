@@ -172,9 +172,18 @@ install_mage() {
 
 # ─── 5. Firecracker ────────────────────────────────────────────────────────
 install_firecracker() {
+    # Fast-path only when the installed binary already matches the pinned
+    # version. A bare existence check would leave a previously-provisioned box
+    # stuck on an older Firecracker after FIRECRACKER_VERSION is bumped, so
+    # compare `firecracker --version` and reinstall (overwrite) on a mismatch.
     if [[ -x /usr/local/bin/firecracker ]]; then
-        info "Firecracker already installed: $(firecracker --version 2>&1 | head -1)"
-        return 0
+        local installed_version
+        installed_version=$(/usr/local/bin/firecracker --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+        if [[ "$installed_version" == "$FIRECRACKER_VERSION" ]]; then
+            info "Firecracker v${FIRECRACKER_VERSION} already installed"
+            return 0
+        fi
+        info "Firecracker v${installed_version:-unknown} installed but v${FIRECRACKER_VERSION} pinned — reinstalling..."
     fi
 
     info "Installing Firecracker v${FIRECRACKER_VERSION}..."

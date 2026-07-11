@@ -261,10 +261,12 @@ func TestHandleCreateVMSpireRequiredAutoRegisterDisabledRejected(t *testing.T) {
 	}
 }
 
-// AC-2: Required + SPIRE reachable -> create succeeds and VM carries the SVID.
+// AC-2: Required + SPIRE reachable -> create succeeds and VM carries the SPIFFE ID.
 func TestHandleCreateVMSpireRequiredReachableSucceeds(t *testing.T) {
 	db := newSPIRETestDB(t)
-	const wantSpiffe = "spiffe://poley.dev/g/team/u/alice/microvm/x"
+	// Matches the shape Service.BuildSPIFFEID emits:
+	// spiffe://<trust-domain>/g/<group>/u/<owner>/w/<workloadType>/<vmID>.
+	const wantSpiffe = "spiffe://poley.dev/g/team/u/alice/w/microvm/x"
 	spireSvc := &spireRegistrarStub{enabled: true, spiffeID: wantSpiffe}
 	server := newSPIRETestServer(t, db,
 		config.SPIREConfig{Enabled: true, Required: true}, spireSvc)

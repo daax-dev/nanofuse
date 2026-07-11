@@ -84,7 +84,7 @@ The refreshed branch implements the Firecracker snapshot API calls needed before
 - `Manager.Pause` and `Manager.Resume` send `PATCH /vm` with `state: "Paused"` or `state: "Resumed"` so the public API can move running VMs into the valid snapshot state.
 - Unit tests use an Unix-socket `httptest` server and validate request path, method, and JSON body.
 
-This targets the repo-pinned Firecracker v1.7.0 API. The Vagrant setup pins Firecracker 1.7.0 in `dev/vagrant/setup.sh`, and the v1.7.0 swagger is the primary contract for the exact request fields. Firecracker upgrades must include an API-field review before changing these request shapes.
+The request shapes here were designed against the Firecracker v1.7.0 swagger, which remains the primary contract for the exact request fields. The Vagrant harness now pins Firecracker **1.16.1** in `dev/vagrant/setup.sh` (bumped from 1.7.0); the snapshot request fields used here were re-validated on 1.16.1 and are compatible. Firecracker upgrades must still include an API-field review before changing these request shapes.
 
 This is not a VM pool implementation. It does not make a cold-start latency claim.
 

@@ -667,9 +667,12 @@ func (s *Server) rejectInvalidSPIRECreateInputs(w http.ResponseWriter, req *type
 	}
 	if s.spireService != nil {
 		if err := s.spireService.ValidateIdentityParams(req.GroupID, req.OwnerUserID); err != nil {
-			s.logger.Printf("WARN: SPIRE required but identity inputs are invalid: %v", err)
+			// Do not reflect the raw error (it embeds the client-supplied
+			// group_id/owner_user_id) back to the client, and quote it with %q
+			// when logging so embedded newlines cannot forge log lines.
+			s.logger.Printf("WARN: SPIRE required but identity inputs are invalid: %q", err.Error())
 			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
-				fmt.Sprintf("Invalid SPIRE identity inputs: %v", err),
+				"Invalid SPIRE identity inputs: owner_user_id and group_id must be non-empty and contain only letters, digits, hyphens, and underscores",
 				map[string]interface{}{"spire_required": true})
 			return true
 		}

@@ -1540,6 +1540,11 @@ func (s *Server) resumeVMFromSnapshot(w http.ResponseWriter, vm *types.VM, snaps
 		if stopErr := s.runtimeManager.Stop(vm, 5); stopErr != nil {
 			s.logger.Printf("WARN: Failed to stop runtime for VM %s after persist failure: %v", vm.ID, stopErr)
 		}
+		// The Firecracker process just started by LoadSnapshot is now stopped, so
+		// clear the runtime info before persisting: UpdateVM writes runtime_json,
+		// and leaving a stale PID/socket on a non-running VM would mislead
+		// operators and break later stop/kill/logs operations.
+		vm.Runtime = nil
 		// Best-effort state restore (prevState, then Failed), mirroring the
 		// LoadSnapshot failure path above, so the VM is not stranded in Resuming.
 		vm.State = prevState

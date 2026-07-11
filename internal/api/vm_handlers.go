@@ -644,6 +644,39 @@ func spireIdentityInputsMissing(req *types.CreateVMRequest) bool {
 	return req.AutoRegisterSPIFFE != nil && !*req.AutoRegisterSPIFFE
 }
 
+// rejectInvalidSPIRECreateInputs enforces, in fail-closed mode, that a create
+// request carries a usable workload identity. It returns true (after writing a
+// 400 response) when the request must be rejected: either it supplies no
+// identity inputs (missing owner_user_id/group_id or an explicit
+// auto_register_spiffe=false), or the inputs are present but malformed. Doing
+// this up front — before image resolution or resource provisioning — means an
+// identity-less or malformed request cannot force avoidable work or leave state
+// to clean up, and keeps malformed input a 400 (client error) distinct from a
+// 503 (SPIRE backend unavailable). It is a no-op (returns false) when SPIRE is
+// not required.
+func (s *Server) rejectInvalidSPIRECreateInputs(w http.ResponseWriter, req *types.CreateVMRequest) bool {
+	if !s.spireRequired() {
+		return false
+	}
+	if spireIdentityInputsMissing(req) {
+		s.logger.Printf("WARN: SPIRE required but create request supplied no identity inputs; rejecting")
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+			"SPIRE identity is required: supply owner_user_id and group_id and do not disable auto_register_spiffe",
+			map[string]interface{}{"spire_required": true})
+		return true
+	}
+	if s.spireService != nil {
+		if err := s.spireService.ValidateIdentityParams(req.GroupID, req.OwnerUserID); err != nil {
+			s.logger.Printf("WARN: SPIRE required but identity inputs are invalid: %v", err)
+			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+				fmt.Sprintf("Invalid SPIRE identity inputs: %v", err),
+				map[string]interface{}{"spire_required": true})
+			return true
+		}
+	}
+	return false
+}
+
 // registerSPIREForCreate registers the VM's SPIRE workload identity and applies
 // fail-closed enforcement (issue #17 DoD AC4). It returns the assigned SPIFFE ID
 // and whether the request was already rejected — in which case a response has
@@ -797,30 +830,11 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// In fail-closed SPIRE mode a workload identity is mandatory. Reject a request
-	// that cannot produce one (missing owner_user_id/group_id, or an explicit
-	// auto_register_spiffe=false) up front — before resolving the image or
-	// provisioning any per-VM disk/network resources — so an identity-less request
-	// cannot force avoidable work or leave state to clean up.
-	if s.spireRequired() && spireIdentityInputsMissing(&req) {
-		s.logger.Printf("WARN: SPIRE required but create request supplied no identity inputs; rejecting")
-		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
-			"SPIRE identity is required: supply owner_user_id and group_id and do not disable auto_register_spiffe",
-			map[string]interface{}{"spire_required": true})
+	// In fail-closed SPIRE mode a workload identity is mandatory: reject requests
+	// that cannot produce one, or whose identity inputs are malformed, up front —
+	// before resolving the image or provisioning per-VM resources.
+	if s.rejectInvalidSPIRECreateInputs(w, &req) {
 		return
-	}
-	// With identity inputs present in fail-closed mode, validate their FORMAT up
-	// front: malformed values (invalid characters) are a client error (400), not
-	// a SPIRE backend failure (503). Reserving 503 for genuine unavailability
-	// keeps the two failure classes distinguishable to callers.
-	if s.spireRequired() && !spireIdentityInputsMissing(&req) && s.spireService != nil {
-		if err := s.spireService.ValidateIdentityParams(req.GroupID, req.OwnerUserID); err != nil {
-			s.logger.Printf("WARN: SPIRE required but identity inputs are invalid: %v", err)
-			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
-				fmt.Sprintf("Invalid SPIRE identity inputs: %v", err),
-				map[string]interface{}{"spire_required": true})
-			return
-		}
 	}
 
 	// Validate and resolve image

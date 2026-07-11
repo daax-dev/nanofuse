@@ -21,7 +21,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 # ─── Versions ────────────────────────────────────────────────────────────────
 GO_VERSION="1.25.2"
-FIRECRACKER_VERSION="1.7.0"
+FIRECRACKER_VERSION="1.16.1"
 
 ARCH=$(uname -m)
 case "$ARCH" in

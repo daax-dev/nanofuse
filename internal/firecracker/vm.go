@@ -288,9 +288,9 @@ func (m *Manager) Start(vm *types.VM, image *types.Image) error {
 	// 0750 (not 0755) keeps the Firecracker API socket — which controls the
 	// microVM — reachable only by the daemon's user/group, consistent with
 	// LoadSnapshot so freshly-started and resumed VMs have identical perms.
-	// MkdirAll does not tighten an already-existing directory (an earlier run may
-	// have created it 0755, or a loose umask relaxed it), so Chmod enforces the
-	// mode even for a pre-existing dir.
+	// MkdirAll does not change the mode of an already-existing directory (an
+	// earlier run may have created it 0755), so Chmod enforces the mode even for
+	// a pre-existing dir.
 	if err := os.MkdirAll(vmDir, 0750); err != nil {
 		return fmt.Errorf("failed to create VM directory: %w", err)
 	}

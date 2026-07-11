@@ -274,6 +274,14 @@ func (s *TieredStore) Manifest(ctx context.Context, id string) (*Manifest, error
 	if err := validateManifestFiles(m.Files); err != nil {
 		return nil, err
 	}
+	// Normalize each entry's Key to the canonical, derived value so callers that
+	// use Manifest() directly (inspection, future direct-download) never observe
+	// a tampered Key from the untrusted manifest object. Get() already derives
+	// its own download key from (id, name) and ignores the stored Key; this makes
+	// the returned manifest consistent with that behavior.
+	for i := range m.Files {
+		m.Files[i].Key = objectKey(id, m.Files[i].Name)
+	}
 	return &m, nil
 }
 

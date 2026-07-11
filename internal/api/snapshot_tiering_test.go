@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/daax-dev/nanofuse/internal/config"
 	"github.com/daax-dev/nanofuse/internal/logging"
@@ -189,5 +191,56 @@ func TestHandleCreateSnapshotWithoutStoreDoesNotTier(t *testing.T) {
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestTierGuardBoundsConcurrency verifies tierGuard never lets more than
+// maxConcurrentTiering (here overridden to 2) jobs run at once: 5 jobs are
+// launched but at most 2 may hold a slot simultaneously.
+func TestTierGuardBoundsConcurrency(t *testing.T) {
+	const limit = 2
+	server := &Server{tierSem: make(chan struct{}, limit)}
+
+	var mu sync.Mutex
+	cur, max := 0, 0
+	running := make(chan struct{}, 5)
+	release := make(chan struct{})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			server.tierGuard(func() {
+				mu.Lock()
+				cur++
+				if cur > max {
+					max = cur
+				}
+				mu.Unlock()
+				running <- struct{}{}
+				<-release // hold the slot until the test releases it
+				mu.Lock()
+				cur--
+				mu.Unlock()
+			})
+		}()
+	}
+
+	// Exactly `cap` jobs should be running; a (cap+1)th must not start.
+	for i := 0; i < limit; i++ {
+		<-running
+	}
+	select {
+	case <-running:
+		t.Fatal("more than cap tiering jobs ran concurrently; tierGuard did not bound them")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release) // let all jobs finish
+	wg.Wait()
+
+	if max != limit {
+		t.Fatalf("max concurrent tiering = %d, want %d (semaphore cap)", max, limit)
 	}
 }

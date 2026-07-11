@@ -49,6 +49,10 @@ type Server struct {
 	// wait for completion and the process can (best-effort) observe outstanding
 	// work. Uploads run detached from the HTTP request; see tierSnapshot.
 	tierWG sync.WaitGroup
+	// tierSem bounds the number of concurrent background tiering jobs so a burst
+	// of snapshot-create requests cannot spawn unbounded parallel
+	// compress+upload work and exhaust CPU/IO. Buffered to maxConcurrentTiering.
+	tierSem chan struct{}
 }
 
 // apiVersion is the single source of truth for the version this daemon reports
@@ -505,6 +509,7 @@ func startServer(cfg *config.Config) error {
 		spireService:     spireService,
 		snapshotStore:    snapshotStore,
 		snapshotRuntime:  snapshotRuntime,
+		tierSem:          make(chan struct{}, maxConcurrentTiering),
 	}
 
 	// Set up process exit handler to reap zombies and update VM state

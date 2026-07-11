@@ -13,6 +13,13 @@ import (
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
+// maxConcurrentTiering caps how many background snapshot-tiering jobs may run at
+// once, so a burst of snapshot-create requests cannot spawn unbounded parallel
+// compress+upload work and exhaust host CPU/IO. Snapshot creation is itself
+// VM-locked and low-frequency, so a small cap is sufficient and excess jobs
+// simply wait for a slot.
+const maxConcurrentTiering = 4
+
 // snapshotTierTimeout bounds a single background object-storage tiering upload.
 // Detached from the HTTP request, it guards against an upload hanging forever
 // while still allowing large transfers to complete.
@@ -172,11 +179,26 @@ func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request, vm
 		s.tierWG.Add(1)
 		go func() {
 			defer s.tierWG.Done()
-			s.tierSnapshot(vm.ID, snapshotID, snapPath, memPath)
+			s.tierGuard(func() {
+				s.tierSnapshot(vm.ID, snapshotID, snapPath, memPath)
+			})
 		}()
 	}
 
 	writeJSON(w, http.StatusCreated, snapshot)
+}
+
+// tierGuard runs fn while holding one of maxConcurrentTiering tiering slots, so
+// a burst of snapshot-create requests cannot spawn unbounded parallel
+// compress+upload work and exhaust host CPU/IO. Excess callers block on the
+// semaphore until a slot frees. A nil semaphore (only reachable via direct
+// struct construction in tests) means unbounded.
+func (s *Server) tierGuard(fn func()) {
+	if s.tierSem != nil {
+		s.tierSem <- struct{}{}
+		defer func() { <-s.tierSem }()
+	}
+	fn()
 }
 
 // tierSnapshot pushes a freshly created snapshot's files to the configured

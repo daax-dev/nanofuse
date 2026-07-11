@@ -184,8 +184,8 @@ install_firecracker() {
         # `|| true` so a broken/wrong-arch binary or a no-match grep (both exit
         # non-zero under `set -euo pipefail`) yields an empty version and falls
         # through to reinstall, instead of aborting provisioning.
-        installed_version=$(/usr/local/bin/firecracker --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
-        installed_jailer_version=$(/usr/local/bin/jailer --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+        installed_version=$(/usr/local/bin/firecracker --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+        installed_jailer_version=$(/usr/local/bin/jailer --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
         # firecracker and jailer are released and validated as a pair, so both
         # must match the pin before skipping reinstall.
         if [[ "$installed_version" == "$FIRECRACKER_VERSION" && "$installed_jailer_version" == "$FIRECRACKER_VERSION" ]]; then

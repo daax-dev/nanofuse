@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,29 +19,47 @@ import (
 	"github.com/daax-dev/nanofuse/internal/types"
 )
 
+// stubTrustDomain is the trust domain the stub uses when synthesizing a SPIFFE
+// ID from the received identity inputs (mirrors Service.BuildSPIFFEID's shape).
+const stubTrustDomain = "poley.dev"
+
 // spireRegistrarStub injects SPIRE registration success/failure into the API
 // handlers so the fail-closed enforcement path can be exercised without a live
 // SPIRE deployment (the concrete *spire.Service shells out to `docker exec`).
 type spireRegistrarStub struct {
-	enabled      bool
-	spiffeID     string
-	createErr    error
-	validateErr  error
-	createCalls  int
-	deleteCalls  int
-	lastDeleteID string
+	enabled     bool
+	spiffeID    string
+	createErr   error
+	validateErr error
+	createCalls int
+	// Last args received by CreateVMWorkloadEntry, so tests can assert the
+	// handler wires the generated VM ID and identity inputs through correctly.
+	lastVMID        string
+	lastGroupID     string
+	lastOwnerUserID string
+	deleteCalls     int
+	lastDeleteID    string
 }
 
 func (s *spireRegistrarStub) IsEnabled() bool { return s.enabled }
 
 func (s *spireRegistrarStub) ValidateIdentityParams(_, _ string) error { return s.validateErr }
 
-func (s *spireRegistrarStub) CreateVMWorkloadEntry(_ context.Context, _, _, _ string) (string, error) {
+func (s *spireRegistrarStub) CreateVMWorkloadEntry(_ context.Context, vmID, groupID, ownerUserID string) (string, error) {
 	s.createCalls++
+	s.lastVMID = vmID
+	s.lastGroupID = groupID
+	s.lastOwnerUserID = ownerUserID
 	if s.createErr != nil {
 		return "", s.createErr
 	}
-	return s.spiffeID, nil
+	if s.spiffeID != "" {
+		return s.spiffeID, nil
+	}
+	// Synthesize a SPIFFE ID from the received args (matching BuildSPIFFEID's
+	// shape) so the reachable-succeeds path validates the handler passes the
+	// generated VM ID and identity inputs through to the registrar.
+	return fmt.Sprintf("spiffe://%s/g/%s/u/%s/w/microvm/%s", stubTrustDomain, groupID, ownerUserID, vmID), nil
 }
 
 func (s *spireRegistrarStub) DeleteVMWorkloadEntry(_ context.Context, spiffeID string) error {
@@ -286,12 +305,13 @@ func TestHandleCreateVMSpireRequiredAutoRegisterDisabledRejected(t *testing.T) {
 }
 
 // AC-2: Required + SPIRE reachable -> create succeeds and VM carries the SPIFFE ID.
+// The stub synthesizes the SPIFFE ID from the args it receives, so this also
+// proves the handler wires the generated VM ID and identity inputs (group/owner
+// from spireCreateBody) through to the registrar.
 func TestHandleCreateVMSpireRequiredReachableSucceeds(t *testing.T) {
 	db := newSPIRETestDB(t)
-	// Matches the shape Service.BuildSPIFFEID emits:
-	// spiffe://<trust-domain>/g/<group>/u/<owner>/w/<workloadType>/<vmID>.
-	const wantSpiffe = "spiffe://poley.dev/g/team/u/alice/w/microvm/x"
-	spireSvc := &spireRegistrarStub{enabled: true, spiffeID: wantSpiffe}
+	// No explicit spiffeID: the stub synthesizes one from the received args.
+	spireSvc := &spireRegistrarStub{enabled: true}
 	server := newSPIRETestServer(t, db,
 		config.SPIREConfig{Enabled: true, Required: true}, spireSvc)
 
@@ -306,8 +326,19 @@ func TestHandleCreateVMSpireRequiredReachableSucceeds(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&vm); err != nil {
 		t.Fatalf("decode VM: %v", err)
 	}
+	// spireCreateBody carries owner_user_id=alice, group_id=team; the SPIFFE ID
+	// must incorporate the *generated* VM ID from the response.
+	wantSpiffe := fmt.Sprintf("spiffe://%s/g/team/u/alice/w/microvm/%s", stubTrustDomain, vm.ID)
 	if vm.SpiffeID != wantSpiffe {
 		t.Fatalf("vm.SpiffeID = %q, want %q", vm.SpiffeID, wantSpiffe)
+	}
+	// The handler must have passed the generated VM ID and the request's identity
+	// inputs into the registrar.
+	if spireSvc.lastVMID != vm.ID {
+		t.Fatalf("registrar got vmID %q, want the generated VM ID %q", spireSvc.lastVMID, vm.ID)
+	}
+	if spireSvc.lastGroupID != "team" || spireSvc.lastOwnerUserID != "alice" {
+		t.Fatalf("registrar got group/owner %q/%q, want team/alice", spireSvc.lastGroupID, spireSvc.lastOwnerUserID)
 	}
 }
 

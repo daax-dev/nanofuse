@@ -658,6 +658,16 @@ func (s *Server) rejectInvalidSPIRECreateInputs(w http.ResponseWriter, req *type
 	if !s.spireRequired() {
 		return false
 	}
+	// Fail closed if SPIRE is required but the registrar is missing/miswired:
+	// provisioning resources for a VM that can never obtain an identity would
+	// only fail later after avoidable work. Treat it like an unavailable backend.
+	if s.spireService == nil {
+		s.logger.Printf("ERROR: SPIRE required but no registrar is configured; refusing to create VM")
+		types.WriteError(w, http.StatusServiceUnavailable, types.ErrServiceUnavailable,
+			"SPIRE is required but unavailable or misconfigured; refusing to create VM without a workload identity",
+			map[string]interface{}{"spire_required": true})
+		return true
+	}
 	if spireIdentityInputsMissing(req) {
 		s.logger.Printf("WARN: SPIRE required but create request supplied no identity inputs; rejecting")
 		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
@@ -665,17 +675,15 @@ func (s *Server) rejectInvalidSPIRECreateInputs(w http.ResponseWriter, req *type
 			map[string]interface{}{"spire_required": true})
 		return true
 	}
-	if s.spireService != nil {
-		if err := s.spireService.ValidateIdentityParams(req.GroupID, req.OwnerUserID); err != nil {
-			// Do not reflect the raw error (it embeds the client-supplied
-			// group_id/owner_user_id) back to the client, and quote it with %q
-			// when logging so embedded newlines cannot forge log lines.
-			s.logger.Printf("WARN: SPIRE required but identity inputs are invalid: %q", err.Error())
-			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
-				"Invalid SPIRE identity inputs: owner_user_id and group_id must be non-empty and contain only letters, digits, hyphens, and underscores",
-				map[string]interface{}{"spire_required": true})
-			return true
-		}
+	if err := s.spireService.ValidateIdentityParams(req.GroupID, req.OwnerUserID); err != nil {
+		// Do not reflect the raw error (it embeds the client-supplied
+		// group_id/owner_user_id) back to the client, and quote it with %q
+		// when logging so embedded newlines cannot forge log lines.
+		s.logger.Printf("WARN: SPIRE required but identity inputs are invalid: %q", err.Error())
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+			"Invalid SPIRE identity inputs: owner_user_id and group_id must be non-empty and contain only letters, digits, hyphens, and underscores",
+			map[string]interface{}{"spire_required": true})
+		return true
 	}
 	return false
 }

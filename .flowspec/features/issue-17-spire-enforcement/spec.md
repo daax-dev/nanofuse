@@ -1,7 +1,7 @@
 # Feature Specification: SPIRE Fail-Closed Enforcement for microVM Startup
 
 **Issue:** daax-dev/nanofuse#17 (DoD AC4)
-**Status:** In Progress
+**Status:** Phase 1 Complete (AC4 fail-closed enforcement implemented; TASK-56 Done)
 **Type:** Security enforcement
 
 ## Why

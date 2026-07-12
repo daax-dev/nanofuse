@@ -154,6 +154,30 @@ func TestHandleCreateVMSpireRequiredUnreachableFailsClosed(t *testing.T) {
 	}
 }
 
+// Required mode with no registrar wired (nil service) must fail closed with 503
+// up front, rather than provisioning resources for a VM that could never obtain
+// an identity.
+func TestHandleCreateVMSpireRequiredNilServiceFailsClosed(t *testing.T) {
+	db := newSPIRETestDB(t)
+	server := newSPIRETestServer(t, db,
+		config.SPIREConfig{Enabled: true, Required: true}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/vms", strings.NewReader(spireCreateBody))
+	rec := httptest.NewRecorder()
+	server.handleCreateVM(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	vms, err := db.ListVMs("")
+	if err != nil {
+		t.Fatalf("ListVMs: %v", err)
+	}
+	if len(vms) != 0 {
+		t.Fatalf("VMs persisted = %d, want 0", len(vms))
+	}
+}
+
 // Required mode must not be bypassable: a request that supplies no identity
 // inputs (owner_user_id/group_id absent) would otherwise create a VM with no
 // SVID even though the operator requires one. It must be rejected (400) with no

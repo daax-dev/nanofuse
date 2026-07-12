@@ -48,8 +48,8 @@
   against the concrete type.
 - Minimal fix: introduce a package-private interface `spireRegistrar` in
   `internal/api` with exactly the methods the handlers use
-  (`IsEnabled`, `CreateVMWorkloadEntry`, `DeleteVMWorkloadEntry`) and change the
-  struct field type to it. `*spire.Service` already satisfies it; `server.go`
+  (`IsEnabled`, `ValidateIdentityParams`, `CreateVMWorkloadEntry`,
+  `DeleteVMWorkloadEntry`) and change the struct field type to it. `*spire.Service` already satisfies it; `server.go`
   assignment is unchanged. Nil-interface checks (`s.spireService == nil`) keep
   working for tests that don't set the field.
 - Add a `spireRegistrarStub` in the api test package to inject success/failure,

@@ -1,16 +1,20 @@
 # E2E Validation: Snapshot Load / Resume (issue #227, AC1)
 
-## Status in this environment
-Real Firecracker snapshot resume requires KVM. It was **NOT run** here because:
-- The agent user is not in the `kvm` group and `/dev/kvm` is not readable/writable.
-- No passwordless `sudo`, so the user cannot be added to `kvm`, nor can
-  vagrant/libvirt be brought up (both need root for `/dev/kvm` and networking).
-- The host `firecracker` binary is **v1.7.0**, while this repo targets the
-  Firecracker CI **v1.15** channel (see `scripts/download-fixtures.sh`). An e2e
-  on v1.7 would not validate the intended target version.
+## Prerequisites
+Real Firecracker snapshot resume requires KVM: a readable/writable `/dev/kvm`
+(nested KVM is fine), a `firecracker` binary matching the target version, and
+root for tap/bridge networking. The `dev/vagrant` closed-loop box (nested KVM,
+pinned Firecracker) satisfies all three; a CI runner without hardware
+virtualization does not.
 
-No results were fabricated. The steps below are the exact procedure to validate
-AC1 on a root/KVM sandbox (e.g. the vagrant-skill box with nested KVM).
+## Validation performed
+AC1 was validated on the `dev/vagrant` closed-loop harness (libvirt + nested
+KVM, Ubuntu 24.04, Firecracker 1.16.1): a real base microVM was created, a guest
+marker written over SSH, then paused → snapshot → stopped → resumed via
+`POST /vms/{id}/resume` with `snapshot_id`. The resume booted a **fresh**
+Firecracker process (new PID), whose API reported `state:"Running"`, and the
+pre-snapshot marker survived the resume (guest memory + disk state restored).
+The procedure below is the durable, reproducible recipe for that validation.
 
 ## What WAS verified without KVM
 - Firecracker `PUT /snapshot/load` request schema (`snapshot_path`,

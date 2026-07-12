@@ -189,9 +189,9 @@ func (s *Server) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request, sn
 	}
 
 	// Take the per-VM lock (same key as snapshot create and snapshot resume) so a
-	// delete cannot race a concurrent resume: resume re-checks these backing files
-	// under this lock, so deleting them must serialize with it rather than remove
-	// files mid-load.
+	// delete cannot race a concurrent resume: resume resolves and validates the
+	// snapshot (and then loads it) under this lock, so deleting the record/files
+	// must serialize with it rather than remove them mid-resume.
 	if err := s.db.AcquireLock(snapshot.VMID, "snapshot-delete"); err != nil {
 		types.WriteError(w, http.StatusConflict, types.ErrVMLocked, "VM is locked by another operation", nil)
 		return

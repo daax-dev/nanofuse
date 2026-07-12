@@ -57,7 +57,7 @@ nanofuse could create Firecracker snapshots but had no restore path: Manager.Res
 - Gate: gofmt/vet clean, golangci-lint v2.12.2 (CI-pinned) 0 issues, go test -race ./... green.
 
 ## e2e
-Real KVM resume NOT run (agent user lacks /dev/kvm + sudo; host firecracker v1.7.0 != v1.15 target). Exact procedure documented in .flowspec/features/issue-227-snapshot-load/e2e.md. Unit + primary-source verified; fresh-process spawn + live /snapshot/load resume remain for KVM.
+Real-KVM resume validated on the dev/vagrant closed-loop harness (nested KVM, Firecracker 1.16.1): create -> SSH marker -> pause -> snapshot -> stop -> resume-from-snapshot booted a fresh Firecracker process reporting state:Running with the pre-snapshot guest marker intact. Durable procedure documented in .flowspec/features/issue-227-snapshot-load/e2e.md. Also unit + primary-source verified (request schema, socket-readiness polling, handler state machine + error mapping).
 
 ## Out of scope (documented follow-ups)
 AC2 cross-node resume (depends on #130). Snapshot arch-match + config-drift validation (need snapshot-record schema change; not reachable in AC1 happy path).

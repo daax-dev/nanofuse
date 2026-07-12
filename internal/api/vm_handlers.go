@@ -1487,11 +1487,11 @@ func (s *Server) resumeVMFromSnapshot(w http.ResponseWriter, vm *types.VM, snaps
 		return
 	}
 
-	snapshot, ok := s.resolveResumableSnapshot(w, vm, snapshotID)
-	if !ok {
-		return
-	}
-
+	// Take the per-VM lock BEFORE resolving the snapshot so the whole
+	// resolve -> validate backing files -> load sequence is atomic with respect
+	// to a concurrent snapshot delete (which acquires the same per-VM lock). This
+	// prevents acting on a snapshot record/backing files that a delete removes in
+	// between the resolve and the load.
 	if err := s.db.AcquireLock(vm.ID, "resume"); err != nil {
 		types.WriteError(w, http.StatusConflict, types.ErrVMLocked, "VM is locked by another operation", nil)
 		return
@@ -1502,15 +1502,8 @@ func (s *Server) resumeVMFromSnapshot(w http.ResponseWriter, vm *types.VM, snaps
 		}
 	}()
 
-	// Re-check the snapshot backing files under the lock. resolveResumableSnapshot
-	// validated them before AcquireLock; re-checking here closes a TOCTOU where the
-	// files are deleted or replaced in between, so a missing file stays a clean 404
-	// before any state mutation — rather than a 500 from LoadSnapshot with the VM
-	// stranded in Resuming.
-	if !s.checkSnapshotFilePresent(w, snapshot.ID, "state", snapshot.SnapshotFilePath) {
-		return
-	}
-	if !s.checkSnapshotFilePresent(w, snapshot.ID, "memory", snapshot.MemoryFilePath) {
+	snapshot, ok := s.resolveResumableSnapshot(w, vm, snapshotID)
+	if !ok {
 		return
 	}
 

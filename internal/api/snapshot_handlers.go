@@ -188,6 +188,20 @@ func (s *Server) handleDeleteSnapshot(w http.ResponseWriter, r *http.Request, sn
 		return
 	}
 
+	// Take the per-VM lock (same key as snapshot create and snapshot resume) so a
+	// delete cannot race a concurrent resume: resume re-checks these backing files
+	// under this lock, so deleting them must serialize with it rather than remove
+	// files mid-load.
+	if err := s.db.AcquireLock(snapshot.VMID, "snapshot-delete"); err != nil {
+		types.WriteError(w, http.StatusConflict, types.ErrVMLocked, "VM is locked by another operation", nil)
+		return
+	}
+	defer func() {
+		if relErr := s.db.ReleaseLock(snapshot.VMID); relErr != nil {
+			s.logger.Printf("WARN: Failed to release lock: %v", relErr)
+		}
+	}()
+
 	// Delete snapshot files, but only within the managed snapshots tree.
 	// This guards against removing a path outside the snapshots root if the
 	// stored MemoryFilePath is ever malformed (path-traversal defense).

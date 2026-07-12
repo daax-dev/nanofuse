@@ -81,6 +81,7 @@ type AuthConfig struct {
 // SPIREConfig represents SPIRE integration configuration
 type SPIREConfig struct {
 	Enabled       bool   `yaml:"enabled"`        // Enable SPIRE workload registration
+	Required      bool   `yaml:"required"`       // Fail-closed: fail VM creation if SPIRE registration fails (requires Enabled)
 	ServerSocket  string `yaml:"server_socket"`  // Path to SPIRE server API socket
 	TrustDomain   string `yaml:"trust_domain"`   // SPIFFE trust domain (e.g., poley.dev)
 	ParentID      string `yaml:"parent_id"`      // Parent SPIFFE ID for workload entries
@@ -213,6 +214,7 @@ func DefaultConfig() *Config {
 		},
 		SPIRE: SPIREConfig{
 			Enabled:       false,                                // Disabled by default
+			Required:      false,                                // Best-effort by default; opt in to fail-closed
 			ServerSocket:  "/tmp/spire-server/private/api.sock", // Default SPIRE server socket
 			TrustDomain:   "poley.dev",                          // Default trust domain
 			ParentID:      "spiffe://poley.dev/agent/local",     // Default parent SPIFFE ID
@@ -270,10 +272,24 @@ func (c *Config) Validate() error {
 	if c.Limits.MaxTotalMemoryMiB <= 0 {
 		return fmt.Errorf("limits.max_total_memory_mib must be positive")
 	}
+	if err := c.validateSPIRE(); err != nil {
+		return err
+	}
 	if err := c.validateSnapshotStore(); err != nil {
 		return err
 	}
 	return c.validateAuth()
+}
+
+// validateSPIRE rejects contradictory SPIRE settings. A config that marks SPIRE
+// required for fail-closed enforcement but leaves it disabled would silently
+// fail open (registration is skipped when disabled), defeating the guarantee the
+// operator asked for; treat it as a fatal misconfiguration instead.
+func (c *Config) validateSPIRE() error {
+	if c.SPIRE.Required && !c.SPIRE.Enabled {
+		return fmt.Errorf("spire.required is true but spire.enabled is false: enable SPIRE or clear the required flag")
+	}
+	return nil
 }
 
 func (c *Config) validateSnapshotStore() error {

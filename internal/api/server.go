@@ -27,6 +27,20 @@ import (
 	"github.com/daax-dev/nanofuse/internal/vmm"
 )
 
+// spireRegistrar is the subset of *spire.Service the API handlers depend on.
+// Declaring it as an interface lets tests inject a stub to exercise the
+// fail-closed enforcement path (see SPIRE.Required); *spire.Service satisfies it.
+type spireRegistrar interface {
+	IsEnabled() bool
+	// ValidateIdentityParams checks that group_id/owner_user_id are well-formed
+	// (client-input validation) so the create handler can reject malformed input
+	// with 400 up front, before attempting backend registration (which would
+	// otherwise surface as a 503).
+	ValidateIdentityParams(groupID, ownerUserID string) error
+	CreateVMWorkloadEntry(ctx context.Context, vmID, groupID, ownerUserID string) (string, error)
+	DeleteVMWorkloadEntry(ctx context.Context, spiffeID string) error
+}
+
 // Server represents the API server
 type Server struct {
 	config           *config.Config
@@ -37,7 +51,10 @@ type Server struct {
 	logger           *logging.Logger
 	startTime        time.Time
 	recordingStorage RecordingStorageInterface
-	spireService     *spire.Service
+	// spireService is the SPIRE registrar (an interface so tests can inject a
+	// stub to exercise the fail-closed enforcement path; *spire.Service satisfies
+	// it) — see issue #17.
+	spireService spireRegistrar
 	// snapshotStore, when non-nil, is the optional object-storage tier snapshots
 	// are additionally pushed to for durability and cross-node portability
 	// (issue #130). Nil means local-disk-only (the default).

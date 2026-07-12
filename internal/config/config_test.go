@@ -153,3 +153,27 @@ func TestRuntimeDriverForHostRejectsIncompatibleDrivers(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSPIRERequiredWithoutEnabledIsRejected(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SPIRE.Required = true
+	cfg.SPIRE.Enabled = false
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want rejection of required-without-enabled")
+	}
+	if !strings.Contains(err.Error(), "spire.required") || !strings.Contains(err.Error(), "spire.enabled") {
+		t.Fatalf("Validate() error = %q, want it to name spire.required and spire.enabled", err.Error())
+	}
+}
+
+func TestValidateSPIRERequiredWithEnabledIsAccepted(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SPIRE.Required = true
+	cfg.SPIRE.Enabled = true
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil for required+enabled", err)
+	}
+}

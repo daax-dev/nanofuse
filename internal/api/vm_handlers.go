@@ -627,9 +627,106 @@ func writeNetworkSetupError(w http.ResponseWriter, err error, networkMode string
 	return true
 }
 
+// spireRequired reports whether SPIRE registration is mandatory (fail-closed).
+// Enforcement applies only when SPIRE is both enabled and marked required.
+func (s *Server) spireRequired() bool {
+	return s.config != nil && s.config.SPIRE.Enabled && s.config.SPIRE.Required
+}
+
+// spireIdentityInputsMissing reports whether req lacks the inputs needed to mint
+// a SPIRE workload identity (owner_user_id/group_id) or explicitly opts out via
+// auto_register_spiffe=false. Mirrors registerSPIREWorkload's shouldRegister gate
+// so the create handler can reject such requests early in fail-closed mode.
+func spireIdentityInputsMissing(req *types.CreateVMRequest) bool {
+	if req.OwnerUserID == "" || req.GroupID == "" {
+		return true
+	}
+	return req.AutoRegisterSPIFFE != nil && !*req.AutoRegisterSPIFFE
+}
+
+// rejectInvalidSPIRECreateInputs enforces, in fail-closed mode, that a create
+// request carries a usable workload identity. It returns true (after writing a
+// 400 response) when the request must be rejected: either it supplies no
+// identity inputs (missing owner_user_id/group_id or an explicit
+// auto_register_spiffe=false), or the inputs are present but malformed. Doing
+// this up front — before image resolution or resource provisioning — means an
+// identity-less or malformed request cannot force avoidable work or leave state
+// to clean up, and keeps malformed input a 400 (client error) distinct from a
+// 503 (SPIRE backend unavailable). It is a no-op (returns false) when SPIRE is
+// not required.
+func (s *Server) rejectInvalidSPIRECreateInputs(w http.ResponseWriter, req *types.CreateVMRequest) bool {
+	if !s.spireRequired() {
+		return false
+	}
+	// Fail closed if SPIRE is required but the registrar is missing/miswired:
+	// provisioning resources for a VM that can never obtain an identity would
+	// only fail later after avoidable work. Treat it like an unavailable backend.
+	if s.spireService == nil {
+		s.logger.Printf("ERROR: SPIRE required but no registrar is configured; refusing to create VM")
+		types.WriteError(w, http.StatusServiceUnavailable, types.ErrServiceUnavailable,
+			"SPIRE is required but unavailable or misconfigured; refusing to create VM without a workload identity",
+			map[string]interface{}{"spire_required": true})
+		return true
+	}
+	if spireIdentityInputsMissing(req) {
+		s.logger.Printf("WARN: SPIRE required but create request supplied no identity inputs; rejecting")
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+			"SPIRE identity is required: supply owner_user_id and group_id and do not disable auto_register_spiffe",
+			map[string]interface{}{"spire_required": true})
+		return true
+	}
+	if err := s.spireService.ValidateIdentityParams(req.GroupID, req.OwnerUserID); err != nil {
+		// Do not reflect the raw error (it embeds the client-supplied
+		// group_id/owner_user_id) back to the client, and quote it with %q
+		// when logging so embedded newlines cannot forge log lines.
+		s.logger.Printf("WARN: SPIRE required but identity inputs are invalid: %q", err.Error())
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+			"Invalid SPIRE identity inputs: owner_user_id and group_id must be non-empty and contain only letters, digits, hyphens, and underscores",
+			map[string]interface{}{"spire_required": true})
+		return true
+	}
+	return false
+}
+
+// registerSPIREForCreate registers the VM's SPIRE workload identity and applies
+// fail-closed enforcement (issue #17 DoD AC4). It returns the assigned SPIFFE ID
+// and whether the request was already rejected — in which case a response has
+// been written and provisioned resources cleaned up, and the caller must return
+// immediately. In best-effort mode (SPIRE not required) a registration failure
+// is non-fatal and was already logged inside registerSPIREWorkload.
+//
+// The caller validates identity inputs up front in fail-closed mode (see
+// spireIdentityInputsMissing), so a required-mode failure here reflects a SPIRE
+// backend problem (unreachable or misconfigured), which is surfaced as 503.
+func (s *Server) registerSPIREForCreate(w http.ResponseWriter, r *http.Request, vmID string, req *types.CreateVMRequest, config types.VMConfig) (string, bool) {
+	spiffeID, spireErr := s.registerSPIREWorkload(r.Context(), vmID, req)
+	if !s.spireRequired() || (spireErr == nil && spiffeID != "") {
+		return spiffeID, false
+	}
+	// Fail-closed: refuse to start a workload without an identity rather than
+	// falling back to plaintext. Unwind the network/storage/IPAM resources
+	// provisioned so far; the VM record is not persisted and no SPIRE entry
+	// exists yet.
+	s.cleanupCreatedVMResources(vmID, config)
+	// Log the specific cause (which may include backend/CLI output) for
+	// operators, but return only a stable, high-level reason to the client — the
+	// raw SPIRE error can leak docker/CLI internals that should not cross the API
+	// boundary.
+	if spireErr != nil {
+		s.logger.Printf("ERROR: SPIRE required but registration failed for VM %s; aborting create: %q", vmID, spireErr.Error())
+	} else {
+		s.logger.Printf("ERROR: SPIRE required but no identity was minted for VM %s; aborting create", vmID)
+	}
+	types.WriteError(w, http.StatusServiceUnavailable, types.ErrServiceUnavailable,
+		"SPIRE is required but unavailable or misconfigured; refusing to create VM without a workload identity",
+		map[string]interface{}{"spire_required": true})
+	return "", true
+}
+
 // registerSPIREWorkload handles SPIRE workload registration for a new VM.
 // Returns the spiffeID if registered, empty string otherwise, and any error encountered.
-// Registration is best-effort and won't fail VM creation.
+// The caller decides how to treat a non-nil error: best-effort by default, or
+// fail-closed when spireRequired() reports true (see handleCreateVM).
 func (s *Server) registerSPIREWorkload(ctx context.Context, vmID string, req *types.CreateVMRequest) (string, error) {
 	shouldRegister := req.OwnerUserID != "" && req.GroupID != ""
 	if req.AutoRegisterSPIFFE != nil {
@@ -744,6 +841,13 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// In fail-closed SPIRE mode a workload identity is mandatory: reject requests
+	// that cannot produce one, or whose identity inputs are malformed, up front —
+	// before resolving the image or provisioning per-VM resources.
+	if s.rejectInvalidSPIRECreateInputs(w, &req) {
+		return
+	}
+
 	// Validate and resolve image
 	image, imageDigest, ok := s.resolveImageForCreate(w, req.Image)
 	if !ok {
@@ -785,11 +889,10 @@ func (s *Server) handleCreateVM(w http.ResponseWriter, r *http.Request) {
 
 	// Create VM
 	now := time.Now()
-	// Attempt SPIRE registration (best-effort, won't fail VM creation)
-	spiffeID, spireErr := s.registerSPIREWorkload(r.Context(), vmID, &req)
-	if spireErr != nil {
-		// Log error but continue - SPIRE registration is optional
-		s.logger.Printf("WARN: %v", spireErr)
+	// Register the SPIRE workload identity and apply fail-closed enforcement.
+	spiffeID, rejected := s.registerSPIREForCreate(w, r, vmID, &req, config)
+	if rejected {
+		return
 	}
 
 	vm := &types.VM{

@@ -21,7 +21,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
 # ─── Versions ────────────────────────────────────────────────────────────────
 GO_VERSION="1.25.2"
-FIRECRACKER_VERSION="1.7.0"
+FIRECRACKER_VERSION="1.16.1"
 
 ARCH=$(uname -m)
 case "$ARCH" in
@@ -172,9 +172,27 @@ install_mage() {
 
 # ─── 5. Firecracker ────────────────────────────────────────────────────────
 install_firecracker() {
-    if [[ -x /usr/local/bin/firecracker ]]; then
-        info "Firecracker already installed: $(firecracker --version 2>&1 | head -1)"
-        return 0
+    # Fast-path only when the installed binary already matches the pinned
+    # version. A bare existence check would leave a previously-provisioned box
+    # stuck on an older Firecracker after FIRECRACKER_VERSION is bumped, so
+    # compare `firecracker --version` and reinstall (overwrite) on a mismatch.
+    # Both firecracker AND jailer must be present for the fast-path: this
+    # function installs both, so a matching firecracker with a missing/broken
+    # jailer must still trigger reinstall to repair the harness.
+    if [[ -x /usr/local/bin/firecracker && -x /usr/local/bin/jailer ]]; then
+        local installed_version installed_jailer_version
+        # `|| true` so a broken/wrong-arch binary or a no-match grep (both exit
+        # non-zero under `set -euo pipefail`) yields an empty version and falls
+        # through to reinstall, instead of aborting provisioning.
+        installed_version=$(/usr/local/bin/firecracker --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+        installed_jailer_version=$(/usr/local/bin/jailer --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+        # firecracker and jailer are released and validated as a pair, so both
+        # must match the pin before skipping reinstall.
+        if [[ "$installed_version" == "$FIRECRACKER_VERSION" && "$installed_jailer_version" == "$FIRECRACKER_VERSION" ]]; then
+            info "Firecracker + jailer v${FIRECRACKER_VERSION} already installed"
+            return 0
+        fi
+        info "Firecracker ${installed_version:+v}${installed_version:-unknown (unparseable)} / jailer ${installed_jailer_version:+v}${installed_jailer_version:-unknown (unparseable)} installed but v${FIRECRACKER_VERSION} pinned — reinstalling..."
     fi
 
     info "Installing Firecracker v${FIRECRACKER_VERSION}..."

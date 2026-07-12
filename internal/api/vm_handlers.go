@@ -1415,6 +1415,33 @@ func (s *Server) handleVMResumeByPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse the optional request body. A snapshot_id selects the
+	// resume-from-snapshot path (boot a fresh runtime from a stored snapshot);
+	// an absent snapshot_id keeps the in-place unpause behavior below.
+	var resumeReq types.ResumeVMRequest
+	if r.ContentLength != 0 {
+		// The body is optional. An empty body decodes to io.EOF (e.g. a chunked
+		// request with no payload, where ContentLength is unknown/-1); treat that
+		// as "no body" rather than a bad request so the normal unpause path works.
+		if err := readJSON(r, &resumeReq); err != nil && !errors.Is(err, io.EOF) {
+			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest, "Invalid request body", nil)
+			return
+		}
+	}
+	if resumeReq.SnapshotID != nil {
+		// snapshot_id was explicitly provided: an empty value is an invalid
+		// request, not a request to fall through to the in-place unpause path
+		// (which would silently resume a paused VM the caller did not ask to
+		// unpause).
+		if *resumeReq.SnapshotID == "" {
+			types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+				"snapshot_id must be a non-empty snapshot id when provided", nil)
+			return
+		}
+		s.resumeVMFromSnapshot(w, vm, *resumeReq.SnapshotID)
+		return
+	}
+
 	// Check if VM is paused
 	if vm.State != types.StatePaused {
 		types.WriteError(w, http.StatusConflict, types.ErrInvalidStateTransition,
@@ -1461,6 +1488,275 @@ func (s *Server) handleVMResumeByPath(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Printf("INFO: Resumed VM: %s (%s)", vm.Name, vm.ID)
 	writeJSON(w, http.StatusOK, vm)
+}
+
+// resolveResumableSnapshot looks up the snapshot for a resume request and
+// validates it (existence, ownership, in-root storage path, backing files).
+// On any failure it writes the appropriate error response and returns ok=false.
+func (s *Server) resolveResumableSnapshot(w http.ResponseWriter, vm *types.VM, snapshotID string) (*types.Snapshot, bool) {
+	snapshot, err := s.db.GetSnapshot(snapshotID)
+	if err != nil {
+		s.logger.Printf("ERROR: Failed to get snapshot: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to get snapshot", nil)
+		return nil, false
+	}
+	if snapshot == nil {
+		types.WriteError(w, http.StatusNotFound, types.ErrSnapshotNotFound,
+			fmt.Sprintf("Snapshot '%s' not found", snapshotID),
+			map[string]interface{}{"snapshot_id": snapshotID})
+		return nil, false
+	}
+	if snapshot.VMID != vm.ID {
+		types.WriteError(w, http.StatusBadRequest, types.ErrInvalidRequest,
+			fmt.Sprintf("Snapshot '%s' does not belong to VM '%s'", snapshotID, vm.ID),
+			map[string]interface{}{"snapshot_id": snapshotID, "vm_id": vm.ID, "snapshot_vm_id": snapshot.VMID})
+		return nil, false
+	}
+
+	// Guard against loading arbitrary host files if a stored snapshot path is
+	// ever malformed or tampered with (path-traversal defense, matching the
+	// snapshot-delete handler).
+	if !s.snapshotFileWithinManagedRoot(snapshot.SnapshotFilePath) ||
+		!s.snapshotFileWithinManagedRoot(snapshot.MemoryFilePath) {
+		s.logger.Printf("ERROR: snapshot %s references a path outside the managed snapshots root", snapshotID)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			"Snapshot has an invalid storage path", map[string]interface{}{"snapshot_id": snapshotID})
+		return nil, false
+	}
+
+	// Verify the backing files are present before touching runtime state so the
+	// caller gets a clear error instead of an opaque runtime failure.
+	if !s.checkSnapshotFilePresent(w, snapshotID, "state", snapshot.SnapshotFilePath) {
+		return nil, false
+	}
+	if !s.checkSnapshotFilePresent(w, snapshotID, "memory", snapshot.MemoryFilePath) {
+		return nil, false
+	}
+
+	return snapshot, true
+}
+
+// checkSnapshotFilePresent verifies a snapshot backing file exists and is a
+// regular file. A missing file is a 404 (snapshot not found); any other stat
+// error (e.g. EACCES or a transient IO failure) is a 500 with an explicit "not
+// accessible" message and a server log entry, since it is not the same condition
+// as "not found". Lstat (not Stat) is used so a symlink is inspected in place: a
+// symlink or directory at the stored path is rejected as a 500, closing a
+// symlink-escape gap that Stat's link-following would otherwise leave in the
+// path-traversal defense.
+func (s *Server) checkSnapshotFilePresent(w http.ResponseWriter, snapshotID, kind, path string) bool {
+	info, statErr := os.Lstat(path)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			types.WriteError(w, http.StatusNotFound, types.ErrSnapshotNotFound,
+				fmt.Sprintf("Snapshot %s file missing at '%s'", kind, path),
+				map[string]interface{}{"snapshot_id": snapshotID, "path": path})
+			return false
+		}
+		s.logger.Printf("ERROR: cannot stat snapshot %s file %q for %s: %v", kind, path, snapshotID, statErr)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			fmt.Sprintf("Snapshot %s file not accessible at '%s'", kind, path),
+			map[string]interface{}{"snapshot_id": snapshotID, "path": path})
+		return false
+	}
+	if !info.Mode().IsRegular() {
+		s.logger.Printf("ERROR: snapshot %s path %q for %s is not a regular file (mode %v)", kind, path, snapshotID, info.Mode())
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			fmt.Sprintf("Snapshot %s path is not a regular file: '%s'", kind, path),
+			map[string]interface{}{"snapshot_id": snapshotID, "path": path})
+		return false
+	}
+	return true
+}
+
+// resumeVMFromSnapshot restores a VM from a previously created snapshot by
+// starting a fresh runtime and loading the snapshot into it. Unlike the
+// in-place unpause path, this requires the VM to not already have a live
+// runtime, since a new Firecracker process is created for the load.
+func (s *Server) resumeVMFromSnapshot(w http.ResponseWriter, vm *types.VM, snapshotID string) {
+	// Snapshot resume starts a *fresh* Firecracker process and reuses the VM's
+	// API socket path, so it is only safe from states that guarantee no live
+	// runtime. Any other state (running/starting/resuming, stopping mid-teardown,
+	// or paused — which still holds a live paused process) could orphan the old
+	// process and create conflicting runtimes/tap devices, so require an explicit
+	// allowlist rather than denying a few known-bad states.
+	switch vm.State {
+	case types.StateStopped, types.StateCreated, types.StateFailed:
+		// No live runtime — safe to load a snapshot into a new process.
+	default:
+		types.WriteError(w, http.StatusConflict, types.ErrInvalidStateTransition,
+			fmt.Sprintf("Cannot resume VM from snapshot while in state '%s'; stop the VM first (resume-from-snapshot requires no live runtime)", vm.State),
+			map[string]interface{}{"current_state": vm.State})
+		return
+	}
+
+	// Take the per-VM lock BEFORE resolving the snapshot so the whole
+	// resolve -> validate backing files -> load sequence is atomic with respect
+	// to a concurrent snapshot delete (which acquires the same per-VM lock). This
+	// prevents acting on a snapshot record/backing files that a delete removes in
+	// between the resolve and the load.
+	if err := s.db.AcquireLock(vm.ID, "resume"); err != nil {
+		types.WriteError(w, http.StatusConflict, types.ErrVMLocked, "VM is locked by another operation", nil)
+		return
+	}
+	defer func() {
+		if err := s.db.ReleaseLock(vm.ID); err != nil {
+			s.logger.Printf("WARN: Failed to release lock: %v", err)
+		}
+	}()
+
+	snapshot, ok := s.resolveResumableSnapshot(w, vm, snapshotID)
+	if !ok {
+		return
+	}
+
+	// Re-establish the host tap device the snapshot expects. No-op when the VM
+	// has no networking or its tap already exists.
+	if err := s.ensureVMTapForResume(vm); err != nil {
+		s.logger.Printf("ERROR: Failed to re-establish network for VM %s: %v", vm.ID, err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			fmt.Sprintf("Failed to re-establish network for snapshot resume: %v", err), nil)
+		return
+	}
+
+	prevState := vm.State
+	vm.State = types.StateResuming
+	if err := s.db.UpdateVM(vm); err != nil {
+		s.logger.Printf("ERROR: Failed to update VM: %v", err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to update VM state", nil)
+		return
+	}
+
+	if err := s.runtimeManager.LoadSnapshot(vm, snapshot.SnapshotFilePath, snapshot.MemoryFilePath); err != nil {
+		// No runtime was created; restore the prior state. If that write also
+		// fails, mark the VM failed so it is not stuck in Resuming forever.
+		vm.State = prevState
+		if updErr := s.db.UpdateVM(vm); updErr != nil {
+			s.logger.Printf("ERROR: Failed to restore VM %s state after load failure; marking failed: %v", vm.ID, updErr)
+			vm.State = types.StateFailed
+			if failErr := s.db.UpdateVM(vm); failErr != nil {
+				s.logger.Printf("ERROR: Failed to mark VM %s failed: %v", vm.ID, failErr)
+			}
+		}
+		if writeRuntimeUnsupportedError(w, "VM snapshot resume", err, map[string]interface{}{"vm_id": vm.ID}) {
+			return
+		}
+		s.logger.Printf("ERROR: Failed to resume VM %s from snapshot %s: %v", vm.ID, snapshotID, err)
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError,
+			fmt.Sprintf("Failed to resume VM from snapshot: %v", err), nil)
+		return
+	}
+
+	vm.State = types.StateRunning
+	if err := s.db.UpdateVM(vm); err != nil {
+		// The runtime is up but the control plane cannot record it. Tear it down
+		// and restore a resumable state. Stop (not Kill) also stops the vsock proxy
+		// that LoadSnapshot started, which Kill would leak; and the VM must not be
+		// left stuck in Resuming, which the resume-from-snapshot allowlist excludes.
+		s.logger.Printf("ERROR: Failed to persist running state for VM %s after snapshot load; stopping runtime: %v", vm.ID, err)
+		if stopErr := s.runtimeManager.Stop(vm, 5); stopErr != nil {
+			s.logger.Printf("WARN: Failed to stop runtime for VM %s after persist failure: %v", vm.ID, stopErr)
+		}
+		// The Firecracker process just started by LoadSnapshot is now stopped, so
+		// clear the runtime info before persisting: UpdateVM writes runtime_json,
+		// and leaving a stale PID/socket on a non-running VM would mislead
+		// operators and break later stop/kill/logs operations.
+		vm.Runtime = nil
+		// Best-effort state restore (prevState, then Failed), mirroring the
+		// LoadSnapshot failure path above, so the VM is not stranded in Resuming.
+		vm.State = prevState
+		if updErr := s.db.UpdateVM(vm); updErr != nil {
+			s.logger.Printf("ERROR: Failed to restore VM %s state after persist failure; marking failed: %v", vm.ID, updErr)
+			vm.State = types.StateFailed
+			if failErr := s.db.UpdateVM(vm); failErr != nil {
+				s.logger.Printf("ERROR: Failed to mark VM %s failed: %v", vm.ID, failErr)
+			}
+		}
+		types.WriteError(w, http.StatusInternalServerError, types.ErrInternalError, "Failed to update VM state", nil)
+		return
+	}
+
+	s.logger.Printf("INFO: Resumed VM %s (%s) from snapshot %s", vm.Name, vm.ID, snapshotID)
+	writeJSON(w, http.StatusOK, vm)
+}
+
+// snapshotFileWithinManagedRoot reports whether p resolves to a location inside
+// the managed snapshots tree ({DataDir}/snapshots). It defends the snapshot
+// resume path against loading arbitrary host files via a malformed stored path.
+//
+// A purely lexical check (filepath.Rel) is not sufficient: a symlinked
+// intermediate component (e.g. snapshots/<vm> -> /etc) passes lexical
+// containment yet redirects the real path outside the root. So after the cheap
+// lexical gate we also resolve symlinks on the file's parent directory and
+// re-check containment against the resolved root. The final path component is
+// separately required to be a regular (non-symlink) file by
+// checkSnapshotFilePresent, closing the final-component symlink case.
+func (s *Server) snapshotFileWithinManagedRoot(p string) bool {
+	root := filepath.Clean(filepath.Join(s.config.Storage.DataDir, "snapshots"))
+	cleaned := filepath.Clean(p)
+
+	withinLexical := func(base, target string) bool {
+		rel, err := filepath.Rel(base, target)
+		return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+	}
+
+	// Lexical containment first (rejects ../ escapes cheaply).
+	if !withinLexical(root, cleaned) {
+		return false
+	}
+
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		// Only a not-exist error is safe to pass through: the snapshots root does
+		// not exist yet, so no in-root file can exist and the downstream presence
+		// check will return a precise 404. Any other error (EACCES/EPERM/…) must
+		// fail closed — we cannot prove the path stays in the managed root.
+		return os.IsNotExist(err)
+	}
+	realDir, err := filepath.EvalSymlinks(filepath.Dir(cleaned))
+	if err != nil {
+		// Same policy for the parent directory: defer to the 404 path only when
+		// it genuinely does not exist; otherwise fail closed rather than let a
+		// symlinked intermediate directory slip past on an unreadable path.
+		return os.IsNotExist(err)
+	}
+	return realDir == realRoot || withinLexical(realRoot, realDir)
+}
+
+// ensureVMTapForResume recreates the host tap device a snapshot expects when it
+// is absent. It is idempotent and a no-op for VMs without firecracker
+// networking, which keeps snapshot resume hermetic for non-networked VMs.
+func (s *Server) ensureVMTapForResume(vm *types.VM) error {
+	// TAP re-establishment is firecracker-specific. Other runtimes (e.g. apple
+	// container) neither create nor need a Linux TAP, yet their VMs still default
+	// to Network.Mode "nat" at create time. Mirror setupVMNetworking's runtime
+	// gate so snapshot resume never touches host TAP devices for a non-firecracker
+	// runtime — that runtime's LoadSnapshot returns ErrUnsupportedOperation, which
+	// the caller maps to 501, without a spurious 500 or a stray TAP first.
+	if selectedRuntimeDriver(s.config) != "firecracker" {
+		return nil
+	}
+	if vm.Config.Network.Mode == "" || vm.Config.Network.Mode == "none" {
+		return nil
+	}
+	tap := vm.Config.Network.TapDevice
+	if tap == "" {
+		return nil
+	}
+	if network.TAPDeviceExists(tap) {
+		return nil
+	}
+	if err := network.CreateTAPDevice(tap); err != nil {
+		return fmt.Errorf("failed to recreate TAP device %s: %w", tap, err)
+	}
+	if err := network.AttachTAPToBridge(tap, network.BridgeName); err != nil {
+		// Avoid leaking the tap we just created if it cannot be attached.
+		if delErr := network.DeleteTAPDevice(tap); delErr != nil {
+			s.logger.Printf("WARN: Failed to clean up TAP %s after attach failure: %v", tap, delErr)
+		}
+		return fmt.Errorf("failed to attach TAP %s to bridge %s: %w", tap, network.BridgeName, err)
+	}
+	return nil
 }
 
 // handleVMLogsByPath handles GET /vms/{id}/logs using path parameters

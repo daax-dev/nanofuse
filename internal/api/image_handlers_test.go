@@ -92,6 +92,11 @@ type runtimeImageProviderStub struct {
 	deleteCalls int
 	execCalls   int
 	execCommand []string
+
+	loadSnapshotErr      error
+	loadSnapshotCalls    int
+	loadSnapshotSnapPath string
+	loadSnapshotMemPath  string
 }
 
 func (r *runtimeImageProviderStub) ResolveImage(_ string) (*types.Image, error) {
@@ -133,6 +138,13 @@ func (r *runtimeImageProviderStub) Resume(*types.VM) error { return r.resumeErr 
 
 func (r *runtimeImageProviderStub) CreateSnapshot(*types.VM, string, string) error {
 	return r.snapshotErr
+}
+
+func (r *runtimeImageProviderStub) LoadSnapshot(_ *types.VM, snapshotPath, memPath string) error {
+	r.loadSnapshotCalls++
+	r.loadSnapshotSnapPath = snapshotPath
+	r.loadSnapshotMemPath = memPath
+	return r.loadSnapshotErr
 }
 
 func (r *runtimeImageProviderStub) GetConsoleLogs(*types.VM, int) ([]byte, error) { return nil, nil }

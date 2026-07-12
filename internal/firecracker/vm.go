@@ -132,6 +132,25 @@ type snapshotCreateRequest struct {
 	MemFilePath  string `json:"mem_file_path"`
 }
 
+// memoryBackend mirrors Firecracker's MemoryBackend schema. backend_type is one
+// of "File" | "Uffd"; "File" lets the kernel handle guest-memory page faults
+// from backend_path.
+type memoryBackend struct {
+	BackendType string `json:"backend_type"`
+	BackendPath string `json:"backend_path"`
+}
+
+// snapshotLoadRequest mirrors Firecracker's SnapshotLoadParams (v1.15).
+// mem_backend is preferred over the deprecated mem_file_path. resume_vm is left
+// false so the VM loads paused: LoadSnapshot starts the SPIRE vsock proxy before
+// resuming the vCPUs (via a separate PATCH /vm) so an early guest->host vsock
+// connection cannot race a not-yet-listening proxy.
+type snapshotLoadRequest struct {
+	SnapshotPath string        `json:"snapshot_path"`
+	MemBackend   memoryBackend `json:"mem_backend"`
+	ResumeVM     bool          `json:"resume_vm"`
+}
+
 type vmStateRequest struct {
 	State string `json:"state"`
 }
@@ -206,11 +225,16 @@ func (m *Manager) startFirecrackerProcess(socketPath, configPath, consolePath st
 	}
 	defer consoleFile.Close()
 
+	// A snapshot load starts Firecracker with no boot config; the snapshot
+	// supplies the machine state, so --config-file is omitted when configPath
+	// is empty.
+	args := []string{"--api-sock", socketPath}
+	if configPath != "" {
+		args = append(args, "--config-file", configPath)
+	}
+
 	// #nosec G204 - binaryPath is from trusted config file, not user input
-	cmd := exec.Command(m.binaryPath,
-		"--api-sock", socketPath,
-		"--config-file", configPath,
-	)
+	cmd := exec.Command(m.binaryPath, args...)
 
 	cmd.Stdout = consoleFile
 	cmd.Stderr = consoleFile
@@ -261,8 +285,17 @@ func setupVMRuntime(vm *types.VM, cmd *exec.Cmd, socketPath, consolePath string)
 // Start starts a Firecracker VM
 func (m *Manager) Start(vm *types.VM, image *types.Image) error {
 	vmDir := filepath.Join(m.dataDir, "vms", vm.ID)
-	if err := os.MkdirAll(vmDir, 0755); err != nil {
+	// 0750 (not 0755) keeps the Firecracker API socket — which controls the
+	// microVM — reachable only by the daemon's user/group, consistent with
+	// LoadSnapshot so freshly-started and resumed VMs have identical perms.
+	// MkdirAll does not change the mode of an already-existing directory (an
+	// earlier run may have created it 0755), so Chmod enforces the mode even for
+	// a pre-existing dir.
+	if err := os.MkdirAll(vmDir, 0750); err != nil {
 		return fmt.Errorf("failed to create VM directory: %w", err)
+	}
+	if err := os.Chmod(vmDir, 0750); err != nil {
+		return fmt.Errorf("failed to set VM directory permissions: %w", err)
 	}
 
 	socketPath := filepath.Join(vmDir, "firecracker.sock")
@@ -285,25 +318,8 @@ func (m *Manager) Start(vm *types.VM, image *types.Image) error {
 	setupVMRuntime(vm, cmd, socketPath, consolePath)
 
 	// Start vsock proxy for SPIRE agent access if configured
-	if fcConfig.Vsock != nil && m.spireConfig != nil {
-		proxy, err := NewVsockProxy(
-			fcConfig.Vsock.UDSPath,
-			m.spireConfig.AgentSocket,
-			m.spireConfig.VsockPort,
-		)
-		if err != nil {
-			log.Printf("WARN: Failed to create vsock proxy for VM %s: %v", vm.ID, err)
-		} else {
-			if err := proxy.Start(); err != nil {
-				log.Printf("WARN: Failed to start vsock proxy for VM %s: %v", vm.ID, err)
-			} else {
-				m.vsockMu.Lock()
-				m.vsockProxies[vm.ID] = proxy
-				m.vsockMu.Unlock()
-				log.Printf("INFO: Started vsock proxy for VM %s (port %d -> %s)",
-					vm.ID, m.spireConfig.VsockPort, m.spireConfig.AgentSocket)
-			}
-		}
+	if fcConfig.Vsock != nil {
+		m.startVsockProxyIfConfigured(vm.ID, fcConfig.Vsock.UDSPath)
 	}
 
 	// Start goroutine to wait on process and reap zombie
@@ -583,6 +599,207 @@ func (m *Manager) CreateSnapshot(vm *types.VM, snapshotPath, memPath string) err
 		return fmt.Errorf("failed to create Firecracker snapshot for VM %s: %w", vm.ID, err)
 	}
 	return nil
+}
+
+// stopVsockProxy stops and removes the tracked vsock proxy for vmID, if any, and
+// reports whether one was stopped. The map is mutated under vsockMu but the
+// (potentially blocking) Stop runs outside the lock, matching Manager.Stop.
+func (m *Manager) stopVsockProxy(vmID string) bool {
+	m.vsockMu.Lock()
+	proxy, ok := m.vsockProxies[vmID]
+	if ok {
+		delete(m.vsockProxies, vmID)
+	}
+	m.vsockMu.Unlock()
+	if ok {
+		proxy.Stop()
+	}
+	return ok
+}
+
+// startVsockProxyIfConfigured starts the host-side SPIRE vsock proxy for a VM
+// and tracks it in m.vsockProxies for later Stop cleanup. It is best-effort: a
+// failure is logged and not fatal (matching Start's behaviour). It is a no-op
+// unless the current SPIRE config enables vsock (m.spireConfig). For a
+// fresh Start that gate also governs whether the Firecracker vsock device is
+// configured; for a snapshot-resumed VM the device presence comes from the
+// snapshot, and this gate independently decides whether the host proxy runs.
+// Shared by Start and LoadSnapshot so both paths get the same host-side wiring.
+func (m *Manager) startVsockProxyIfConfigured(vmID, vsockPath string) {
+	if m.spireConfig == nil || !m.spireConfig.Enabled || m.spireConfig.VsockCID < 3 {
+		return
+	}
+	// Stop any stale proxy for this vmID before replacing its map entry. If the
+	// Firecracker process died without Stop being called, the old proxy is still
+	// running but orphaned from the map; overwriting the entry without stopping it
+	// would leak the goroutine/socket.
+	if m.stopVsockProxy(vmID) {
+		log.Printf("INFO: Stopped stale vsock proxy for VM %s before restart", vmID)
+	}
+
+	proxy, err := NewVsockProxy(vsockPath, m.spireConfig.AgentSocket, m.spireConfig.VsockPort)
+	if err != nil {
+		log.Printf("WARN: Failed to create vsock proxy for VM %s: %v", vmID, err)
+		return
+	}
+	if err := proxy.Start(); err != nil {
+		log.Printf("WARN: Failed to start vsock proxy for VM %s: %v", vmID, err)
+		return
+	}
+	m.vsockMu.Lock()
+	m.vsockProxies[vmID] = proxy
+	m.vsockMu.Unlock()
+	log.Printf("INFO: Started vsock proxy for VM %s (port %d -> %s)",
+		vmID, m.spireConfig.VsockPort, m.spireConfig.AgentSocket)
+}
+
+// requireRegularFile reports an error unless path is an existing regular file.
+// It uses Lstat so a symlink is rejected in place rather than followed.
+func requireRegularFile(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("not accessible: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file (mode %v)", info.Mode())
+	}
+	return nil
+}
+
+// LoadSnapshot boots a fresh Firecracker process from a previously created
+// snapshot and resumes it. Unlike Resume (which unpauses an already-running
+// process), a snapshot load requires a brand-new Firecracker process with no
+// boot source: the snapshot supplies the full machine state. Any host tap
+// devices referenced by the snapshot must already exist and be reachable by the
+// new process (re-established by the caller before invoking this method).
+func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error {
+	if vm == nil {
+		return fmt.Errorf("VM is required")
+	}
+	if snapshotPath == "" {
+		return fmt.Errorf("snapshot path is required")
+	}
+	if memPath == "" {
+		return fmt.Errorf("snapshot memory path is required")
+	}
+	// Require regular files. Lstat (not Stat) inspects a symlink in place, so a
+	// symlink or directory at either path is rejected here rather than followed
+	// into Firecracker as opaque load input.
+	if err := requireRegularFile(snapshotPath); err != nil {
+		return fmt.Errorf("snapshot state file at %s: %w", snapshotPath, err)
+	}
+	if err := requireRegularFile(memPath); err != nil {
+		return fmt.Errorf("snapshot memory file at %s: %w", memPath, err)
+	}
+
+	vmDir := filepath.Join(m.dataDir, "vms", vm.ID)
+	// 0750 keeps the API socket (which controls the microVM) reachable only by
+	// the daemon's user/group, not world-accessible. MkdirAll does not tighten an
+	// existing directory (an earlier Start created it 0755), so Chmod enforces the
+	// mode for resumed VMs too.
+	if err := os.MkdirAll(vmDir, 0750); err != nil {
+		return fmt.Errorf("failed to create VM directory: %w", err)
+	}
+	if err := os.Chmod(vmDir, 0750); err != nil {
+		return fmt.Errorf("failed to set VM directory permissions: %w", err)
+	}
+	socketPath := filepath.Join(vmDir, "firecracker.sock")
+	consolePath := filepath.Join(vmDir, "console.log")
+
+	// Remove any stale API socket so the fresh Firecracker process can bind.
+	if err := os.Remove(socketPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove stale API socket %s: %w", socketPath, err)
+	}
+
+	// Start Firecracker with no boot config; the snapshot supplies machine state.
+	cmd, err := m.startFirecrackerProcess(socketPath, "", consolePath)
+	if err != nil {
+		return err
+	}
+
+	// The API socket is not ready the instant the process starts; wait for it
+	// before issuing the load request.
+	if err := waitForSocketReady(socketPath, 10*time.Second); err != nil {
+		killAndReap(cmd)
+		return fmt.Errorf("firecracker API socket not ready for VM %s: %w", vm.ID, err)
+	}
+
+	// Load the snapshot paused (resume_vm:false). The vCPUs are resumed further
+	// down, only after the vsock proxy is listening.
+	if err := sendSnapshotLoad(socketPath, snapshotPath, memPath); err != nil {
+		killAndReap(cmd)
+		return fmt.Errorf("failed to load snapshot for VM %s: %w", vm.ID, err)
+	}
+
+	// Restart the host-side SPIRE vsock proxy the same way Start does, so a
+	// resumed VM keeps access to host services over vsock and the proxy is
+	// tracked in m.vsockProxies for Stop cleanup (otherwise it would leak).
+	// Started while the VM is still paused so it is listening before any guest
+	// vsock traffic can arrive.
+	m.startVsockProxyIfConfigured(vm.ID, filepath.Join(vmDir, "vsock.sock"))
+
+	// Now that the proxy is up, resume the loaded VM's vCPUs.
+	if err := firecrackerPATCH(socketPath, "/vm", vmStateRequest{State: "Resumed"}); err != nil {
+		m.stopVsockProxy(vm.ID)
+		killAndReap(cmd)
+		return fmt.Errorf("failed to resume loaded snapshot for VM %s: %w", vm.ID, err)
+	}
+
+	// Record runtime info and reap the process on exit only after a fully
+	// successful resume. Doing it earlier would let a failed resume PATCH (which
+	// kills the process above) leave vm.Runtime pointing at a dead PID/socket that
+	// the caller could persist.
+	setupVMRuntime(vm, cmd, socketPath, consolePath)
+	go m.waitForProcessExit(vm.ID, cmd)
+
+	return nil
+}
+
+// sendSnapshotLoad issues the Firecracker PUT /snapshot/load request against an
+// already-listening API socket. Split out from LoadSnapshot so the request
+// schema can be unit-tested without spawning a Firecracker process.
+func sendSnapshotLoad(socketPath, snapshotPath, memPath string) error {
+	req := snapshotLoadRequest{
+		SnapshotPath: snapshotPath,
+		MemBackend: memoryBackend{
+			BackendType: "File",
+			BackendPath: memPath,
+		},
+		ResumeVM: false, // load paused; LoadSnapshot resumes after the proxy is up
+	}
+	if err := firecrackerPUT(socketPath, "/snapshot/load", req); err != nil {
+		return fmt.Errorf("firecracker /snapshot/load failed: %w", err)
+	}
+	return nil
+}
+
+// waitForSocketReady blocks until the Firecracker API unix socket accepts
+// connections or the timeout elapses.
+func waitForSocketReady(socketPath string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		conn, err := net.DialTimeout("unix", socketPath, 200*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out after %s waiting for API socket %s: %w", timeout, socketPath, lastErr)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// killAndReap terminates a Firecracker process and reaps it synchronously to
+// avoid leaving a zombie when a load fails before the reaper goroutine starts.
+func killAndReap(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
 }
 
 // GetConsoleLogs reads console logs

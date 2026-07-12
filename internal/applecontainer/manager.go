@@ -555,6 +555,11 @@ func (m *Manager) CreateSnapshot(vm *types.VM, snapshotPath, memPath string) err
 	return fmt.Errorf("%w: snapshots are not supported by the apple container runtime", vmm.ErrUnsupportedOperation)
 }
 
+// LoadSnapshot is not exposed by Apple container 0.4.1.
+func (m *Manager) LoadSnapshot(vm *types.VM, snapshotPath, memPath string) error {
+	return fmt.Errorf("%w: snapshot resume is not supported by the apple container runtime", vmm.ErrUnsupportedOperation)
+}
+
 // GetConsoleLogs returns container stdio logs.
 func (m *Manager) GetConsoleLogs(vm *types.VM, tailLines int) ([]byte, error) {
 	name := runtimeName(vm)

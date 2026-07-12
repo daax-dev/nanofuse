@@ -234,11 +234,16 @@ func (db *DB) UpdateVM(vm *types.VM) error {
 
 	vm.UpdatedAt = time.Now()
 
+	// Deliberately does NOT write locked_by/locked_at: the lock columns are owned
+	// solely by AcquireLock/ReleaseLock. Persisting them here from the in-memory
+	// struct (whose lock fields are typically nil) would clear a lock the caller
+	// just acquired, since AcquireLock updates the DB row but not the struct —
+	// re-opening the very races the lock exists to prevent.
 	_, err = db.conn.Exec(`
 		UPDATE vms
-		SET state = ?, config_json = ?, runtime_json = ?, updated_at = ?, locked_by = ?, locked_at = ?
+		SET state = ?, config_json = ?, runtime_json = ?, updated_at = ?
 		WHERE id = ?
-	`, vm.State, configJSON, runtimeJSON, vm.UpdatedAt, vm.LockedBy, vm.LockedAt, vm.ID)
+	`, vm.State, configJSON, runtimeJSON, vm.UpdatedAt, vm.ID)
 
 	if err != nil {
 		return fmt.Errorf("failed to update VM: %w", err)

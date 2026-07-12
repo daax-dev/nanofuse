@@ -705,7 +705,7 @@ func (s *Server) registerSPIREForCreate(w http.ResponseWriter, r *http.Request, 
 	// raw SPIRE error can leak docker/CLI internals that should not cross the API
 	// boundary.
 	if spireErr != nil {
-		s.logger.Printf("ERROR: SPIRE required but registration failed for VM %s; aborting create: %v", vmID, spireErr)
+		s.logger.Printf("ERROR: SPIRE required but registration failed for VM %s; aborting create: %q", vmID, spireErr.Error())
 	} else {
 		s.logger.Printf("ERROR: SPIRE required but no identity was minted for VM %s; aborting create", vmID)
 	}

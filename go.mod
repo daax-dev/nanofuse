@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.19.0
 	github.com/magefile/mage v1.17.2
-	github.com/mattn/go-sqlite3 v1.14.44
+	github.com/mattn/go-sqlite3 v1.14.48
 	github.com/mdlayher/vsock v1.3.0
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/schollz/progressbar/v3 v3.19.1

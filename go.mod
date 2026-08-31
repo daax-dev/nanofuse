@@ -6,17 +6,17 @@ require (
 	github.com/fatih/color v1.19.0
 	github.com/gdt-dev/gdt v1.12.2
 	github.com/getlantern/systray v1.2.2
-	github.com/google/go-containerregistry v0.21.7
+	github.com/google/go-containerregistry v0.22.0
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.19.0
+	github.com/klauspost/compress v1.19.2
 	github.com/magefile/mage v1.17.2
 	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/mdlayher/vsock v1.3.0
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/schollz/progressbar/v3 v3.19.1
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/sync v0.21.0
-	golang.org/x/sys v0.46.0
+	golang.org/x/sync v0.22.0
+	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -28,7 +28,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.10.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/docker/cli v29.5.3+incompatible // indirect
+	github.com/docker/cli v29.7.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
 	github.com/gdt-dev/core v1.12.2 // indirect
 	github.com/getlantern/context v0.0.0-20190109183933-c447772a6520 // indirect

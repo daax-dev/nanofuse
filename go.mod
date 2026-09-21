@@ -12,7 +12,7 @@ require (
 	github.com/magefile/mage v1.17.2
 	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/mdlayher/vsock v1.3.0
-	github.com/olekukonko/tablewriter v1.1.4
+	github.com/olekukonko/tablewriter v1.1.5
 	github.com/schollz/progressbar/v3 v3.19.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sync v0.21.0
